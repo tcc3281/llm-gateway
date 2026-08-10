@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_gateway
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      - PORT=8080
+      - ADMIN_PORT=8081
+      - DB_HOST=postgres
+
+      - DB_PORT=5432
+      - DB_USER=llm_user
+      - DB_PASSWORD=llm_password
+      - DB_NAME=llm_gateway
+      - DB_SSLMODE=disable
+      - REDIS_HOST=redis:6379
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-sk-admin-secret-key-change-me}
+      - PROVIDER_MASTER_KEY=${PROVIDER_MASTER_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: llm_postgres
+    environment:
+      POSTGRES_USER: llm_user
+      POSTGRES_PASSWORD: llm_password
+      POSTGRES_DB: llm_gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_user -d llm_gateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: llm_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
