@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LLM Gateway - Admin Auth</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "inverse-surface": "#dde4e5",
+                        "background": "#0B0E14",
+                        "tertiary-fixed-dim": "#ffb957",
+                        "primary-fixed-dim": "#2fd9f4",
+                        "surface-container": "#181A20",
+                        "surface-variant": "#2f3638",
+                        "primary-container": "#22d3ee",
+                        "primary": "#8aebff",
+                        "on-primary-fixed": "#001f25",
+                        "surface-bright": "#343a3c",
+                        "outline": "#859397",
+                        "tertiary-fixed": "#ffddb5",
+                        "surface-dim": "#0e1416",
+                        "on-primary-container": "#005763",
+                        "error": "#ffb4ab",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-background": "#dde4e5",
+                        "surface": "#0B0E14",
+                        "secondary": "#4edea3",
+                        "tertiary-container": "#ffb13b",
+                        "surface-container-low": "#161d1e",
+                        "on-primary": "#00363e",
+                        "on-secondary-fixed": "#002113",
+                        "secondary-container": "#00a572",
+                        "secondary-fixed": "#6ffbbe",
+                        "tertiary": "#ffd6a3",
+                        "on-tertiary": "#462b00",
+                        "primary-fixed": "#a2eeff",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-container": "#6e4600",
+                        "on-secondary": "#003824",
+                        "surface-container-high": "#242B2E",
+                        "inverse-primary": "#006877",
+                        "on-secondary-fixed-variant": "#005236",
+                        "surface-container-lowest": "#090f11",
+                        "on-surface": "#ffffff",
+                        "surface-container-highest": "#2D3139",
+                        "inverse-on-surface": "#2b3233",
+                        "outline-variant": "#2D3139",
+                        "surface-tint": "#2fd9f4",
+                        "on-primary-fixed-variant": "#004e5a",
+                        "on-surface-variant": "#94A3B8",
+                        "error-container": "#93000a",
+                        "on-tertiary-fixed": "#2a1800",
+                        "on-tertiary-fixed-variant": "#643f00",
+                        "on-secondary-container": "#00311f",
+                        "on-error": "#690005"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem",
+                        "auth": "4px",
+                        "btn": "6px"
+                    },
+                    "spacing": {
+                        "container-padding": "24px",
+                        "card-gap": "20px",
+                        "gutter": "16px",
+                        "compact-row": "32px",
+                        "standard-row": "48px",
+                        "sidebar-width": "240px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "label-xs": ["JetBrains Mono"],
+                        "display-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "display-lg-mobile": ["Inter"],
+                        "data-mono": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "label-xs": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "display-lg-mobile": ["28px", { "lineHeight": "34px", "fontWeight": "700" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #0B0E14;
+            background-image: 
+                linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: center center;
+        }
+        
+        .glow-input:focus {
+            outline: none;
+            border-color: #22D3EE;
+            box-shadow: 0 0 5px rgba(34, 211, 238, 0.5);
+        }
+    </style>
+</head>
+<body class="text-on-surface min-h-screen flex flex-col font-body-md">
+<!-- Slim Topbar -->
+<header class="h-standard-row w-full flex items-center justify-between px-container-padding border-b border-outline-variant bg-background/80 backdrop-blur-sm fixed top-0 z-50">
+<div class="flex items-center gap-2">
+<span class="text-primary-container font-bold tracking-widest text-lg">▮▮</span>
+<span class="font-headline-sm text-headline-sm tracking-wider uppercase text-on-surface">LLM Gateway</span>
+</div>
+<div class="font-data-mono text-data-mono text-tertiary-fixed-dim border border-tertiary-fixed-dim/50 px-2 py-0.5 rounded text-xs bg-tertiary-fixed-dim/10">
+            [ ENV: development ]
+        </div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow flex items-center justify-center p-gutter mt-standard-row">
+<!-- Auth Card -->
+<div class="w-full max-w-[460px] bg-surface-container border border-outline-variant rounded-auth p-container-padding">
+<!-- Card Header -->
+<div class="mb-8">
+<div class="flex items-center gap-2 mb-1">
+<span class="text-primary-container font-bold text-xl">▮▮</span>
+<span class="font-headline-md text-headline-md tracking-widest uppercase">LLM GATEWAY</span>
+</div>
+<div class="font-label-xs text-label-xs text-on-surface-variant">
+                    ADMIN CONTROL PLANE
+                </div>
+</div>
+<!-- Titles -->
+<div class="mb-6">
+<h1 class="font-headline-sm text-headline-sm mb-2">Authenticate Admin</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                    Enter your gateway admin key to access the control plane.
+                </p>
+</div>
+<!-- Form -->
+<form class="space-y-6">
+<div class="space-y-2">
+<label class="block font-label-xs text-label-xs text-on-surface uppercase" for="admin-key">
+                        ADMIN API KEY (X-ADMIN-API-KEY)
+                    </label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded text-on-surface font-data-mono text-data-mono px-3 py-2 glow-input focus:ring-0 placeholder:text-on-surface-variant/50" id="admin-key" placeholder="••••••••••••••••" type="password"/>
+</div>
+<div class="space-y-2">
+<label class="block font-label-xs text-label-xs text-on-surface uppercase" for="server-url">
+                        ADMIN SERVER URL
+                    </label>
+<input class="w-full bg-surface-container-lowest border border-outline-variant rounded text-on-surface font-data-mono text-data-mono px-3 py-2 glow-input focus:ring-0" id="server-url" type="text" value="http://localhost:8081"/>
+</div>
+<div class="pt-2">
+<button class="w-full bg-primary-container hover:bg-primary text-on-primary-fixed font-headline-sm text-headline-sm py-2 rounded-btn transition-colors flex items-center justify-center gap-2" type="button">
+                        Authenticate <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+<div class="text-center mt-3">
+<a class="font-body-md text-body-md text-on-surface-variant hover:text-on-surface transition-colors border-b border-transparent hover:border-on-surface inline-block text-xs" href="#">
+                            Show API key format
+                        </a>
+</div>
+</div>
+</form>
+<!-- Security Note -->
+<div class="mt-8 pt-4 border-t border-outline-variant flex gap-3 items-start bg-tertiary-fixed-dim/5 p-3 rounded border-l-2 border-l-tertiary-fixed-dim">
+<span class="material-symbols-outlined text-tertiary-fixed-dim text-base">warning</span>
+<p class="font-label-xs text-label-xs text-on-surface-variant normal-case">
+                    Keys are stored locally and sent as the X-Admin-API-Key header. Never share your admin key.
+                </p>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="pb-8 pt-4 text-center">
+<span class="font-label-xs text-label-xs text-on-surface-variant">LLM GATEWAY · v1.0.0</span>
+</footer>
+</body></html>

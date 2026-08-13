@@ -3,24 +3,80 @@ package openai
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"llm-gateway/internal/adapter/canonical"
 )
 
 type OpenAIRequest struct {
-	Model       string          `json:"model"`
-	Messages    []OpenAIMessage `json:"messages"`
-	MaxTokens   int             `json:"max_tokens,omitempty"`
-	Temperature *float64        `json:"temperature,omitempty"`
-	TopP        *float64        `json:"top_p,omitempty"`
-	Stream      bool            `json:"stream,omitempty"`
-	Stop        interface{}     `json:"stop,omitempty"`
+	Model           string          `json:"model"`
+	Messages        []OpenAIMessage `json:"messages"`
+	MaxTokens       int             `json:"max_tokens,omitempty"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	TopP            *float64        `json:"top_p,omitempty"`
+	Stream          bool            `json:"stream,omitempty"`
+	Stop            interface{}     `json:"stop,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
+	StreamOptions   *StreamOptions  `json:"stream_options,omitempty"`
+	// Tools declares the callable functions; ToolChoice picks the invocation
+	// policy. ToolChoice is raw so both the string form ("auto") and the object
+	// form ({type:"function",function:{name}}) survive decode untouched.
+	Tools      []OpenAITool    `json:"tools,omitempty"`
+	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
 }
 
+// StreamOptions asks the upstream to include a usage block in the final stream
+// chunk, so the gateway can meter prompt/completion/reasoning tokens for
+// streamed responses.
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// OpenAITool is the modern OpenAI tool declaration (type:"function").
+type OpenAITool struct {
+	Type     string         `json:"type"`
+	Function OpenAIFunction `json:"function"`
+}
+
+type OpenAIFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// OpenAIToolCall is an assistant turn's tool invocation. Arguments is a
+// JSON-encoded string on the wire (kept as-is).
+type OpenAIToolCall struct {
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Function OpenAIFunctionCall `json:"function"`
+}
+
+type OpenAIFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// OpenAIMessage.Content is a *string because OpenAI serializes assistant
+// tool-call messages with content:null (and content can legitimately be null in
+// tool results). A nil pointer marshals to null; a set pointer to its value.
 type OpenAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string           `json:"role"`
+	Content          *string          `json:"content"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	ToolCalls        []OpenAIToolCall `json:"tool_calls,omitempty"`
+}
+
+// strPtr / strVal bridge the *string Content field to plain strings.
+func strPtr(s string) *string { return &s }
+
+func strVal(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 type OpenAIResponse struct {
@@ -39,9 +95,19 @@ type OpenAIChoice struct {
 }
 
 type OpenAIUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens            int                      `json:"prompt_tokens"`
+	CompletionTokens        int                      `json:"completion_tokens"`
+	TotalTokens             int                      `json:"total_tokens"`
+	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type CompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 type OpenAIStreamChunk struct {
@@ -60,8 +126,24 @@ type OpenAIStreamChoice struct {
 }
 
 type OpenAIDeltaChoice struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Role             string                `json:"role,omitempty"`
+	Content          string                `json:"content,omitempty"`
+	ReasoningContent string                `json:"reasoning_content,omitempty"`
+	ToolCalls        []OpenAIDeltaToolCall `json:"tool_calls,omitempty"`
+}
+
+// OpenAIDeltaToolCall is one streaming tool-call fragment. Arguments is the
+// incremental partial JSON string accumulated by the gateway service.
+type OpenAIDeltaToolCall struct {
+	Index    int                  `json:"index"`
+	ID       string               `json:"id,omitempty"`
+	Type     string               `json:"type,omitempty"`
+	Function *OpenAIDeltaFunction `json:"function,omitempty"`
+}
+
+type OpenAIDeltaFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 // DecodeInboundRequest decodes OpenAI /v1/chat/completions request bytes to CanonicalRequest
@@ -72,50 +154,165 @@ func DecodeInboundRequest(body []byte) (*canonical.CanonicalRequest, error) {
 	}
 
 	canReq := &canonical.CanonicalRequest{
-		InboundFormat: "openai",
-		Model:         req.Model,
-		MaxTokens:     req.MaxTokens,
-		Temperature:   req.Temperature,
-		TopP:          req.TopP,
-		Stream:        req.Stream,
+		InboundFormat:   "openai",
+		Model:           req.Model,
+		MaxTokens:       req.MaxTokens,
+		Temperature:     req.Temperature,
+		TopP:            req.TopP,
+		Stream:          req.Stream,
+		ReasoningEffort: req.ReasoningEffort,
+		ThinkingEnabled: req.ReasoningEffort != "",
+		Tools:           decodeOpenAITools(req.Tools),
+		ToolChoice:      decodeOpenAIToolChoice(req.ToolChoice),
 	}
 
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			canReq.SystemPrompt = msg.Content
-		} else {
-			canReq.Messages = append(canReq.Messages, canonical.ChatMessage{
-				Role:    msg.Role,
-				Content: msg.Content,
+			canReq.SystemPrompt = strVal(msg.Content)
+			continue
+		}
+		cm := canonical.ChatMessage{
+			Role:       msg.Role,
+			Content:    strVal(msg.Content),
+			ToolCallID: msg.ToolCallID,
+		}
+		for _, tc := range msg.ToolCalls {
+			cm.ToolCalls = append(cm.ToolCalls, canonical.ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
 			})
 		}
+		canReq.Messages = append(canReq.Messages, cm)
 	}
 
 	return canReq, nil
 }
 
+// decodeOpenAITools maps wire tools to canonical definitions, dropping any
+// non-function tool types (OpenAI currently only defines "function").
+func decodeOpenAITools(tools []OpenAITool) []canonical.ToolDefinition {
+	out := make([]canonical.ToolDefinition, 0, len(tools))
+	for _, t := range tools {
+		if t.Type != "" && t.Type != "function" {
+			continue
+		}
+		out = append(out, canonical.ToolDefinition{
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+			Parameters:  t.Function.Parameters,
+		})
+	}
+	return out
+}
+
+// decodeOpenAIToolChoice accepts both the string form ("auto"/"none"/"required")
+// and the object form ({type:"function",function:{name}}).
+func decodeOpenAIToolChoice(raw json.RawMessage) *canonical.ToolChoice {
+	if len(raw) == 0 {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		switch s {
+		case "auto", "none", "required":
+			return &canonical.ToolChoice{Mode: s}
+		}
+		return nil
+	}
+	var obj struct {
+		Type     string `json:"type"`
+		Function *struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil && obj.Type == "function" && obj.Function != nil {
+		return &canonical.ToolChoice{Mode: "function", FunctionName: obj.Function.Name}
+	}
+	return nil
+}
+
+// encodeOpenAIToolChoice renders a canonical tool choice back to the OpenAI
+// wire shape. Canonical "any"/"tool" (from Anthropic inbound) map to OpenAI's
+// closest equivalents "required"/"function".
+func encodeOpenAIToolChoice(tc *canonical.ToolChoice) json.RawMessage {
+	if tc == nil {
+		return nil
+	}
+	switch tc.Mode {
+	case "auto", "none", "required":
+		b, _ := json.Marshal(tc.Mode)
+		return b
+	case "any":
+		b, _ := json.Marshal("required")
+		return b
+	case "function", "tool":
+		b, _ := json.Marshal(map[string]interface{}{
+			"type":     "function",
+			"function": map[string]string{"name": tc.FunctionName},
+		})
+		return b
+	}
+	return nil
+}
+
 // EncodeCanonicalRequest converts CanonicalRequest to OpenAI Request payload
 func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) {
 	req := OpenAIRequest{
-		Model:       canReq.Model,
-		MaxTokens:   canReq.MaxTokens,
-		Temperature: canReq.Temperature,
-		TopP:        canReq.TopP,
-		Stream:      canReq.Stream,
+		Model:           canReq.Model,
+		MaxTokens:       canReq.MaxTokens,
+		Temperature:     canReq.Temperature,
+		TopP:            canReq.TopP,
+		Stream:          canReq.Stream,
+		ReasoningEffort: canReq.ReasoningEffort,
+		ToolChoice:      encodeOpenAIToolChoice(canReq.ToolChoice),
+	}
+
+	for _, t := range canReq.Tools {
+		req.Tools = append(req.Tools, OpenAITool{
+			Type: "function",
+			Function: OpenAIFunction{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
+		})
+	}
+
+	// For streamed responses ask the upstream to attach usage to the final
+	// chunk so the gateway can meter prompt/completion/reasoning tokens.
+	if canReq.Stream {
+		req.StreamOptions = &StreamOptions{IncludeUsage: true}
 	}
 
 	if canReq.SystemPrompt != "" {
 		req.Messages = append(req.Messages, OpenAIMessage{
 			Role:    "system",
-			Content: canReq.SystemPrompt,
+			Content: strPtr(canReq.SystemPrompt),
 		})
 	}
 
 	for _, msg := range canReq.Messages {
-		req.Messages = append(req.Messages, OpenAIMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
+		om := OpenAIMessage{
+			Role:       msg.Role,
+			ToolCallID: msg.ToolCallID,
+		}
+		// Assistant tool-call messages have content:null on the wire; set the
+		// pointer only when there is actual text to emit.
+		if msg.Content != "" || len(msg.ToolCalls) == 0 {
+			om.Content = strPtr(msg.Content)
+		}
+		for _, tc := range msg.ToolCalls {
+			om.ToolCalls = append(om.ToolCalls, OpenAIToolCall{
+				ID:   tc.ID,
+				Type: "function",
+				Function: OpenAIFunctionCall{
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
+				},
+			})
+		}
+		req.Messages = append(req.Messages, om)
 	}
 
 	return json.Marshal(req)
@@ -136,10 +333,25 @@ func DecodeUpstreamResponse(body []byte) (*canonical.CanonicalResponse, error) {
 		TotalTokens:      resp.Usage.TotalTokens,
 	}
 
+	if resp.Usage.PromptTokensDetails != nil {
+		canResp.CachedInputTokens = resp.Usage.PromptTokensDetails.CachedTokens
+	}
+	if resp.Usage.CompletionTokensDetails != nil {
+		canResp.ReasoningTokens = resp.Usage.CompletionTokensDetails.ReasoningTokens
+	}
+
 	if len(resp.Choices) > 0 {
 		canResp.Role = resp.Choices[0].Message.Role
-		canResp.Content = resp.Choices[0].Message.Content
+		canResp.Content = strVal(resp.Choices[0].Message.Content)
+		canResp.ReasoningContent = resp.Choices[0].Message.ReasoningContent
 		canResp.FinishReason = resp.Choices[0].FinishReason
+		for _, tc := range resp.Choices[0].Message.ToolCalls {
+			canResp.ToolCalls = append(canResp.ToolCalls, canonical.ToolCall{
+				ID:        tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			})
+		}
 	}
 
 	return canResp, nil
@@ -147,6 +359,34 @@ func DecodeUpstreamResponse(body []byte) (*canonical.CanonicalResponse, error) {
 
 // FormatCanonicalToOpenAIResponse converts CanonicalResponse back to OpenAI response format
 func FormatCanonicalToOpenAIResponse(canResp *canonical.CanonicalResponse) ([]byte, error) {
+	msg := OpenAIMessage{
+		Role:             canResp.Role,
+		ReasoningContent: canResp.ReasoningContent,
+	}
+	// Tool-call-only assistant messages use content:null; otherwise carry the
+	// text (even when empty).
+	if canResp.Content != "" || len(canResp.ToolCalls) == 0 {
+		msg.Content = strPtr(canResp.Content)
+	}
+	for _, tc := range canResp.ToolCalls {
+		msg.ToolCalls = append(msg.ToolCalls, OpenAIToolCall{
+			ID:   tc.ID,
+			Type: "function",
+			Function: OpenAIFunctionCall{
+				Name:      tc.Name,
+				Arguments: tc.Arguments,
+			},
+		})
+	}
+	finishReason := canResp.FinishReason
+	// Gemini reports finish_reason "STOP"; OpenAI clients expect "stop" for a
+	// normal completion and "tool_calls" for a tool-call response.
+	switch {
+	case len(canResp.ToolCalls) > 0:
+		finishReason = "tool_calls"
+	case finishReason == "STOP":
+		finishReason = "stop"
+	}
 	resp := OpenAIResponse{
 		ID:      canResp.ID,
 		Object:  "chat.completion",
@@ -154,12 +394,9 @@ func FormatCanonicalToOpenAIResponse(canResp *canonical.CanonicalResponse) ([]by
 		Model:   canResp.Model,
 		Choices: []OpenAIChoice{
 			{
-				Index: 0,
-				Message: OpenAIMessage{
-					Role:    canResp.Role,
-					Content: canResp.Content,
-				},
-				FinishReason: canResp.FinishReason,
+				Index:        0,
+				Message:      msg,
+				FinishReason: finishReason,
 			},
 		},
 		Usage: OpenAIUsage{
@@ -187,14 +424,29 @@ func DecodeStreamChunk(data []byte, fallbackModel string) (*canonical.CanonicalS
 	c := &canonical.CanonicalStreamChunk{ID: chunk.ID, Model: model}
 	if len(chunk.Choices) > 0 {
 		c.DeltaContent = chunk.Choices[0].Delta.Content
+		c.DeltaReasoning = chunk.Choices[0].Delta.ReasoningContent
 		c.Role = chunk.Choices[0].Delta.Role
 		if chunk.Choices[0].FinishReason != nil {
 			c.FinishReason = *chunk.Choices[0].FinishReason
+		}
+		for _, dtc := range chunk.Choices[0].Delta.ToolCalls {
+			d := canonical.ToolCallDelta{Index: dtc.Index, ID: dtc.ID}
+			if dtc.Function != nil {
+				d.Name = dtc.Function.Name
+				d.Arguments = dtc.Function.Arguments
+			}
+			c.DeltaToolCalls = append(c.DeltaToolCalls, d)
 		}
 	}
 	if chunk.Usage != nil {
 		c.PromptTokens = chunk.Usage.PromptTokens
 		c.CompletionTokens = chunk.Usage.CompletionTokens
+		if chunk.Usage.PromptTokensDetails != nil {
+			c.CachedInputTokens = chunk.Usage.PromptTokensDetails.CachedTokens
+		}
+		if chunk.Usage.CompletionTokensDetails != nil {
+			c.ReasoningTokens = chunk.Usage.CompletionTokensDetails.ReasoningTokens
+		}
 	}
 	return c, nil
 }
@@ -210,8 +462,9 @@ func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, 
 			{
 				Index: 0,
 				Delta: OpenAIDeltaChoice{
-					Role:    chunk.Role,
-					Content: chunk.DeltaContent,
+					Role:             chunk.Role,
+					Content:          chunk.DeltaContent,
+					ReasoningContent: chunk.DeltaReasoning,
 				},
 			},
 		},
@@ -228,4 +481,48 @@ func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, 
 	}
 
 	return fmt.Sprintf("data: %s\n\n", string(data)), nil
+}
+
+// FormatOpenAIToolCallSSE renders reconstructed assistant tool calls as two
+// OpenAI SSE chunks: one carrying role + all complete tool_calls, then a
+// terminal chunk with finish_reason "tool_calls". The gateway service calls
+// this at the end of a stream after accumulating the incremental arguments.
+func FormatOpenAIToolCallSSE(toolCalls []canonical.ToolCall, model, id string, created int64) (string, error) {
+	deltaTools := make([]OpenAIDeltaToolCall, 0, len(toolCalls))
+	for i, tc := range toolCalls {
+		fn := OpenAIDeltaFunction{Name: tc.Name, Arguments: tc.Arguments}
+		deltaTools = append(deltaTools, OpenAIDeltaToolCall{
+			Index:    i,
+			ID:       tc.ID,
+			Type:     "function",
+			Function: &fn,
+		})
+	}
+
+	mk := func(delta OpenAIDeltaChoice) OpenAIStreamChunk {
+		return OpenAIStreamChunk{
+			ID:      id,
+			Object:  "chat.completion.chunk",
+			Created: created,
+			Model:   model,
+			Choices: []OpenAIStreamChoice{{Index: 0, Delta: delta}},
+		}
+	}
+
+	chunks := []OpenAIStreamChunk{
+		mk(OpenAIDeltaChoice{Role: "assistant", ToolCalls: deltaTools}),
+	}
+	fr := "tool_calls"
+	chunks = append(chunks, mk(OpenAIDeltaChoice{}))
+	chunks[1].Choices[0].FinishReason = &fr
+
+	var sb strings.Builder
+	for _, c := range chunks {
+		data, err := json.Marshal(c)
+		if err != nil {
+			return "", err
+		}
+		sb.WriteString("data: " + string(data) + "\n\n")
+	}
+	return sb.String(), nil
 }

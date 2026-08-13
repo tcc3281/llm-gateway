@@ -62,7 +62,10 @@ func (s *KeyStore) GetKey(ctx context.Context, provider string) (string, error) 
 }
 
 // SetKey stores (and encrypts) a provider key, then invalidates the cache.
-func (s *KeyStore) SetKey(ctx context.Context, provider, apiKey string) error {
+// baseURL is the custom endpoint for OpenAI/Anthropic-compatible providers ("" =
+// built-in with a hardcoded upstream URL); protocol is the wire format
+// ("openai" | "anthropic") spoken to that base URL.
+func (s *KeyStore) SetKey(ctx context.Context, provider, apiKey, baseURL, protocol string) error {
 	if s.pg == nil {
 		return errors.New("database unavailable")
 	}
@@ -70,7 +73,7 @@ func (s *KeyStore) SetKey(ctx context.Context, provider, apiKey string) error {
 	if err != nil {
 		return err
 	}
-	pk := &model.ProviderKey{Provider: provider, APIKey: enc, IsActive: true}
+	pk := &model.ProviderKey{Provider: provider, APIKey: enc, BaseURL: baseURL, Protocol: protocol, IsActive: true}
 	if err := s.pg.UpsertProviderKey(pk); err != nil {
 		return err
 	}
@@ -78,6 +81,52 @@ func (s *KeyStore) SetKey(ctx context.Context, provider, apiKey string) error {
 		_ = s.redis.DeleteCachedProviderKey(ctx, provider)
 	}
 	return nil
+}
+
+// ProviderConfig carries the routing-relevant fields of a provider key: the
+// custom base URL and the wire protocol, used by the gateway to resolve custom
+// OpenAI/Anthropic-compatible providers from a model-name prefix.
+type ProviderConfig struct {
+	Provider string
+	BaseURL  string
+	Protocol string
+}
+
+// GetProviderInfo returns the config for an active provider key. Built-in
+// providers have BaseURL == ""; custom (compatible) providers have a non-empty
+// BaseURL. Not found or inactive => ErrProviderKeyNotFound.
+func (s *KeyStore) GetProviderInfo(ctx context.Context, provider string) (*ProviderConfig, error) {
+	if s.pg == nil {
+		return nil, errors.New("database unavailable")
+	}
+	pk, err := s.pg.GetProviderKey(provider)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", ErrProviderKeyNotFound, provider)
+		}
+		return nil, err
+	}
+	return &ProviderConfig{Provider: pk.Provider, BaseURL: pk.BaseURL, Protocol: pk.Protocol}, nil
+}
+
+// ListActiveProviders returns the routing config of every active provider key.
+// The model-discovery loop iterates this to refresh each provider's catalog.
+func (s *KeyStore) ListActiveProviders() ([]ProviderConfig, error) {
+	if s.pg == nil {
+		return nil, errors.New("database unavailable")
+	}
+	rows, err := s.pg.ListProviderKeys()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProviderConfig, 0, len(rows))
+	for _, k := range rows {
+		if !k.IsActive {
+			continue
+		}
+		out = append(out, ProviderConfig{Provider: k.Provider, BaseURL: k.BaseURL, Protocol: k.Protocol})
+	}
+	return out, nil
 }
 
 // DeleteKey removes a provider key and invalidates the cache.
@@ -95,6 +144,8 @@ func (s *KeyStore) DeleteKey(ctx context.Context, provider string) error {
 type ProviderKeyInfo struct {
 	Provider   string    `json:"provider"`
 	KeyPreview string    `json:"key_preview"`
+	BaseURL    string    `json:"base_url,omitempty"` // "" = built-in (hardcoded upstream)
+	Protocol   string    `json:"protocol,omitempty"` // "openai" | "anthropic" for custom providers
 	IsActive   bool      `json:"is_active"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -118,6 +169,8 @@ func (s *KeyStore) ListKeys() ([]ProviderKeyInfo, error) {
 		out = append(out, ProviderKeyInfo{
 			Provider:   k.Provider,
 			KeyPreview: preview,
+			BaseURL:    k.BaseURL,
+			Protocol:   k.Protocol,
 			IsActive:   k.IsActive,
 			CreatedAt:  k.CreatedAt,
 			UpdatedAt:  k.UpdatedAt,

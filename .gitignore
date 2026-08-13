@@ -27,6 +27,14 @@ go.work.sum
 # env file
 .env
 
+# Dashboard frontend (web/) — dependencies + build output
+web/node_modules/
+
+# Vite builds into internal/web/dist; ignore generated assets but keep the
+# committed placeholder index.html so `go build` always succeeds.
+internal/web/dist/*
+!internal/web/dist/index.html
+
 # Editor/IDE
 # .idea/
 # .vscode/

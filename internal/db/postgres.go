@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,7 +148,7 @@ func (p *PostgresDB) GetAllModelsList() ([]model.ModelPricing, error) {
 	}
 	defer rows.Close()
 
-	var list []model.ModelPricing
+	list := make([]model.ModelPricing, 0)
 	for rows.Next() {
 		var pr model.ModelPricing
 		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.UpdatedAt); err != nil {
@@ -177,6 +178,52 @@ func (p *PostgresDB) DeleteModelPricing(id uuid.UUID) error {
 	query := `DELETE FROM model_pricings WHERE id = $1`
 	_, err := p.Exec(query, id)
 	return err
+}
+
+// ReplaceProviderModels atomically replaces the discovered catalog for one
+// provider: it inserts the fresh model list and deletes rows that disappeared
+// upstream, so the catalog never routes to stale models. An empty list clears
+// the provider's catalog entirely.
+func (p *PostgresDB) ReplaceProviderModels(provider string, modelNames []string) error {
+	tx, err := p.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // no-op after Commit
+
+	if _, err := tx.Exec(`DELETE FROM provider_models WHERE provider = $1`, provider); err != nil {
+		return err
+	}
+	for _, name := range modelNames {
+		if _, err := tx.Exec(
+			`INSERT INTO provider_models (provider, model_name) VALUES ($1, $2)
+			 ON CONFLICT (provider, model_name) DO NOTHING`,
+			provider, name); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ListCatalogModels returns every (provider, model) row of the discovered
+// catalog, used to build the routing cache.
+func (p *PostgresDB) ListCatalogModels() ([]model.CatalogModel, error) {
+	query := `SELECT provider, model_name, created_at, updated_at FROM provider_models ORDER BY provider, model_name`
+	rows, err := p.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]model.CatalogModel, 0)
+	for rows.Next() {
+		var cm model.CatalogModel
+		if err := rows.Scan(&cm.Provider, &cm.ModelName, &cm.CreatedAt, &cm.UpdatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, cm)
+	}
+	return list, rows.Err()
 }
 
 func (p *PostgresDB) GetSpentCostByKeyID(keyID uuid.UUID) (float64, error) {
@@ -245,13 +292,58 @@ func (p *PostgresDB) DeactivateAPIKey(id uuid.UUID) error {
 	return err
 }
 
+// UpdateUser changes a user's name and/or role. Values are resolved by the
+// handler from the current record so unchanged fields are preserved.
+func (p *PostgresDB) UpdateUser(id uuid.UUID, name, role string) error {
+	_, err := p.Exec(`UPDATE users SET name = $2, role = $3, updated_at = NOW() WHERE id = $1`, id, name, role)
+	return err
+}
+
+func (p *PostgresDB) DeleteUser(id uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM users WHERE id = $1`, id)
+	return err
+}
+
+// UpdateAPIKey edits a key's name, budget, rate limit and optional expiry.
+func (p *PostgresDB) UpdateAPIKey(id uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, expiresAt *time.Time) error {
+	_, err := p.Exec(`UPDATE api_keys SET name = $2, budget_limit = $3, rate_limit_rpm = $4, expires_at = $5 WHERE id = $1`,
+		id, name, budgetLimit, rateLimitRPM, expiresAt)
+	return err
+}
+
+func (p *PostgresDB) ReactivateAPIKey(id uuid.UUID) error {
+	_, err := p.Exec(`UPDATE api_keys SET is_active = TRUE WHERE id = $1`, id)
+	return err
+}
+
+func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error) {
+	query := `
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, is_active, expires_at, created_at
+		FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`
+	rows, err := p.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []model.APIKey
+	for rows.Next() {
+		var k model.APIKey
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
 // Provider Key Repositories (stateful provider credentials)
 func (p *PostgresDB) GetProviderKey(provider string) (*model.ProviderKey, error) {
 	k := &model.ProviderKey{}
 	query := `
-		SELECT id, provider, api_key, is_active, created_at, updated_at
+		SELECT id, provider, api_key, base_url, protocol, is_active, created_at, updated_at
 		FROM provider_keys WHERE provider = $1 AND is_active = TRUE`
-	err := p.QueryRow(query, provider).Scan(&k.ID, &k.Provider, &k.APIKey, &k.IsActive, &k.CreatedAt, &k.UpdatedAt)
+	err := p.QueryRow(query, provider).Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.IsActive, &k.CreatedAt, &k.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -263,18 +355,20 @@ func (p *PostgresDB) UpsertProviderKey(pk *model.ProviderKey) error {
 		pk.ID = uuid.New()
 	}
 	query := `
-		INSERT INTO provider_keys (id, provider, api_key, is_active, updated_at)
-		VALUES ($1, $2, $3, $4, NOW())
+		INSERT INTO provider_keys (id, provider, api_key, base_url, protocol, is_active, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (provider) DO UPDATE SET
 			api_key = EXCLUDED.api_key,
+			base_url = EXCLUDED.base_url,
+			protocol = EXCLUDED.protocol,
 			is_active = EXCLUDED.is_active,
 			updated_at = NOW()
 		RETURNING created_at, updated_at`
-	return p.QueryRow(query, pk.ID, pk.Provider, pk.APIKey, pk.IsActive).Scan(&pk.CreatedAt, &pk.UpdatedAt)
+	return p.QueryRow(query, pk.ID, pk.Provider, pk.APIKey, pk.BaseURL, pk.Protocol, pk.IsActive).Scan(&pk.CreatedAt, &pk.UpdatedAt)
 }
 
 func (p *PostgresDB) ListProviderKeys() ([]model.ProviderKey, error) {
-	query := `SELECT id, provider, api_key, is_active, created_at, updated_at FROM provider_keys ORDER BY provider`
+	query := `SELECT id, provider, api_key, base_url, protocol, is_active, created_at, updated_at FROM provider_keys ORDER BY provider`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -284,7 +378,7 @@ func (p *PostgresDB) ListProviderKeys() ([]model.ProviderKey, error) {
 	var keys []model.ProviderKey
 	for rows.Next() {
 		var k model.ProviderKey
-		if err := rows.Scan(&k.ID, &k.Provider, &k.APIKey, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -313,8 +407,10 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 
 	stmt, err := tx.Prepare(`
 		INSERT INTO usage_logs 
-		(created_at, user_id, key_id, inbound_format, provider, model, prompt_tokens, completion_tokens, total_tokens, cost, ttft_ms, total_latency_ms, status_code, error_message)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`)
+		(created_at, user_id, key_id, inbound_format, provider, model, prompt_tokens, completion_tokens, total_tokens, 
+		 cached_input_tokens, reasoning_tokens, prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
+		 cost, ttft_ms, total_latency_ms, status_code, error_message)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`)
 	if err != nil {
 		return err
 	}
@@ -326,8 +422,9 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 		}
 		_, err := stmt.Exec(
 			l.CreatedAt, l.UserID, l.KeyID, l.InboundFormat, l.Provider, l.Model,
-			l.PromptTokens, l.CompletionTokens, l.TotalTokens, l.Cost,
-			l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage,
+			l.PromptTokens, l.CompletionTokens, l.TotalTokens,
+			l.CachedInputTokens, l.ReasoningTokens, l.PromptPriceUsed, l.CompletionPriceUsed, l.PricingSource, l.PricingFallback,
+			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage,
 		)
 		if err != nil {
 			return err
@@ -383,4 +480,300 @@ func (p *PostgresDB) GetUsageStats(userID *uuid.UUID, interval string, from, to 
 	}
 
 	return stats, nil
+}
+
+// ------------------------------------------------------------
+// Dashboard analytics queries (backing GET /admin/analytics/dashboard)
+// ------------------------------------------------------------
+
+func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (model.UsageTotal, error) {
+	query := `
+		SELECT
+			COUNT(*) AS total_requests,
+			COALESCE(SUM(cost), 0) AS total_cost,
+			COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
+			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
+			COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
+			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms,
+			COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2`
+
+	args := []interface{}{from, to}
+	if userID != nil {
+		query += " AND user_id = $3"
+		args = append(args, *userID)
+	}
+
+	var t model.UsageTotal
+	if err := p.QueryRow(query, args...).Scan(
+		&t.TotalRequests, &t.TotalCost, &t.SumPromptTokens, &t.SumCompletionTokens,
+		&t.AvgTTFTMs, &t.AvgLatencyMs, &t.ErrorCount,
+	); err != nil {
+		return t, err
+	}
+	if t.TotalRequests > 0 {
+		t.ErrorRate = float64(t.ErrorCount) / float64(t.TotalRequests)
+	}
+	return t, nil
+}
+
+func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from, to time.Time) ([]model.UsageSeriesPoint, error) {
+	truncUnit := "hour"
+	if interval == "day" {
+		truncUnit = "day"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			to_char(date_trunc('%s', created_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS time_bucket,
+			COUNT(*) AS total_requests,
+			COALESCE(SUM(cost), 0) AS total_cost,
+			COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
+			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
+			COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count,
+			COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
+			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2`, truncUnit)
+
+	args := []interface{}{from, to}
+	if userID != nil {
+		query += " AND user_id = $3"
+		args = append(args, *userID)
+	}
+	query += " GROUP BY time_bucket ORDER BY time_bucket ASC"
+
+	rows, err := p.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var series []model.UsageSeriesPoint
+	for rows.Next() {
+		var s model.UsageSeriesPoint
+		if err := rows.Scan(&s.TimeBucket, &s.TotalRequests, &s.TotalCost, &s.SumPromptTokens, &s.SumCompletionTokens, &s.ErrorCount, &s.AvgTTFTMs, &s.AvgLatencyMs); err != nil {
+			return nil, err
+		}
+		series = append(series, s)
+	}
+	return series, nil
+}
+
+func (p *PostgresDB) GetUsageByModel(userID *uuid.UUID, from, to time.Time) ([]model.UsageByModel, error) {
+	query := `
+		SELECT
+			provider, model,
+			COUNT(*) AS total_requests,
+			COALESCE(SUM(cost), 0) AS total_cost,
+			COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
+			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
+			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2`
+
+	args := []interface{}{from, to}
+	if userID != nil {
+		query += " AND user_id = $3"
+		args = append(args, *userID)
+	}
+	query += " GROUP BY provider, model ORDER BY total_cost DESC"
+
+	rows, err := p.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var models []model.UsageByModel
+	for rows.Next() {
+		var m model.UsageByModel
+		if err := rows.Scan(&m.Provider, &m.Model, &m.TotalRequests, &m.TotalCost, &m.SumPromptTokens, &m.SumCompletionTokens, &m.AvgLatencyMs); err != nil {
+			return nil, err
+		}
+		models = append(models, m)
+	}
+	return models, nil
+}
+
+func (p *PostgresDB) GetUsageByUser(from, to time.Time) ([]model.UsageByUser, error) {
+	query := `
+		SELECT
+			u.id::text AS user_id,
+			COALESCE(u.email, '') AS email,
+			COUNT(l.*) AS total_requests,
+			COALESCE(SUM(l.cost), 0) AS total_cost,
+			COALESCE(SUM(l.prompt_tokens), 0) AS sum_prompt_tokens,
+			COALESCE(SUM(l.completion_tokens), 0) AS sum_completion_tokens
+		FROM usage_logs l
+		JOIN users u ON u.id = l.user_id
+		WHERE l.created_at >= $1 AND l.created_at <= $2
+		GROUP BY u.id, u.email
+		ORDER BY total_cost DESC`
+
+	rows, err := p.Query(query, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []model.UsageByUser
+	for rows.Next() {
+		var u model.UsageByUser
+		if err := rows.Scan(&u.UserID, &u.Email, &u.TotalRequests, &u.TotalCost, &u.SumPromptTokens, &u.SumCompletionTokens); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+func (p *PostgresDB) GetRecentUsageLogs(limit int, from, to time.Time) ([]model.UsageRecent, error) {
+	query := `
+		SELECT
+			created_at, user_id, provider, model, status_code,
+			COALESCE(error_message, '') AS error_message,
+			COALESCE(cost, 0) AS cost,
+			COALESCE(ttft_ms, 0) AS ttft_ms,
+			COALESCE(total_latency_ms, 0) AS total_latency_ms
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2
+		ORDER BY created_at DESC
+		LIMIT $3`
+
+	rows, err := p.Query(query, from, to, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recents []model.UsageRecent
+	for rows.Next() {
+		var r model.UsageRecent
+		if err := rows.Scan(&r.CreatedAt, &r.UserID, &r.Provider, &r.Model, &r.StatusCode, &r.ErrorMessage, &r.Cost, &r.TTFTMs, &r.TotalLatencyMs); err != nil {
+			return nil, err
+		}
+		recents = append(recents, r)
+	}
+	return recents, nil
+}
+
+// ------------------------------------------------------------
+// Paginated usage logs (backing GET /admin/logs)
+// ------------------------------------------------------------
+
+// ListUsageLogs returns a page of usage_logs rows (newest first) matching the
+// filter. limit must be positive; offset may be 0.
+func (p *PostgresDB) ListUsageLogs(f model.UsageLogFilter, limit, offset int) ([]model.UsageLog, error) {
+	where, args := buildUsageLogWhere(f)
+	query := `
+		SELECT id, created_at, user_id, key_id, inbound_format, provider, model,
+		       prompt_tokens, completion_tokens, total_tokens,
+		       cached_input_tokens, reasoning_tokens,
+		       prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
+		       cost, ttft_ms, total_latency_ms, status_code,
+		       COALESCE(error_message, '') AS error_message
+		FROM usage_logs
+		WHERE ` + where + `
+		ORDER BY created_at DESC
+		LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2)
+	args = append(args, limit, offset)
+
+	rows, err := p.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []model.UsageLog
+	for rows.Next() {
+		var l model.UsageLog
+		if err := rows.Scan(
+			&l.ID, &l.CreatedAt, &l.UserID, &l.KeyID, &l.InboundFormat, &l.Provider, &l.Model,
+			&l.PromptTokens, &l.CompletionTokens, &l.TotalTokens,
+			&l.CachedInputTokens, &l.ReasoningTokens,
+			&l.PromptPriceUsed, &l.CompletionPriceUsed, &l.PricingSource, &l.PricingFallback,
+			&l.Cost, &l.TTFTMs, &l.TotalLatencyMs, &l.StatusCode,
+			&l.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, rows.Err()
+}
+
+// CountUsageLogs returns the number of rows matching the filter, for pagination.
+func (p *PostgresDB) CountUsageLogs(f model.UsageLogFilter) (int64, error) {
+	where, args := buildUsageLogWhere(f)
+	var count int64
+	if err := p.QueryRow("SELECT COUNT(*) FROM usage_logs WHERE "+where, args...).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// buildUsageLogWhere turns a UsageLogFilter into a WHERE clause fragment plus
+// its bound arguments. It always starts with 1=1 so callers can append
+// ORDER BY / LIMIT without special-casing the empty-filter case.
+func buildUsageLogWhere(f model.UsageLogFilter) (string, []interface{}) {
+	clauses := []string{"1=1"}
+	var args []interface{}
+
+	add := func(cond string, val interface{}) {
+		args = append(args, val)
+		clauses = append(clauses, fmt.Sprintf("%s = $%d", cond, len(args)))
+	}
+
+	if f.From != nil {
+		args = append(args, *f.From)
+		clauses = append(clauses, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if f.To != nil {
+		args = append(args, *f.To)
+		clauses = append(clauses, fmt.Sprintf("created_at <= $%d", len(args)))
+	}
+	if f.UserID != nil {
+		add("user_id", *f.UserID)
+	}
+	if f.Provider != "" {
+		add("provider", f.Provider)
+	}
+	if f.Model != "" {
+		add("model", f.Model)
+	}
+	if f.InboundFormat != "" {
+		add("inbound_format", f.InboundFormat)
+	}
+
+	// Status accepts an exact code ("200") or a class ("2xx"/"4xx"/"5xx").
+	if lo, hi, ok := parseStatusClass(f.Status); ok {
+		args = append(args, lo)
+		clauses = append(clauses, fmt.Sprintf("status_code >= $%d", len(args)))
+		args = append(args, hi)
+		clauses = append(clauses, fmt.Sprintf("status_code < $%d", len(args)))
+	}
+
+	return strings.Join(clauses, " AND "), args
+}
+
+// parseStatusClass interprets a status filter. "200" → (200, 201, true);
+// "2xx" → (200, 300, true); empty or unrecognized → (0, 0, false).
+func parseStatusClass(s string) (int, int, bool) {
+	if s == "" {
+		return 0, 0, false
+	}
+	if len(s) == 3 && s[1] == 'x' && s[2] == 'x' {
+		base := int(s[0] - '0')
+		if base < 1 || base > 5 {
+			return 0, 0, false
+		}
+		return base * 100, (base + 1) * 100, true
+	}
+	code, err := strconv.Atoi(s)
+	if err != nil || code < 100 || code > 599 {
+		return 0, 0, false
+	}
+	return code, code + 1, true
 }

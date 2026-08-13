@@ -17,6 +17,7 @@ import (
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/service"
+	"llm-gateway/internal/web"
 )
 
 func main() {
@@ -51,14 +52,19 @@ func main() {
 
 	gwService := service.NewGatewayService(providerClient, keyStore, costCalc, telemetryLogger, redisClient, pg)
 
+	// Refresh each provider's discovered model catalog hourly in the background
+	// so new upstream models resolve without an admin touching the UI.
+	go gwService.StartModelDiscoveryLoop(context.Background(), time.Hour)
+
 	// 5. Initialize Handlers
 	gwHandler := handler.NewGatewayHandler(authService, gwService, redisClient, pg)
-	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient)
+	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient, cfg.AdminAllowedIPs, cfg, gwService)
 
 	// 6. Router Setup: Public Gateway Mux (Port 8080)
 	publicMux := http.NewServeMux()
 	publicMux.HandleFunc("POST /v1/chat/completions", gwHandler.HandleOpenAIChatCompletions)
 	publicMux.HandleFunc("POST /v1/messages", gwHandler.HandleAnthropicMessages)
+	publicMux.HandleFunc("POST /v1/embeddings", gwHandler.HandleEmbeddings)
 	publicMux.HandleFunc("GET /v1/models", gwHandler.HandleListModels)
 	publicMux.HandleFunc("GET /v1/models/{id}", gwHandler.HandleGetModel)
 	publicMux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -69,39 +75,43 @@ func main() {
 
 	// 7. Router Setup: Admin Management Mux (Port 8081)
 	adminMux := http.NewServeMux()
+	// Only the /admin/* paths are registered as API routes: the bare paths
+	// (/users, /keys, /providers, /models, /analytics/*) are owned by the React
+	// SPA for client-side routing, so no alias is registered for them.
 	adminMux.HandleFunc("GET /admin/users", adminHandler.ListUsers)
-	adminMux.HandleFunc("GET /users", adminHandler.ListUsers)
 	adminMux.HandleFunc("POST /admin/users", adminHandler.CreateUser)
-	adminMux.HandleFunc("POST /users", adminHandler.CreateUser)
+	adminMux.HandleFunc("PATCH /admin/users", adminHandler.UpdateUser)
+	adminMux.HandleFunc("DELETE /admin/users", adminHandler.DeleteUser)
 	adminMux.HandleFunc("GET /admin/keys", adminHandler.ListAPIKeys)
-	adminMux.HandleFunc("GET /keys", adminHandler.ListAPIKeys)
 	adminMux.HandleFunc("POST /admin/keys", adminHandler.CreateAPIKey)
-	adminMux.HandleFunc("POST /keys", adminHandler.CreateAPIKey)
+	adminMux.HandleFunc("PATCH /admin/keys", adminHandler.UpdateAPIKey)
 	adminMux.HandleFunc("DELETE /admin/keys", adminHandler.RevokeAPIKey)
-	adminMux.HandleFunc("DELETE /keys", adminHandler.RevokeAPIKey)
+	adminMux.HandleFunc("POST /admin/keys/reactivate", adminHandler.ReactivateAPIKey)
 	adminMux.HandleFunc("GET /admin/providers", adminHandler.ListProviderKeys)
-	adminMux.HandleFunc("GET /providers", adminHandler.ListProviderKeys)
 	adminMux.HandleFunc("POST /admin/providers", adminHandler.SetProviderKey)
-	adminMux.HandleFunc("POST /providers", adminHandler.SetProviderKey)
 	adminMux.HandleFunc("DELETE /admin/providers", adminHandler.DeleteProviderKey)
-	adminMux.HandleFunc("DELETE /providers", adminHandler.DeleteProviderKey)
 	adminMux.HandleFunc("GET /admin/analytics/stats", adminHandler.GetUsageStats)
-	adminMux.HandleFunc("GET /analytics/stats", adminHandler.GetUsageStats)
+	adminMux.HandleFunc("GET /admin/analytics/dashboard", adminHandler.GetDashboardStats)
 	adminMux.HandleFunc("GET /admin/models", adminHandler.GetModels)
-	adminMux.HandleFunc("GET /models", adminHandler.GetModels)
+	adminMux.HandleFunc("GET /admin/models/catalog", adminHandler.GetModelCatalog)
 	adminMux.HandleFunc("POST /admin/models", adminHandler.UpsertModel)
-	adminMux.HandleFunc("POST /models", adminHandler.UpsertModel)
+	adminMux.HandleFunc("POST /admin/models/sync", adminHandler.SyncModelsFromCatalog)
+	adminMux.HandleFunc("POST /admin/models/discover", adminHandler.DiscoverModels)
 	adminMux.HandleFunc("DELETE /admin/models", adminHandler.DeleteModel)
-	adminMux.HandleFunc("DELETE /models", adminHandler.DeleteModel)
+	adminMux.HandleFunc("GET /admin/logs", adminHandler.GetUsageLogs)
+	adminMux.HandleFunc("GET /admin/system/info", adminHandler.GetSystemInfo)
 	adminMux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-admin"}`))
 	})
+	// SPA: catch-all for GET requests not matched by a specific /admin/* route.
+	// Client-side routing in the React app owns every path below this handler.
+	adminMux.Handle("/", web.Handler())
 
 	publicServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
-		Handler:      publicMux,
+		Handler:      logRequests(publicMux),
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -149,6 +159,48 @@ func main() {
 	log.Println("LLM Gateway servers stopped clean.")
 }
 
+// logRequests wraps a mux with a one-line access log so every request Claude
+// Code / SDK clients send to the public gateway is visible in `docker compose
+// logs gateway` — including calls to unregistered paths (e.g. count_tokens)
+// that never reach HandleRequest and therefore leave no telemetry trace.
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		log.Printf("HTTP %s %s -> %d (from %s)", r.Method, r.URL.Path, rec.status, r.RemoteAddr)
+	})
+}
+
+// statusRecorder captures the response status for the access log. It defaults
+// to 200 so streaming responses (which only call Write) log correctly.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	if r.status == 0 {
+		r.status = code
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	return r.ResponseWriter.Write(b)
+}
+
+// Flush preserves the underlying writer's http.Flusher so the gateway's SSE
+// streaming path (which asserts w.(http.Flusher)) keeps working behind the
+// access-log wrapper. Embedding only http.ResponseWriter would drop Flush.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // connectPostgresWithRetry waits for PostgreSQL to become available in the
 // docker-compose stack before giving up.
 func connectPostgresWithRetry(cfg *config.Config, attempts int) (*db.PostgresDB, error) {
@@ -164,4 +216,3 @@ func connectPostgresWithRetry(cfg *config.Config, attempts int) (*db.PostgresDB,
 	}
 	return nil, fmt.Errorf("postgres unavailable after %d attempts: %w", attempts, lastErr)
 }
-

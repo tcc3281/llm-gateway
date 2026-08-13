@@ -1,0 +1,12 @@
+# Exclude local build artifacts and dependencies from Docker context
+.git
+.gitignore
+.env
+*.db
+dist
+internal/web/dist
+web/node_modules
+web/dist
+cli/.venv
+cli/__pycache__
+**/*.log

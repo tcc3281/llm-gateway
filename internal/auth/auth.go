@@ -120,6 +120,45 @@ func (s *AuthService) RevokeAPIKey(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// UpdateAPIKey edits a key's name, budget, rate limit and expiry, then
+// invalidates the Redis cache so the new limits apply immediately (cached keys
+// would otherwise live up to their 10-minute TTL).
+func (s *AuthService) UpdateAPIKey(ctx context.Context, id uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, expiresAt *time.Time) error {
+	if s.pg == nil {
+		return errors.New("database unavailable")
+	}
+	key, err := s.pg.GetAPIKeyByID(id)
+	if err != nil {
+		return err
+	}
+	if err := s.pg.UpdateAPIKey(id, name, budgetLimit, rateLimitRPM, expiresAt); err != nil {
+		return err
+	}
+	if s.redis != nil {
+		_ = s.redis.DeleteCachedKey(ctx, key.KeyHash)
+	}
+	return nil
+}
+
+// ReactivateAPIKey re-enables a previously revoked key and invalidates its
+// Redis cache so the new state is authoritative.
+func (s *AuthService) ReactivateAPIKey(ctx context.Context, id uuid.UUID) error {
+	if s.pg == nil {
+		return errors.New("database unavailable")
+	}
+	key, err := s.pg.GetAPIKeyByID(id)
+	if err != nil {
+		return err
+	}
+	if err := s.pg.ReactivateAPIKey(id); err != nil {
+		return err
+	}
+	if s.redis != nil {
+		_ = s.redis.DeleteCachedKey(ctx, key.KeyHash)
+	}
+	return nil
+}
+
 func (s *AuthService) HashKey(plainKey string) string {
 	h := sha256.Sum256([]byte(plainKey))
 	return hex.EncodeToString(h[:])

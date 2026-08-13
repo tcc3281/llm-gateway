@@ -57,17 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_logs_timeseries ON usage_logs (created_at D
 CREATE INDEX IF NOT EXISTS idx_usage_logs_key ON usage_logs (key_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_model ON usage_logs (user_id, model, created_at DESC);
 
--- Seed default pricing rules (Per 1 Million tokens in USD)
-INSERT INTO model_pricings (provider, model_name, prompt_price_per_1m, completion_price_per_1m) VALUES
-    ('openai', 'gpt-4o', 2.50, 10.00),
-    ('openai', 'gpt-4o-mini', 0.15, 0.60),
-    ('openai', 'gpt-3.5-turbo', 0.50, 1.50),
-    ('anthropic', 'claude-3-5-sonnet-20240620', 3.00, 15.00),
-    ('anthropic', 'claude-3-haiku-20240307', 0.25, 1.25),
-    ('anthropic', 'claude-3-opus-20240229', 15.00, 75.00),
-    ('gemini', 'gemini-1.5-pro', 1.25, 5.00),
-    ('gemini', 'gemini-1.5-flash', 0.075, 0.30)
-ON CONFLICT (provider, model_name) DO NOTHING;
+-- No default model pricing seeded. Admin must run 'llmgw model sync' to populate catalog.
 
 -- Seed default Admin User
 INSERT INTO users (id, email, name, role) VALUES

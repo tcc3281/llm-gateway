@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LLM Gateway Analytics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary": "#ffd6a3",
+                        "primary-fixed": "#a2eeff",
+                        "on-primary": "#00363e",
+                        "outline-variant": "#3c494c",
+                        "surface": "#0e1416",
+                        "inverse-surface": "#dde4e5",
+                        "primary-container": "#22d3ee",
+                        "on-secondary-fixed": "#002113",
+                        "secondary-fixed": "#6ffbbe",
+                        "inverse-on-surface": "#2b3233",
+                        "on-secondary-fixed-variant": "#005236",
+                        "surface-container-high": "#242b2d",
+                        "on-secondary": "#003824",
+                        "surface-container-highest": "#2f3638",
+                        "secondary-container": "#00a572",
+                        "primary": "#8aebff",
+                        "inverse-primary": "#006877",
+                        "surface-variant": "#2f3638",
+                        "on-secondary-container": "#00311f",
+                        "tertiary-fixed": "#ffddb5",
+                        "on-tertiary": "#462b00",
+                        "primary-fixed-dim": "#2fd9f4",
+                        "on-primary-container": "#005763",
+                        "on-tertiary-fixed-variant": "#643f00",
+                        "on-primary-fixed": "#001f25",
+                        "on-primary-fixed-variant": "#004e5a",
+                        "on-surface-variant": "#bbc9cd",
+                        "outline": "#859397",
+                        "error-container": "#93000a",
+                        "on-error": "#690005",
+                        "surface-container": "#1a2122",
+                        "on-error-container": "#ffdad6",
+                        "on-surface": "#dde4e5",
+                        "tertiary-fixed-dim": "#ffb957",
+                        "surface-container-lowest": "#090f11",
+                        "surface-bright": "#343a3c",
+                        "surface-dim": "#0e1416",
+                        "on-tertiary-container": "#6e4600",
+                        "error": "#ffb4ab",
+                        "on-background": "#dde4e5",
+                        "background": "#0e1416",
+                        "secondary-fixed-dim": "#4edea3",
+                        "secondary": "#4edea3",
+                        "surface-container-low": "#161d1e",
+                        "on-tertiary-fixed": "#2a1800",
+                        "surface-tint": "#2fd9f4",
+                        "tertiary-container": "#ffb13b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "compact-row": "32px",
+                        "sidebar-width": "64px",
+                        "gutter": "16px",
+                        "card-gap": "20px",
+                        "unit": "4px",
+                        "container-padding": "24px",
+                        "standard-row": "48px"
+                    },
+                    "fontFamily": {
+                        "display-lg-mobile": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "data-mono": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "label-xs": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "display-lg-mobile": ["28px", { "lineHeight": "34px", "fontWeight": "700" }],
+                        "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "label-xs": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #0B0E14;
+            color: #dde4e5;
+        }
+        .bg-card {
+            background-color: #181A20;
+            border: 1px solid #2D3139;
+        }
+        .sparkline-gradient-cyan {
+            background: linear-gradient(180deg, rgba(34, 211, 238, 0.2) 0%, rgba(34, 211, 238, 0) 100%);
+        }
+        .sparkline-gradient-emerald {
+            background: linear-gradient(180deg, rgba(78, 222, 163, 0.2) 0%, rgba(78, 222, 163, 0) 100%);
+        }
+        .sparkline-gradient-purple {
+            background: linear-gradient(180deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0) 100%);
+        }
+        .sparkline-gradient-orange {
+            background: linear-gradient(180deg, rgba(249, 115, 22, 0.2) 0%, rgba(249, 115, 22, 0) 100%);
+        }
+        .chart-grid {
+            background-image: 
+                linear-gradient(to right, #1F2229 1px, transparent 1px),
+                linear-gradient(to bottom, #1F2229 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+        .table-row-border {
+            border-bottom: 1px solid #1F2229;
+        }
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0E14;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2D3139;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3c494c;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md h-screen w-full flex overflow-hidden">
+<!-- SideNavBar -->
+<nav class="bg-surface-container-lowest dark:bg-surface-container-lowest text-primary dark:text-primary font-body-md text-body-md w-sidebar-width h-full fixed left-0 top-0 border-r border-outline-variant flex flex-col h-full py-gutter px-2 z-50">
+<div class="flex flex-col items-center gap-6 mt-4 mb-8">
+<span class="material-symbols-outlined text-primary-fixed text-3xl font-display-lg" style="font-variation-settings: 'FILL' 1;">hub</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-4 w-full">
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-primary dark:text-primary-fixed bg-primary-container/10 border-l-2 border-primary active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Dashboard">
+<span class="material-symbols-outlined text-xl">dashboard</span>
+</a>
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Users">
+<span class="material-symbols-outlined text-xl">group</span>
+</a>
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Providers">
+<span class="material-symbols-outlined text-xl">account_tree</span>
+</a>
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Pricing">
+<span class="material-symbols-outlined text-xl">payments</span>
+</a>
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Settings">
+<span class="material-symbols-outlined text-xl">settings</span>
+</a>
+</div>
+<div class="flex flex-col items-center gap-4 mt-auto mb-4 w-full">
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Help">
+<span class="material-symbols-outlined text-xl">help</span>
+</a>
+<a class="w-10 h-10 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-on-surface active:scale-95 transition-transform hover:bg-surface-container-low transition-colors duration-200" href="#" title="Logout">
+<span class="material-symbols-outlined text-xl">logout</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-sidebar-width flex flex-col h-full overflow-hidden">
+<!-- TopAppBar -->
+<header class="bg-surface-container dark:bg-surface-container text-primary dark:text-primary docked full-width top-0 sticky border-b border-outline-variant flex justify-between items-center h-standard-row px-container-padding w-full z-40 shrink-0">
+<div class="flex items-center gap-4">
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">LLM Gateway Analytics</h1>
+<span class="font-label-xs text-label-xs text-secondary-fixed bg-secondary-fixed/10 border border-secondary-fixed/30 px-2 py-0.5 rounded-[2px]">[ACTIVE]</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2">
+<button class="text-on-surface-variant hover:text-primary-fixed transition-colors cursor-pointer active:opacity-80 p-2 rounded-full hover:bg-surface-container-high">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary-fixed transition-colors cursor-pointer active:opacity-80 p-2 rounded-full hover:bg-surface-container-high">
+<span class="material-symbols-outlined">hub</span>
+</button>
+</div>
+<div class="h-6 w-[1px] bg-outline-variant mx-2"></div>
+<button class="flex items-center gap-2 text-on-surface-variant hover:text-primary-fixed transition-colors cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined text-xl">account_circle</span>
+<span class="font-label-xs text-label-xs uppercase">Profile</span>
+<span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+</div>
+</header>
+<!-- Dashboard Content -->
+<div class="flex-1 overflow-y-auto p-container-padding">
+<div class="max-w-[1600px] mx-auto flex flex-col gap-card-gap">
+<!-- Sub Navigation / Filters -->
+<div class="flex justify-between items-center border-b border-outline-variant pb-2">
+<div class="flex gap-6">
+<button class="text-primary font-bold border-b-2 border-primary pb-1 font-label-xs text-label-xs uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">dashboard</span>
+                            Dashboard
+                        </button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors pb-1 font-label-xs text-label-xs uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">hub</span>
+                            Models
+                        </button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors pb-1 font-label-xs text-label-xs uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">account_tree</span>
+                            Providers
+                        </button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors pb-1 font-label-xs text-label-xs uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">article</span>
+                            Logs
+                        </button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors pb-1 font-label-xs text-label-xs uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">settings</span>
+                            Settings
+                        </button>
+</div>
+<div>
+<button class="bg-surface-container-high border border-outline-variant rounded-DEFAULT px-3 py-1.5 flex items-center gap-2 text-on-surface font-body-md text-body-md hover:border-primary-fixed transition-colors">
+                            Past 24 Hours
+                            <span class="material-symbols-outlined text-sm">expand_more</span>
+</button>
+</div>
+</div>
+<!-- KPI Cards Row -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-card-gap">
+<!-- Total Requests -->
+<div class="bg-card rounded-lg p-5 relative overflow-hidden group">
+<div class="flex justify-between items-start mb-2 relative z-10">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface-variant">Total Requests</h3>
+<span class="font-data-mono text-[12px] text-secondary-fixed bg-secondary-fixed/10 px-1.5 py-0.5 rounded-[2px] border border-secondary-fixed/20">+8.2%</span>
+</div>
+<div class="font-headline-md text-display-lg-mobile text-on-surface font-bold relative z-10">124.8K</div>
+<div class="absolute bottom-0 left-0 w-full h-16 sparkline-gradient-cyan">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 30">
+<path d="M0,25 C10,25 15,20 25,22 C35,24 40,15 50,18 C60,21 65,10 75,15 C85,20 90,5 100,8 L100,30 L0,30 Z" fill="rgba(34,211,238,0.1)"></path>
+<path class="group-hover:stroke-[3px] transition-all" d="M0,25 C10,25 15,20 25,22 C35,24 40,15 50,18 C60,21 65,10 75,15 C85,20 90,5 100,8" fill="none" stroke="#22D3EE" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+<!-- Total Cost -->
+<div class="bg-card rounded-lg p-5 relative overflow-hidden group">
+<div class="flex justify-between items-start mb-2 relative z-10">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface-variant">Total Cost</h3>
+<span class="font-data-mono text-[12px] text-secondary-fixed bg-secondary-fixed/10 px-1.5 py-0.5 rounded-[2px] border border-secondary-fixed/20">+12.4%</span>
+</div>
+<div class="font-headline-md text-display-lg-mobile text-on-surface font-bold relative z-10">$2,389.15</div>
+<div class="absolute bottom-0 left-0 w-full h-16 sparkline-gradient-emerald">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 30">
+<path d="M0,28 C15,25 20,20 30,22 C40,24 45,15 55,18 C65,21 70,12 80,10 C90,8 95,5 100,2 L100,30 L0,30 Z" fill="rgba(78,222,163,0.1)"></path>
+<path class="group-hover:stroke-[3px] transition-all" d="M0,28 C15,25 20,20 30,22 C40,24 45,15 55,18 C65,21 70,12 80,10 C90,8 95,5 100,2" fill="none" stroke="#4edea3" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+<!-- Avg Latency -->
+<div class="bg-card rounded-lg p-5 relative overflow-hidden group">
+<div class="flex justify-between items-start mb-2 relative z-10">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface-variant">Avg Latency</h3>
+<span class="font-data-mono text-[12px] text-secondary-fixed bg-secondary-fixed/10 px-1.5 py-0.5 rounded-[2px] border border-secondary-fixed/20">-3.5%</span>
+</div>
+<div class="font-headline-md text-display-lg-mobile text-on-surface font-bold relative z-10">215 ms</div>
+<div class="absolute bottom-0 left-0 w-full h-16 sparkline-gradient-purple">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 30">
+<path d="M0,15 C10,12 15,25 25,25 C35,25 40,20 50,22 C60,24 65,26 75,28 C85,30 90,25 100,26 L100,30 L0,30 Z" fill="rgba(168,85,247,0.1)"></path>
+<path class="group-hover:stroke-[3px] transition-all" d="M0,15 C10,12 15,25 25,25 C35,25 40,20 50,22 C60,24 65,26 75,28 C85,30 90,25 100,26" fill="none" stroke="#a855f7" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+<!-- Error Rate -->
+<div class="bg-card rounded-lg p-5 relative overflow-hidden group">
+<div class="flex justify-between items-start mb-2 relative z-10">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface-variant">Error Rate</h3>
+<span class="font-data-mono text-[12px] text-tertiary-fixed-dim bg-tertiary-fixed-dim/10 px-1.5 py-0.5 rounded-[2px] border border-tertiary-fixed-dim/20">-1.1%</span>
+</div>
+<div class="font-headline-md text-display-lg-mobile text-on-surface font-bold relative z-10">0.19%</div>
+<div class="absolute bottom-0 left-0 w-full h-16 sparkline-gradient-orange">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 30">
+<path d="M0,5 C10,15 15,22 25,25 C35,28 40,27 50,28 C60,29 65,28 75,28 C85,28 90,26 100,24 L100,30 L0,30 Z" fill="rgba(249,115,22,0.1)"></path>
+<path class="group-hover:stroke-[3px] transition-all" d="M0,5 C10,15 15,22 25,25 C35,28 40,27 50,28 C60,29 65,28 75,28 C85,28 90,26 100,24" fill="none" stroke="#f97316" stroke-width="2"></path>
+</svg>
+</div>
+</div>
+</div>
+<!-- Middle Row: Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-card-gap">
+<!-- Traffic Area Chart -->
+<div class="bg-card rounded-lg p-6 lg:col-span-8 flex flex-col min-h-[300px]">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface mb-6">Hourly Gateway Traffic (Past 24 Hours)</h3>
+<div class="flex-1 relative chart-grid border-l border-b border-outline-variant/30 flex items-end">
+<!-- Y-axis labels -->
+<div class="absolute -left-10 top-0 bottom-0 flex flex-col justify-between text-right w-8 font-data-mono text-[10px] text-on-surface-variant py-2">
+<span>10.0K</span>
+<span>8.4K</span>
+<span>6.4K</span>
+<span>4.4K</span>
+<span>2.0K</span>
+<span>0</span>
+</div>
+<!-- X-axis labels -->
+<div class="absolute -bottom-6 left-0 right-0 flex justify-between font-data-mono text-[10px] text-on-surface-variant px-2">
+<span>00:00</span>
+<span>04:00</span>
+<span>08:00</span>
+<span>12:00</span>
+<span>16:00</span>
+<span>20:00</span>
+<span>24:00</span>
+</div>
+<!-- Area Chart SVG -->
+<svg class="w-full h-full absolute inset-0 overflow-visible" preserveaspectratio="none" viewbox="0 0 100 100">
+<defs>
+<lineargradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="rgba(34, 211, 238, 0.4)"></stop>
+<stop offset="100%" stop-color="rgba(34, 211, 238, 0.0)"></stop>
+</lineargradient>
+</defs>
+<path d="M0,80 C10,90 15,95 20,85 C25,65 30,50 40,55 C45,58 50,15 55,20 C60,35 65,55 70,50 C80,40 85,35 95,65 L100,80 L100,100 L0,100 Z" fill="url(#areaGradient)"></path>
+<path d="M0,80 C10,90 15,95 20,85 C25,65 30,50 40,55 C45,58 50,15 55,20 C60,35 65,55 70,50 C80,40 85,35 95,65 L100,80" fill="none" stroke="#22D3EE" stroke-width="1.5"></path>
+<!-- Tooltip point -->
+<circle cx="55" cy="20" fill="#fff" r="2" stroke="#22D3EE" stroke-width="1"></circle>
+<line stroke="#859397" stroke-dasharray="2,2" stroke-width="0.5" x1="55" x2="55" y1="20" y2="100"></line>
+</svg>
+<!-- Tooltip -->
+<div class="absolute bg-surface-container-highest border border-outline-variant rounded px-2 py-1 text-center" style="left: 55%; top: 5%; transform: translate(-50%, -100%);">
+<div class="font-data-mono text-[10px] text-on-surface">8.4K @ 14:00</div>
+</div>
+</div>
+</div>
+<!-- Model Distribution -->
+<div class="bg-card rounded-lg p-6 lg:col-span-4 flex flex-col">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface mb-6">Model Distribution</h3>
+<div class="flex flex-col gap-5 flex-1 justify-center">
+<!-- GPT-4o -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="font-body-md text-sm text-on-surface">GPT-4o</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">42%, 52.4K</span>
+</div>
+<div class="h-2 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary-container" style="width: 42%;"></div>
+</div>
+</div>
+<!-- Claude 3.5 -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="font-body-md text-sm text-on-surface">Claude 3.5 Sonnet</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">28%, 34.9K</span>
+</div>
+<div class="h-2 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-indigo-400" style="width: 28%;"></div>
+</div>
+</div>
+<!-- Llama 3 -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="font-body-md text-sm text-on-surface">Llama 3 70B</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">15%, 18.7K</span>
+</div>
+<div class="h-2 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-purple-400" style="width: 15%;"></div>
+</div>
+</div>
+<!-- Gemini -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="font-body-md text-sm text-on-surface">Gemini 1.5 Pro</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">10%, 12.5K</span>
+</div>
+<div class="h-2 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-pink-400" style="width: 10%;"></div>
+</div>
+</div>
+<!-- Mistral -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="font-body-md text-sm text-on-surface">Mistral Large</span>
+<span class="font-data-mono text-[11px] text-on-surface-variant">5%, 6.2K</span>
+</div>
+<div class="h-2 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-orange-400" style="width: 5%;"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Row: Table -->
+<div class="bg-card rounded-lg flex flex-col overflow-hidden border border-outline-variant">
+<div class="p-5 border-b border-outline-variant flex justify-between items-center bg-surface-container/50">
+<h3 class="font-label-xs text-label-xs uppercase text-on-surface">Recent Request Stream</h3>
+<button class="font-data-mono text-[11px] text-primary hover:text-primary-fixed transition-colors">VIEW ALL LOGS</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="font-label-xs text-label-xs uppercase text-on-surface-variant border-b border-outline-variant bg-surface-container-lowest/50">
+<th class="px-5 py-3 font-bold">Request ID</th>
+<th class="px-5 py-3 font-bold">Timestamp</th>
+<th class="px-5 py-3 font-bold">Model</th>
+<th class="px-5 py-3 font-bold">Provider</th>
+<th class="px-5 py-3 font-bold">Tokens (In/Out)</th>
+<th class="px-5 py-3 font-bold">Latency (ms)</th>
+<th class="px-5 py-3 font-bold">Cost</th>
+<th class="px-5 py-3 font-bold text-right">Status</th>
+</tr>
+</thead>
+<tbody class="font-data-mono text-[13px] text-on-surface">
+<tr class="table-row-border hover:bg-surface-container-high/30 transition-colors">
+<td class="px-5 py-3 text-primary-fixed">req-e4f8a</td>
+<td class="px-5 py-3 text-on-surface-variant">14:32:05</td>
+<td class="px-5 py-3">GPT-4o</td>
+<td class="px-5 py-3">OpenAI</td>
+<td class="px-5 py-3">850 / 420</td>
+<td class="px-5 py-3">280ms</td>
+<td class="px-5 py-3">$0.0145</td>
+<td class="px-5 py-3 text-right">
+<span class="text-secondary-fixed bg-secondary-fixed/10 border border-secondary-fixed/30 px-2 py-0.5 rounded-[2px] text-[11px]">[SUCCESS]</span>
+</td>
+</tr>
+<tr class="table-row-border hover:bg-surface-container-high/30 transition-colors">
+<td class="px-5 py-3 text-primary-fixed">req-b2a1c</td>
+<td class="px-5 py-3 text-on-surface-variant">14:31:52</td>
+<td class="px-5 py-3">Claude 3.5</td>
+<td class="px-5 py-3">Anthropic</td>
+<td class="px-5 py-3">1.2K / 980</td>
+<td class="px-5 py-3">410ms</td>
+<td class="px-5 py-3">$0.0112</td>
+<td class="px-5 py-3 text-right">
+<span class="text-secondary-fixed bg-secondary-fixed/10 border border-secondary-fixed/30 px-2 py-0.5 rounded-[2px] text-[11px]">[SUCCESS]</span>
+</td>
+</tr>
+<tr class="table-row-border hover:bg-surface-container-high/30 transition-colors">
+<td class="px-5 py-3 text-primary-fixed">req-9c0d1</td>
+<td class="px-5 py-3 text-on-surface-variant">14:31:40</td>
+<td class="px-5 py-3">Llama 3 70B</td>
+<td class="px-5 py-3">Groq</td>
+<td class="px-5 py-3">450 / 120</td>
+<td class="px-5 py-3">115ms</td>
+<td class="px-5 py-3">$0.0031</td>
+<td class="px-5 py-3 text-right">
+<span class="text-secondary-fixed bg-secondary-fixed/10 border border-secondary-fixed/30 px-2 py-0.5 rounded-[2px] text-[11px]">[SUCCESS]</span>
+</td>
+</tr>
+<tr class="table-row-border hover:bg-surface-container-high/30 transition-colors">
+<td class="px-5 py-3 text-primary-fixed">req-f7x9p</td>
+<td class="px-5 py-3 text-on-surface-variant">14:30:12</td>
+<td class="px-5 py-3">GPT-4o</td>
+<td class="px-5 py-3">Azure</td>
+<td class="px-5 py-3">2.1K / 0</td>
+<td class="px-5 py-3">5020ms</td>
+<td class="px-5 py-3">$0.0000</td>
+<td class="px-5 py-3 text-right">
+<span class="text-error bg-error/10 border border-error/30 px-2 py-0.5 rounded-[2px] text-[11px]">[TIMEOUT]</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-high/30 transition-colors">
+<td class="px-5 py-3 text-primary-fixed">req-a1m4k</td>
+<td class="px-5 py-3 text-on-surface-variant">14:29:45</td>
+<td class="px-5 py-3">Gemini 1.5</td>
+<td class="px-5 py-3">Google</td>
+<td class="px-5 py-3">920 / 310</td>
+<td class="px-5 py-3">340ms</td>
+<td class="px-5 py-3">$0.0085</td>
+<td class="px-5 py-3 text-right">
+<span class="text-secondary-fixed bg-secondary-fixed/10 border border-secondary-fixed/30 px-2 py-0.5 rounded-[2px] text-[11px]">[SUCCESS]</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

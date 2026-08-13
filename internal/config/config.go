@@ -20,23 +20,25 @@ type Config struct {
 	RedisPass         string
 	AdminAPIKey       string
 	ProviderMasterKey string // encrypts provider keys at rest; empty = plaintext (dev only)
+	AdminAllowedIPs   string // comma-separated allowed IPs or CIDR blocks
 }
 
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		Port:         getEnv("PORT", "8080"),
-		AdminPort:    getEnv("ADMIN_PORT", "8081"),
-		Env:          getEnv("ENV", "development"),
-		DBHost:       getEnv("DB_HOST", "localhost"),
-		DBPort:       getEnv("DB_PORT", "5432"),
-		DBUser:       getEnv("DB_USER", "llm_user"),
-		DBPassword:   getEnv("DB_PASSWORD", "llm_password"),
-		DBName:       getEnv("DB_NAME", "llm_gateway"),
-		DBSSLMode:    getEnv("DB_SSLMODE", "disable"),
+		Port:              getEnv("PORT", "8080"),
+		AdminPort:         getEnv("ADMIN_PORT", "8081"),
+		Env:               getEnv("ENV", "development"),
+		DBHost:            getEnv("DB_HOST", "localhost"),
+		DBPort:            getEnv("DB_PORT", "5432"),
+		DBUser:            getEnv("DB_USER", "llm_user"),
+		DBPassword:        getEnv("DB_PASSWORD", "llm_password"),
+		DBName:            getEnv("DB_NAME", "llm_gateway"),
+		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
 		RedisHost:         getEnv("REDIS_HOST", "localhost:6379"),
 		RedisPass:         getEnv("REDIS_PASSWORD", ""),
 		AdminAPIKey:       getEnv("ADMIN_API_KEY", "sk-admin-secret-key-change-me"),
 		ProviderMasterKey: getEnv("PROVIDER_MASTER_KEY", ""),
+		AdminAllowedIPs:   getEnv("ADMIN_ALLOWED_IPS", ""),
 	}
 
 	return cfg, nil

@@ -67,6 +67,33 @@ func (h *GatewayHandler) HandleOpenAIChatCompletions(w http.ResponseWriter, r *h
 	}
 }
 
+// OpenAI Compatible Endpoint: POST /v1/embeddings
+func (h *GatewayHandler) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
+	apiKey, gateErr := h.authenticate(r)
+	if gateErr != nil {
+		WriteErrorResponse(w, "openai", gateErr.StatusCode, gateErr.Message, gateErr.Type, gateErr.Code)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		WriteErrorResponse(w, "openai", http.StatusBadRequest, "Failed to read request body", "invalid_request_error", "bad_request")
+		return
+	}
+
+	params := service.ProxyParams{
+		InboundFormat:  "openai",
+		RequestBody:    body,
+		ApiKey:         apiKey,
+		UpstreamAPIKey: r.Header.Get("x-upstream-api-key"),
+		ResponseWriter: w,
+	}
+
+	if err := h.gwService.HandleEmbeddings(r.Context(), params); err != nil {
+		h.writeServiceError(w, "openai", err)
+	}
+}
+
 // Anthropic Compatible Endpoint: POST /v1/messages
 func (h *GatewayHandler) HandleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	apiKey, gateErr := h.authenticate(r)
@@ -93,7 +120,6 @@ func (h *GatewayHandler) HandleAnthropicMessages(w http.ResponseWriter, r *http.
 		h.writeServiceError(w, "anthropic", err)
 	}
 }
-
 
 // OpenAI Models Endpoint: GET /v1/models (auth required, live provider list)
 func (h *GatewayHandler) HandleListModels(w http.ResponseWriter, r *http.Request) {
@@ -175,8 +201,6 @@ func (h *GatewayHandler) HandleGetModel(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-
-
 func (h *GatewayHandler) authenticate(r *http.Request) (*model.APIKey, *GateErr) {
 	authHeader := r.Header.Get("Authorization")
 	plainKey := ""
@@ -236,12 +260,17 @@ func (h *GatewayHandler) authenticate(r *http.Request) (*model.APIKey, *GateErr)
 
 // writeServiceError maps gateway service errors to the client's protocol format.
 // A missing provider key is surfaced as 503 Service Unavailable so operators
-// can distinguish "gateway misconfigured" from "upstream failed".
+// can distinguish "gateway misconfigured" from "upstream failed". A model that
+// is not in the registry is surfaced as 404 model_not_found — the gateway never
+// guesses an upstream from the model-name prefix.
 func (h *GatewayHandler) writeServiceError(w http.ResponseWriter, inboundFormat string, err error) {
+	if service.IsUnknownModelError(err) {
+		WriteErrorResponse(w, inboundFormat, http.StatusNotFound, err.Error(), "invalid_request_error", "model_not_found")
+		return
+	}
 	if service.IsProviderKeyError(err) {
 		WriteErrorResponse(w, inboundFormat, http.StatusServiceUnavailable, err.Error(), "api_error", "provider_key_missing")
 		return
 	}
 	WriteErrorResponse(w, inboundFormat, http.StatusInternalServerError, err.Error(), "api_error", "internal_error")
 }
-

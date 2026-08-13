@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LLM Gateway Analytics - Providers</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary": "#ffd6a3",
+                        "primary-fixed": "#a2eeff",
+                        "on-primary": "#00363e",
+                        "outline-variant": "#3c494c",
+                        "surface": "#0e1416",
+                        "inverse-surface": "#dde4e5",
+                        "primary-container": "#22d3ee",
+                        "on-secondary-fixed": "#002113",
+                        "secondary-fixed": "#6ffbbe",
+                        "inverse-on-surface": "#2b3233",
+                        "on-secondary-fixed-variant": "#005236",
+                        "surface-container-high": "#242b2d",
+                        "on-secondary": "#003824",
+                        "surface-container-highest": "#2f3638",
+                        "secondary-container": "#00a572",
+                        "primary": "#8aebff",
+                        "inverse-primary": "#006877",
+                        "surface-variant": "#2f3638",
+                        "on-secondary-container": "#00311f",
+                        "tertiary-fixed": "#ffddb5",
+                        "on-tertiary": "#462b00",
+                        "primary-fixed-dim": "#2fd9f4",
+                        "on-primary-container": "#005763",
+                        "on-tertiary-fixed-variant": "#643f00",
+                        "on-primary-fixed": "#001f25",
+                        "on-primary-fixed-variant": "#004e5a",
+                        "on-surface-variant": "#bbc9cd",
+                        "outline": "#859397",
+                        "error-container": "#93000a",
+                        "on-error": "#690005",
+                        "surface-container": "#1a2122",
+                        "on-error-container": "#ffdad6",
+                        "on-surface": "#dde4e5",
+                        "tertiary-fixed-dim": "#ffb957",
+                        "surface-container-lowest": "#090f11",
+                        "surface-bright": "#343a3c",
+                        "surface-dim": "#0e1416",
+                        "on-tertiary-container": "#6e4600",
+                        "error": "#ffb4ab",
+                        "on-background": "#dde4e5",
+                        "background": "#0e1416",
+                        "secondary-fixed-dim": "#4edea3",
+                        "secondary": "#4edea3",
+                        "surface-container-low": "#161d1e",
+                        "on-tertiary-fixed": "#2a1800",
+                        "surface-tint": "#2fd9f4",
+                        "tertiary-container": "#ffb13b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "compact-row": "32px",
+                        "sidebar-width": "64px", // Slim sidebar width adjusted
+                        "gutter": "16px",
+                        "card-gap": "20px",
+                        "unit": "4px",
+                        "container-padding": "24px",
+                        "standard-row": "48px"
+                    },
+                    "fontFamily": {
+                        "display-lg-mobile": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "data-mono": ["JetBrains Mono"],
+                        "headline-md": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "label-xs": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "display-lg-mobile": ["28px", { "lineHeight": "34px", "fontWeight": "700" }],
+                        "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "label-xs": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #0e1416; color: #dde4e5; font-family: 'Inter', sans-serif; }
+        .tech-border { border: 1px solid #3c494c; }
+        .tech-input:focus { border-color: #22d3ee; box-shadow: 0 0 5px rgba(34, 211, 238, 0.5); outline: none; }
+        .nav-glow.active { background: rgba(34, 211, 238, 0.1); border-left: 2px solid #8aebff; color: #8aebff; }
+        .status-badge { padding: 2px 6px; border-radius: 2px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+        .status-active { color: #4edea3; background: rgba(78, 222, 163, 0.1); border: 1px solid #4edea3; }
+        .status-inactive { color: #ffb4ab; background: rgba(255, 180, 171, 0.1); border: 1px solid #ffb4ab; }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden bg-background">
+<!-- SideNavBar -->
+<nav class="w-sidebar-width h-full fixed left-0 top-0 bg-surface-container-lowest dark:bg-surface-container-lowest border-r border-outline-variant flex flex-col py-gutter px-2 z-50">
+<div class="flex items-center justify-center mb-8 h-12">
+<span class="material-symbols-outlined text-primary-fixed text-3xl font-display-lg" data-icon="hub">hub</span>
+</div>
+<div class="flex-1 flex flex-col gap-2">
+<!-- Inactive -->
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-200 active:scale-95 transition-transform" href="#" title="Dashboard">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+</a>
+<!-- Inactive -->
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-200 active:scale-95 transition-transform" href="#" title="Users">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+</a>
+<!-- Active: Providers -->
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-primary dark:text-primary-fixed bg-primary-container/10 border-l-2 border-primary active:scale-95 transition-transform" href="#" title="Providers">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+</a>
+<!-- Inactive -->
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-200 active:scale-95 transition-transform" href="#" title="Pricing">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+</a>
+<!-- Inactive -->
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-200 active:scale-95 transition-transform" href="#" title="Settings">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</a>
+</div>
+<div class="flex flex-col gap-2 mt-auto">
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-200 active:scale-95 transition-transform" href="#" title="Help">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</a>
+<a class="flex items-center justify-center h-12 w-12 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors duration-200 active:scale-95 transition-transform" href="#" title="Logout">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+</a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col ml-sidebar-width overflow-hidden">
+<!-- TopAppBar -->
+<header class="bg-surface-container dark:bg-surface-container flex justify-between items-center h-standard-row px-container-padding w-full border-b border-outline-variant sticky top-0 z-40">
+<div class="flex items-center gap-4">
+<h1 class="font-headline-md text-headline-md font-bold text-on-surface">LLM Gateway Analytics</h1>
+<span class="status-badge status-active">[ACTIVE]</span>
+</div>
+<!-- Secondary Navigation / Tabs within TopBar (Optional context) -->
+<div class="hidden md:flex gap-6 items-end h-full pt-2">
+<a class="text-on-surface-variant text-body-md hover:text-primary-fixed transition-colors pb-1 border-b-2 border-transparent" href="#">Dashboard</a>
+<a class="text-on-surface-variant text-body-md hover:text-primary-fixed transition-colors pb-1 border-b-2 border-transparent" href="#">Models</a>
+<a class="text-primary font-bold border-b-2 border-primary pb-1 text-body-md" href="#">Providers</a>
+<a class="text-on-surface-variant text-body-md hover:text-primary-fixed transition-colors pb-1 border-b-2 border-transparent" href="#">Logs</a>
+<a class="text-on-surface-variant text-body-md hover:text-primary-fixed transition-colors pb-1 border-b-2 border-transparent" href="#">Settings</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-primary-fixed transition-colors cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<div class="flex items-center gap-2 cursor-pointer hover:opacity-80">
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center tech-border">
+<span class="material-symbols-outlined text-sm" data-icon="person">person</span>
+</div>
+<span class="font-label-xs text-label-xs text-on-surface uppercase">Profile</span>
+<span class="material-symbols-outlined text-sm text-on-surface-variant" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</header>
+<!-- Canvas -->
+<main class="flex-1 overflow-y-auto p-container-padding bg-background">
+<div class="max-w-6xl mx-auto space-y-6">
+<!-- Header Section -->
+<div class="flex justify-between items-end mb-8">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-1">Provider Configuration</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Manage API keys, endpoints, and routing logic for connected LLM providers.</p>
+</div>
+<div class="flex gap-4">
+<button class="bg-surface-variant text-on-surface tech-border px-4 py-2 rounded font-body-md text-body-md hover:bg-surface-container-high transition-colors">Test Connections</button>
+<button class="bg-primary-container text-black px-4 py-2 rounded font-body-md text-body-md font-medium hover:bg-primary-fixed-dim transition-colors">+ Add Provider</button>
+</div>
+</div>
+<!-- Global Routing Logic Card -->
+<div class="bg-surface-container rounded-lg p-6 tech-border">
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-4 border-b border-outline-variant pb-2">Global Routing Logic</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-2">Default Provider</label>
+<select class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-body-md text-body-md tech-input">
+<option>OpenAI</option>
+<option>Anthropic</option>
+<option>Gemini</option>
+<option>Groq</option>
+</select>
+<p class="font-body-md text-xs text-on-surface-variant mt-1">Used when no specific model is requested.</p>
+</div>
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-2">Fallback Logic</label>
+<select class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-body-md text-body-md tech-input">
+<option>Next Available (Lowest Latency)</option>
+<option>Next Available (Lowest Cost)</option>
+<option>Fail Fast</option>
+</select>
+<p class="font-body-md text-xs text-on-surface-variant mt-1">Behavior when primary provider fails or rate limits.</p>
+</div>
+</div>
+</div>
+<!-- Providers Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-card-gap">
+<!-- Provider: OpenAI -->
+<div class="bg-surface-container rounded-lg p-6 tech-border flex flex-col">
+<div class="flex justify-between items-center mb-4 border-b border-outline-variant pb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-dim tech-border rounded flex items-center justify-center">
+<!-- Using placeholder for provider logo -->
+<img class="w-6 h-6 object-contain" data-alt="A minimalist, high-contrast monochrome logo representing OpenAI, set against a dark slate background, designed with sharp geometric lines suitable for a technical developer interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAUbTyDowm_4ROEPa3aXVksLuemNNMq8754sv0B5YEtjC_VTEmvhH-1YQYT8vo4V2aZyMH_yDwrK4XCHhrfmolgbi0E10OHv7A1z3xYtnAa8zrphUp9E-1d-tD07JyORmPPvFYDO1sXQxt3TAldd921dHR686JXIttBX0mi4EjOWMVyws9fxbZnEcqb9VX9G7NvtZKpN5Dp-Kbrid87T9R0cwvoX6poKBT2_gxqpSCRzsD2D4kedsmVww"/>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">OpenAI</h3>
+</div>
+<span class="status-badge status-active">[ACTIVE]</span>
+</div>
+<div class="space-y-4 flex-1">
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">API Key</label>
+<div class="relative">
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input pr-10" readonly="" type="password" value="sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+<button class="absolute right-2 top-2 text-on-surface-variant hover:text-primary-fixed">
+<span class="material-symbols-outlined text-sm" data-icon="visibility_off">visibility_off</span>
+</button>
+</div>
+</div>
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">Endpoint URL</label>
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input" type="text" value="https://api.openai.com/v1"/>
+</div>
+<div class="pt-2">
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="rounded bg-surface-dim border-outline-variant text-primary-container focus:ring-primary-container focus:ring-offset-surface-container" type="checkbox"/>
+<span class="font-body-md text-body-md text-on-surface">Enable streaming responses</span>
+</label>
+</div>
+</div>
+<div class="mt-6 flex justify-end gap-3 border-t border-outline-variant pt-4">
+<button class="px-4 py-2 rounded text-on-surface-variant font-body-md text-body-md hover:text-on-surface transition-colors">Cancel</button>
+<button class="px-4 py-2 rounded bg-surface-variant tech-border text-on-surface font-body-md text-body-md hover:border-primary-container hover:text-primary-container transition-colors">Save Changes</button>
+</div>
+</div>
+<!-- Provider: Anthropic -->
+<div class="bg-surface-container rounded-lg p-6 tech-border flex flex-col">
+<div class="flex justify-between items-center mb-4 border-b border-outline-variant pb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-dim tech-border rounded flex items-center justify-center">
+<img class="w-6 h-6 object-contain" data-alt="A minimalist, high-contrast monochrome logo representing Anthropic, set against a dark slate background, designed with sharp geometric lines suitable for a technical developer interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB_BLrmeuwjgRwSi2e2LxRFIrY9CxM8YHy4z-E3QIzh_-pftds5my9k4xwAIXpSJc5BMrmVbfyHaEhzs569ggbE4YfQRdN3lzrx5G587Bxs-Eke1mODol8VswHmIJK6DUsQxbVbLqABc2zr6vMx6NXLznpYDBPNyIse9J1z2l0zfmoy_UMw9Is4UH9L9S5V77rXh4ZCH2kPAam61oiSkbpUjrYzErb6ULAlnXTz3j4nyO70z0jCJfRB0Q"/>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Anthropic</h3>
+</div>
+<span class="status-badge status-active">[ACTIVE]</span>
+</div>
+<div class="space-y-4 flex-1">
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">API Key</label>
+<div class="relative">
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input pr-10" readonly="" type="password" value="sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"/>
+<button class="absolute right-2 top-2 text-on-surface-variant hover:text-primary-fixed">
+<span class="material-symbols-outlined text-sm" data-icon="visibility_off">visibility_off</span>
+</button>
+</div>
+</div>
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">Endpoint URL</label>
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input" type="text" value="https://api.anthropic.com/v1"/>
+</div>
+<div class="pt-2">
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="rounded bg-surface-dim border-outline-variant text-primary-container focus:ring-primary-container focus:ring-offset-surface-container" type="checkbox"/>
+<span class="font-body-md text-body-md text-on-surface">Enable streaming responses</span>
+</label>
+</div>
+</div>
+<div class="mt-6 flex justify-end gap-3 border-t border-outline-variant pt-4">
+<button class="px-4 py-2 rounded text-on-surface-variant font-body-md text-body-md hover:text-on-surface transition-colors">Cancel</button>
+<button class="px-4 py-2 rounded bg-surface-variant tech-border text-on-surface font-body-md text-body-md hover:border-primary-container hover:text-primary-container transition-colors">Save Changes</button>
+</div>
+</div>
+<!-- Provider: Gemini -->
+<div class="bg-surface-container rounded-lg p-6 tech-border flex flex-col opacity-75 grayscale hover:grayscale-0 hover:opacity-100 transition-all duration-300">
+<div class="flex justify-between items-center mb-4 border-b border-outline-variant pb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-dim tech-border rounded flex items-center justify-center">
+<img class="w-6 h-6 object-contain" data-alt="A minimalist, high-contrast monochrome logo representing Google Gemini, set against a dark slate background, designed with sharp geometric lines suitable for a technical developer interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBoGv5ldwe4FkwJ3kSiW-ki4A-3ZRPlZFjTDth6GPmrm21a4zQTCkJ3sTs0VE9oBkPzWptohR3CsxX2Et_EFgQDok6cCVzQJJZ68pBucnkjHauB-sDsYF7zaGxWWZ5pjbeES_CzlQ87stCTpgjDm3B-WrnH5u5oybWRBQiOCKBIfaQvMln8hcugInTmx7No5uR8kWH0tckBoeXxhEPcD0fM0WGLW9QQPSCTtzTd25JA053swQnQ0_DFnw"/>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Gemini</h3>
+</div>
+<span class="status-badge status-inactive">[INACTIVE]</span>
+</div>
+<div class="space-y-4 flex-1">
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">API Key</label>
+<div class="relative">
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input pr-10" placeholder="Enter API Key" type="password"/>
+</div>
+</div>
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">Endpoint URL</label>
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input text-on-surface-variant" type="text" value="https://generativelanguage.googleapis.com/v1beta"/>
+</div>
+<div class="pt-2">
+<label class="flex items-center gap-2 cursor-pointer opacity-50">
+<input class="rounded bg-surface-dim border-outline-variant text-primary-container focus:ring-primary-container focus:ring-offset-surface-container" disabled="" type="checkbox"/>
+<span class="font-body-md text-body-md text-on-surface">Enable streaming responses</span>
+</label>
+</div>
+</div>
+<div class="mt-6 flex justify-end gap-3 border-t border-outline-variant pt-4">
+<button class="px-4 py-2 rounded bg-surface-variant tech-border text-on-surface font-body-md text-body-md hover:border-primary-container hover:text-primary-container transition-colors">Configure</button>
+</div>
+</div>
+<!-- Provider: Groq -->
+<div class="bg-surface-container rounded-lg p-6 tech-border flex flex-col">
+<div class="flex justify-between items-center mb-4 border-b border-outline-variant pb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 bg-surface-dim tech-border rounded flex items-center justify-center">
+<img class="w-6 h-6 object-contain" data-alt="A minimalist, high-contrast monochrome logo representing Groq, set against a dark slate background, designed with sharp geometric lines suitable for a technical developer interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAsqqIm37k4pGZkH4doZi3lu5oj75_ufA2ZSytLUWgZpvs8XXEhZn8SlO0NjUrwdkBIr13Pxgk60fk0DcUGNrWPFaKdooa8jCzRnMcRWJ8-enhpXLuX94UoXjDl9A_TQ_NPOS1J-NF4Z1GEA5TXULziXM5JHpIfUZXeJ6UHMkYhNRRsYsuyuFkGJEeId5P45UCJX4j0SBAO21gG3Wy0yncBUzJtfw_ynxo6FAhB0epdrSVweGSqwUkguQ"/>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Groq</h3>
+</div>
+<span class="status-badge status-active">[ACTIVE]</span>
+</div>
+<div class="space-y-4 flex-1">
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">API Key</label>
+<div class="relative">
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input pr-10" readonly="" type="password" value="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxx"/>
+<button class="absolute right-2 top-2 text-on-surface-variant hover:text-primary-fixed">
+<span class="material-symbols-outlined text-sm" data-icon="visibility_off">visibility_off</span>
+</button>
+</div>
+</div>
+<div>
+<label class="block font-label-xs text-label-xs uppercase text-on-surface-variant mb-1">Endpoint URL</label>
+<input class="w-full bg-surface-dim tech-border rounded p-2 text-on-surface font-data-mono text-data-mono tech-input" type="text" value="https://api.groq.com/openai/v1"/>
+</div>
+<div class="pt-2">
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="rounded bg-surface-dim border-outline-variant text-primary-container focus:ring-primary-container focus:ring-offset-surface-container" type="checkbox"/>
+<span class="font-body-md text-body-md text-on-surface">Enable streaming responses</span>
+</label>
+</div>
+</div>
+<div class="mt-6 flex justify-end gap-3 border-t border-outline-variant pt-4">
+<button class="px-4 py-2 rounded text-on-surface-variant font-body-md text-body-md hover:text-on-surface transition-colors">Cancel</button>
+<button class="px-4 py-2 rounded bg-surface-variant tech-border text-on-surface font-body-md text-body-md hover:border-primary-container hover:text-primary-container transition-colors">Save Changes</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,41 @@
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider, RequireAuth } from "./auth";
+import Layout from "./components/Layout";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Users from "./pages/Users";
+import ApiKeys from "./pages/ApiKeys";
+import Providers from "./pages/Providers";
+import Models from "./pages/Models";
+import UsageLogs from "./pages/UsageLogs";
+import Settings from "./pages/Settings";
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <RequireAuth>
+                <Layout />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="users" element={<Users />} />
+            <Route path="keys" element={<ApiKeys />} />
+            <Route path="providers" element={<Providers />} />
+            <Route path="models" element={<Models />} />
+            <Route path="logs" element={<UsageLogs />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}

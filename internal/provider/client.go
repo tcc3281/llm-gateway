@@ -43,11 +43,106 @@ func (c *ProviderClient) ListModels(ctx context.Context, p ProviderType, apiKey 
 	switch p {
 	case ProviderOpenAI:
 		return c.listOpenAIModels(ctx, apiKey)
+	case ProviderAnthropic:
+		return c.listAnthropicModels(ctx, apiKey)
 	case ProviderGemini:
 		return c.listGeminiModels(ctx, apiKey)
 	default:
 		return nil, ErrNoModelsEndpoint
 	}
+}
+
+func (c *ProviderClient) listAnthropicModels(ctx context.Context, apiKey string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic models: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("anthropic models: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("anthropic models: decode: %w", err)
+	}
+
+	ids := make([]string, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
+// ListModelsCustom fetches the model list of an OpenAI/Anthropic-compatible
+// provider at a user-configured base URL. URL + auth mirror buildRequestDetails:
+// openai → {base}/models with Bearer; anthropic → {root}/v1/models with x-api-key.
+func (c *ProviderClient) ListModelsCustom(ctx context.Context, protocol ProviderType, baseURL, apiKey string) ([]string, error) {
+	base := normalizeBaseURL(baseURL)
+	var listURL, authName, authVal string
+	switch protocol {
+	case ProviderOpenAI:
+		listURL = base + "/models"
+		authName, authVal = "Authorization", "Bearer "+apiKey
+	case ProviderAnthropic:
+		// Avoid "https://x.com/v1/v1/models": strip a bare trailing /v1 first.
+		listURL = strings.TrimSuffix(base, "/v1") + "/v1/models"
+		authName, authVal = "x-api-key", apiKey
+	default:
+		return nil, fmt.Errorf("custom provider %s: protocol %s unsupported for model listing", baseURL, protocol)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(authName, authVal)
+	if protocol == ProviderAnthropic {
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("custom models (%s): %w", baseURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("custom models (%s): HTTP %d: %s", baseURL, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("custom models (%s): decode: %w", baseURL, err)
+	}
+
+	ids := make([]string, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
 }
 
 func (c *ProviderClient) listOpenAIModels(ctx context.Context, apiKey string) ([]string, error) {
@@ -135,10 +230,20 @@ func ResolveProvider(modelName string) ProviderType {
 }
 
 type UpstreamRequest struct {
+	// Provider is the wire protocol spoken to the upstream: it selects the
+	// request encoding, response decoding and auth header style. For custom
+	// OpenAI/Anthropic-compatible providers it is the provider's configured
+	// protocol (openai | anthropic).
 	Provider ProviderType
-	Model    string
-	Stream   bool
-	Payload  []byte
+	// Name is the actual provider name for key lookup, cost and telemetry. For
+	// built-ins it equals string(Provider); for custom providers it is the
+	// model-prefix segment (e.g. "openrouter").
+	Name string
+	// BaseURL overrides the built-in upstream URL. Empty means built-in.
+	BaseURL string
+	Model   string
+	Stream  bool
+	Payload []byte
 }
 
 type UpstreamResponse struct {
@@ -186,6 +291,27 @@ func (c *ProviderClient) buildRequestDetails(req UpstreamRequest, apiKey string)
 		"Content-Type": "application/json",
 	}
 
+	// Custom OpenAI/Anthropic-compatible provider: send the wire protocol to a
+	// user-configured base URL. req.Provider already carries the configured
+	// protocol, so this mirrors the built-in URL + header shapes below.
+	if req.BaseURL != "" {
+		base := normalizeBaseURL(req.BaseURL)
+		switch req.Provider {
+		case ProviderOpenAI:
+			headers["Authorization"] = "Bearer " + apiKey
+			return base + "/chat/completions", headers, nil
+		case ProviderAnthropic:
+			headers["x-api-key"] = apiKey
+			headers["anthropic-version"] = "2023-06-01"
+			// Avoid "https://x.com/v1/v1/messages": the messages endpoint already
+			// includes the /v1 prefix, so strip a bare trailing /v1 first.
+			base = strings.TrimSuffix(base, "/v1")
+			return base + "/v1/messages", headers, nil
+		default:
+			return "", nil, fmt.Errorf("custom provider %s: protocol %s unsupported", req.Name, req.Provider)
+		}
+	}
+
 	switch req.Provider {
 	case ProviderOpenAI:
 		url := "https://api.openai.com/v1/chat/completions"
@@ -199,14 +325,30 @@ func (c *ProviderClient) buildRequestDetails(req UpstreamRequest, apiKey string)
 		return url, headers, nil
 
 	case ProviderGemini:
+		// Streaming uses streamGenerateContent with alt=sse; both query params
+		// must be combined with & (not appended after alt, which would produce
+		// "?alt=sse?key=..." and make alt's value invalid).
+		query := "key=" + url.QueryEscape(apiKey)
 		endpoint := "generateContent"
 		if req.Stream {
-			endpoint = "streamGenerateContent?alt=sse"
+			endpoint = "streamGenerateContent"
+			query = "alt=sse&" + query
 		}
-		url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:%s?key=%s", req.Model, endpoint, apiKey)
+		url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:%s?%s", req.Model, endpoint, query)
 		return url, headers, nil
 
 	default:
 		return "", nil, fmt.Errorf("unsupported provider: %s", req.Provider)
 	}
+}
+
+// normalizeBaseURL trims a trailing slash and passes through a base URL that
+// already includes the full path, so users may configure either the API root
+// ("https://api.example.com/v1") or the full endpoint.
+func normalizeBaseURL(base string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/chat/completions") || strings.HasSuffix(base, "/v1/messages") {
+		return base
+	}
+	return base
 }

@@ -147,6 +147,7 @@ Luôn kèm header: `X-Admin-API-Key: sk-admin-secret-key-change-me`
 | POST | `/admin/models` | Upsert model pricing |
 | DELETE | `/admin/models?id=<uuid>` | Xoá model |
 | GET | `/admin/analytics/stats?interval=hour` | Usage stats (hỗ trợ `user_id`, `from`, `to`) |
+| GET | `/admin/analytics/dashboard?interval=hour` | Dashboard JSON tổng hợp: `totals`, `time_series`, `by_model`, `by_user`, `recent` (+ `limit`) |
 
 *Mọi path `/admin/*` đều có alias không prefix (`/users`, `/keys`, `/providers`, `/models`, `/analytics/stats`).*
 

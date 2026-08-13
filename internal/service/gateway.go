@@ -1,11 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -149,6 +152,182 @@ type ProxyParams struct {
 	ResponseWriter http.ResponseWriter
 }
 
+// ResolvedTarget is the routing decision for one request: which upstream to
+// call and with which wire protocol. Provider is the protocol used for the
+// encode/decode switches; Name is the real provider name for key lookup, cost
+// and telemetry; BaseURL is empty for built-in providers and the custom endpoint
+// for OpenAI/Anthropic-compatible providers.
+type ResolvedTarget struct {
+	Provider provider.ProviderType
+	Name     string
+	BaseURL  string
+}
+
+// resolveTarget decides the upstream provider for a model name.
+//
+// Resolution order — the gateway NEVER guesses an upstream from the model-name
+// prefix:
+//  1. Explicit custom-provider prefix ("providername/model") — the client picks
+//     a configured OpenAI/Anthropic-compatible provider by name.
+//  2. The catalog: a model explicitly registered on the Models page
+//     (model_pricings) wins over a row discovered from a provider's /models API
+//     (provider_models). This is how a Google model (e.g. gemma-*) reaches the
+//     Gemini API without any hardcoded model list.
+//  3. Unknown model → ErrUnknownModel, so the caller can surface a clear
+//     "model not in catalog" error instead of silently misrouting.
+func (g *GatewayService) resolveTarget(ctx context.Context, modelName string) (ResolvedTarget, error) {
+	// 1. Explicit custom-provider prefix: "providername/model".
+	if seg, _, ok := strings.Cut(modelName, "/"); ok && seg != "" {
+		if cfg, err := g.keyStore.GetProviderInfo(ctx, seg); err == nil && cfg.BaseURL != "" {
+			return g.targetForProvider(seg, cfg.Protocol, cfg.BaseURL), nil
+		}
+	}
+
+	// 2. Catalog: registered (model_pricings) then discovered (provider_models).
+	if g.costCalc != nil {
+		if prov, ok := g.costCalc.LookupProviderByModel(modelName); ok {
+			return g.targetForProviderName(ctx, prov)
+		}
+	}
+
+	// 3. Unknown model — never guess.
+	return ResolvedTarget{}, &ErrUnknownModel{Model: modelName}
+}
+
+// ErrUnknownModel is returned when a request model is in no provider's catalog
+// and the client did not use an explicit "providername/model" prefix. Routing is
+// catalog-driven, so this is a configuration gap, not a name-prefix fallback.
+type ErrUnknownModel struct {
+	Model string
+}
+
+func (e *ErrUnknownModel) Error() string {
+	return fmt.Sprintf("model %q is not in the catalog — register it on the Models page / `llmgw model add`, refresh the catalog with `llmgw model discover`, or call it as \"providername/model\"", e.Model)
+}
+
+// IsUnknownModelError reports whether err indicates a model missing from the catalog.
+func IsUnknownModelError(err error) bool {
+	var unknownErr *ErrUnknownModel
+	return errors.As(err, &unknownErr)
+}
+
+// targetForProviderName builds a ResolvedTarget for a provider name that came
+// from the model registry: built-ins map to their wire protocol, custom
+// compatible providers use their registered base_url + protocol.
+func (g *GatewayService) targetForProviderName(ctx context.Context, prov string) (ResolvedTarget, error) {
+	switch prov {
+	case "openai":
+		return ResolvedTarget{Provider: provider.ProviderOpenAI, Name: "openai"}, nil
+	case "anthropic":
+		return ResolvedTarget{Provider: provider.ProviderAnthropic, Name: "anthropic"}, nil
+	case "gemini":
+		return ResolvedTarget{Provider: provider.ProviderGemini, Name: "gemini"}, nil
+	default:
+		// Custom compatible provider: route via its registered endpoint.
+		if cfg, err := g.keyStore.GetProviderInfo(ctx, prov); err == nil && cfg.BaseURL != "" {
+			return g.targetForProvider(prov, cfg.Protocol, cfg.BaseURL), nil
+		}
+		// Registered under a name with no key/base_url yet — use the openai
+		// wire so the missing-key error surfaces clearly.
+		return ResolvedTarget{Provider: provider.ProviderOpenAI, Name: prov}, nil
+	}
+}
+
+// targetForProvider builds a ResolvedTarget for a custom compatible provider
+// given its wire protocol and base URL.
+func (g *GatewayService) targetForProvider(name, protocol, baseURL string) ResolvedTarget {
+	pt := provider.ProviderOpenAI
+	if protocol == "anthropic" {
+		pt = provider.ProviderAnthropic
+	}
+	return ResolvedTarget{Provider: pt, Name: name, BaseURL: baseURL}
+}
+
+// DiscoverProvider fetches one provider's /models API and persists the result
+// into the provider_models catalog, then refreshes the routing cache. Returns
+// the number of models stored.
+func (g *GatewayService) DiscoverProvider(ctx context.Context, providerName string) (int, error) {
+	pc, err := g.keyStore.GetProviderInfo(ctx, providerName)
+	if err != nil {
+		return 0, err
+	}
+	n, err := g.discoverProvider(ctx, *pc)
+	if err != nil {
+		return 0, err
+	}
+	if g.costCalc != nil {
+		_ = g.costCalc.RefreshCatalog()
+	}
+	return n, nil
+}
+
+// DiscoverAllModels refreshes the persisted catalog for every configured
+// provider. Returns the total number of models stored and per-provider errors;
+// a provider whose /models API fails is skipped, not fatal.
+func (g *GatewayService) DiscoverAllModels(ctx context.Context) (int, map[string]string) {
+	providers, err := g.keyStore.ListActiveProviders()
+	if err != nil {
+		return 0, map[string]string{"": err.Error()}
+	}
+	total := 0
+	errs := make(map[string]string)
+	for _, pc := range providers {
+		n, derr := g.discoverProvider(ctx, pc)
+		if derr != nil {
+			errs[pc.Provider] = derr.Error()
+			continue
+		}
+		total += n
+	}
+	if g.costCalc != nil {
+		_ = g.costCalc.RefreshCatalog()
+	}
+	return total, errs
+}
+
+// discoverProvider fetches and persists one provider's model list.
+func (g *GatewayService) discoverProvider(ctx context.Context, pc provider.ProviderConfig) (int, error) {
+	key, err := g.keyStore.GetKey(ctx, pc.Provider)
+	if err != nil {
+		return 0, err
+	}
+
+	var ids []string
+	if pc.BaseURL != "" {
+		// Custom OpenAI/Anthropic-compatible provider.
+		ids, err = g.providerClient.ListModelsCustom(ctx, provider.ProviderType(pc.Protocol), pc.BaseURL, key)
+	} else {
+		ids, err = g.providerClient.ListModels(ctx, provider.ProviderType(pc.Provider), key)
+	}
+	if err != nil {
+		return 0, err
+	}
+	if g.pg == nil {
+		return 0, errors.New("database unavailable")
+	}
+	if err := g.pg.ReplaceProviderModels(pc.Provider, ids); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
+
+// StartModelDiscoveryLoop refreshes the catalog on a fixed interval and once at
+// startup, so newly configured providers and upstream model additions are picked
+// up without hardcoded model lists.
+func (g *GatewayService) StartModelDiscoveryLoop(ctx context.Context, interval time.Duration) {
+	g.DiscoverAllModels(ctx) // first pass at startup
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			g.DiscoverAllModels(ctx)
+		}
+	}
+}
+
 func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
 	startTime := time.Now()
 
@@ -168,12 +347,15 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		return fmt.Errorf("failed to decode request: %w", err)
 	}
 
-	// 2. Resolve target Upstream Provider
-	targetProvider := provider.ResolveProvider(canReq.Model)
+	// 2. Resolve target Upstream Provider (custom compatible prefix routing first)
+	target, err := g.resolveTarget(ctx, canReq.Model)
+	if err != nil {
+		return err
+	}
 
 	// 3. Encode Canonical Request to Upstream Format Payload
 	var upstreamPayload []byte
-	switch targetProvider {
+	switch target.Provider {
 	case provider.ProviderOpenAI:
 		upstreamPayload, err = openai.EncodeCanonicalRequest(canReq)
 	case provider.ProviderAnthropic:
@@ -183,22 +365,24 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to encode payload for provider %s: %w", targetProvider, err)
+		return fmt.Errorf("failed to encode payload for provider %s: %w", target.Name, err)
 	}
 
 	// 4. Resolve upstream credentials: per-request override > stateful DB key
 	upstreamKey := params.UpstreamAPIKey
 	if upstreamKey == "" {
-		upstreamKey, err = g.keyStore.GetKey(ctx, string(targetProvider))
+		upstreamKey, err = g.keyStore.GetKey(ctx, target.Name)
 		if err != nil {
-			g.recordTelemetry(params, string(targetProvider), canReq.Model, 0, 0, 0, 0, http.StatusServiceUnavailable, err.Error(), startTime)
-			return &ErrProviderKey{Provider: string(targetProvider)}
+			g.recordTelemetry(params, target.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
+			return &ErrProviderKey{Provider: target.Name}
 		}
 	}
 
 	// 5. Dispatch Upstream Request
 	upReq := provider.UpstreamRequest{
-		Provider: targetProvider,
+		Provider: target.Provider,
+		Name:     target.Name,
+		BaseURL:  target.BaseURL,
 		Model:    canReq.Model,
 		Stream:   canReq.Stream,
 		Payload:  upstreamPayload,
@@ -206,7 +390,7 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 
 	upResp, err := g.providerClient.SendRequest(ctx, upReq, upstreamKey)
 	if err != nil {
-		g.recordTelemetry(params, string(targetProvider), canReq.Model, 0, 0, 0, 0, http.StatusInternalServerError, err.Error(), startTime)
+		g.recordTelemetry(params, target.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusInternalServerError, err.Error(), startTime)
 		return err
 	}
 	defer upResp.Body.Close()
@@ -215,19 +399,19 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		bodyBytes, _ := io.ReadAll(upResp.Body)
 		params.ResponseWriter.WriteHeader(upResp.StatusCode)
 		params.ResponseWriter.Write(bodyBytes)
-		g.recordTelemetry(params, string(targetProvider), canReq.Model, 0, 0, 0, 0, upResp.StatusCode, string(bodyBytes), startTime)
+		g.recordTelemetry(params, target.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, upResp.StatusCode, string(bodyBytes), startTime)
 		return nil
 	}
 
 	// 6. Handle Streaming vs Non-Streaming Response
 	if canReq.Stream {
-		return g.handleStreamResponse(ctx, params, targetProvider, canReq, upResp, startTime)
+		return g.handleStreamResponse(ctx, params, target, canReq, upResp, startTime)
 	}
 
-	return g.handleNonStreamResponse(params, targetProvider, canReq, upResp, startTime)
+	return g.handleNonStreamResponse(params, target, canReq, upResp, startTime)
 }
 
-func (g *GatewayService) handleNonStreamResponse(params ProxyParams, targetProvider provider.ProviderType, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time) error {
+func (g *GatewayService) handleNonStreamResponse(params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time) error {
 	bodyBytes, err := io.ReadAll(upResp.Body)
 	if err != nil {
 		return err
@@ -235,7 +419,7 @@ func (g *GatewayService) handleNonStreamResponse(params ProxyParams, targetProvi
 
 	// Decode upstream response to Canonical
 	var canResp *canonical.CanonicalResponse
-	switch targetProvider {
+	switch target.Provider {
 	case provider.ProviderOpenAI:
 		canResp, err = openai.DecodeUpstreamResponse(bodyBytes)
 	case provider.ProviderAnthropic:
@@ -268,13 +452,13 @@ func (g *GatewayService) handleNonStreamResponse(params ProxyParams, targetProvi
 	params.ResponseWriter.Write(clientResponseBytes)
 
 	// Record Telemetry
-	cost := g.costCalc.CalculateCost(string(targetProvider), canReq.Model, canResp.PromptTokens, canResp.CompletionTokens)
-	g.recordTelemetry(params, string(targetProvider), canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, cost, 0, http.StatusOK, "", startTime)
+	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens, canResp.ReasoningTokens)
+	g.recordTelemetry(params, target.Name, canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens, canResp.ReasoningTokens, costResult, 0, http.StatusOK, "", startTime)
 
 	return nil
 }
 
-func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyParams, targetProvider provider.ProviderType, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time) error {
+func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time) error {
 	flusher, ok := params.ResponseWriter.(http.Flusher)
 	if !ok {
 		return fmt.Errorf("streaming unsupported by response writer")
@@ -285,25 +469,110 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	params.ResponseWriter.Header().Set("Connection", "keep-alive")
 	params.ResponseWriter.WriteHeader(http.StatusOK)
 
-	// Anthropic clients require the full message lifecycle; emit the opening
-	// events before forwarding any upstream deltas.
-	if params.InboundFormat == "anthropic" {
-		msgID := "msg_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24]
-		messageStart := fmt.Sprintf(
-			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":%q,\"type\":\"message\",\"role\":\"assistant\",\"model\":%q,\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":1}}}\n\n",
-			msgID, canReq.Model,
-		)
-		contentBlockStart := "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
-		params.ResponseWriter.Write([]byte(messageStart))
-		params.ResponseWriter.Write([]byte(contentBlockStart))
-		flusher.Flush()
-	}
+	// Anthropic clients require the full message lifecycle (message_start →
+	// content_block_start/delta/stop → message_delta → message_stop). That is
+	// reconstructed lazily from the canonical deltas below so thinking blocks
+	// (which precede the text block) are surfaced correctly and message_start
+	// can carry the real input token counts gathered from the upstream.
+	var anthroMsgID = "msg_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24]
+	anthroMessageStarted := false
+	anthroOpenBlock := "" // "" | "thinking" | "text"
+	anthroBlockIndex := -1
 
 	sseReader := sse.NewReader(upResp.Body)
 	var ttftMs int64 = 0
 	var totalPromptTokens, totalCompletionTokens int
+	var totalCachedInputTokens, totalReasoningTokens int
 	var lastFinishReason string
 	isFirstChunk := true
+
+	// emitAnthropicMessageStart lazily writes the message_start opener once,
+	// using the real input/cache counts accumulated so far from the upstream.
+	emitAnthropicMessageStart := func() {
+		if anthroMessageStarted {
+			return
+		}
+		anthroMessageStarted = true
+		usage := map[string]interface{}{"input_tokens": totalPromptTokens, "output_tokens": 1}
+		if totalCachedInputTokens > 0 {
+			usage["cache_read_input_tokens"] = totalCachedInputTokens
+		}
+		msg := map[string]interface{}{
+			"type": "message", "id": anthroMsgID, "role": "assistant", "model": canReq.Model,
+			"content": []interface{}{}, "stop_reason": nil, "stop_sequence": nil, "usage": usage,
+		}
+		if data, err := json.Marshal(map[string]interface{}{"type": "message_start", "message": msg}); err == nil {
+			params.ResponseWriter.Write([]byte("event: message_start\ndata: " + string(data) + "\n\n"))
+			flusher.Flush()
+		}
+	}
+
+	// startAnthropicBlock opens a content block, closing any currently-open
+	// block first so the client sees a strict thinking → text ordering.
+	startAnthropicBlock := func(blockType string) {
+		if anthroOpenBlock == blockType {
+			return
+		}
+		if anthroOpenBlock != "" {
+			if data, err := json.Marshal(map[string]interface{}{"type": "content_block_stop", "index": anthroBlockIndex}); err == nil {
+				params.ResponseWriter.Write([]byte("event: content_block_stop\ndata: " + string(data) + "\n\n"))
+			}
+		}
+		anthroBlockIndex++
+		block := map[string]interface{}{"type": blockType}
+		if blockType == "thinking" {
+			block["thinking"] = ""
+		} else {
+			block["text"] = ""
+		}
+		if data, err := json.Marshal(map[string]interface{}{"type": "content_block_start", "index": anthroBlockIndex, "content_block": block}); err == nil {
+			params.ResponseWriter.Write([]byte("event: content_block_start\ndata: " + string(data) + "\n\n"))
+		}
+		anthroOpenBlock = blockType
+		flusher.Flush()
+	}
+
+	// Tool-call fragments accumulate over the stream (OpenAI delta.tool_calls,
+	// Anthropic content_block_start/input_json_delta, Gemini functionCall parts)
+	// and are reconstructed as complete calls at stream end. They cannot be
+	// streamed incrementally because fragments arrive split across chunks; the
+	// client receives the full calls in one terminal block.
+	type pendingToolCall struct {
+		key  string
+		id   string
+		name string
+		args strings.Builder
+	}
+	acc := map[string]*pendingToolCall{}
+	order := []string{} // insertion order → stable call ordering
+
+	// emitAnthropicToolBlock writes one reconstructed tool_use block (start →
+	// input_json_delta → stop) for an Anthropic-bound client, mirroring how
+	// Anthropic streams a complete tool_use.
+	emitAnthropicToolBlock := func(tc canonical.ToolCall) {
+		anthroBlockIndex++
+		block := map[string]interface{}{
+			"type":  "tool_use",
+			"id":    tc.ID,
+			"name":  tc.Name,
+			"input": map[string]interface{}{},
+		}
+		if data, err := json.Marshal(map[string]interface{}{"type": "content_block_start", "index": anthroBlockIndex, "content_block": block}); err == nil {
+			params.ResponseWriter.Write([]byte("event: content_block_start\ndata: " + string(data) + "\n\n"))
+		}
+		deltaPayload := map[string]interface{}{
+			"type":  "content_block_delta",
+			"index": anthroBlockIndex,
+			"delta": map[string]string{"type": "input_json_delta", "partial_json": tc.Arguments},
+		}
+		if data, err := json.Marshal(deltaPayload); err == nil {
+			params.ResponseWriter.Write([]byte("event: content_block_delta\ndata: " + string(data) + "\n\n"))
+		}
+		if data, err := json.Marshal(map[string]interface{}{"type": "content_block_stop", "index": anthroBlockIndex}); err == nil {
+			params.ResponseWriter.Write([]byte("event: content_block_stop\ndata: " + string(data) + "\n\n"))
+		}
+		anthroOpenBlock = ""
+	}
 
 	for {
 		event, err := sseReader.ReadEvent()
@@ -322,7 +591,7 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		// Convert SSE event to Canonical Stream Chunk
 		var chunk *canonical.CanonicalStreamChunk
 
-		switch targetProvider {
+		switch target.Provider {
 		case provider.ProviderOpenAI:
 			if string(event.Data) == "[DONE]" {
 				chunk = &canonical.CanonicalStreamChunk{IsLast: true}
@@ -335,6 +604,12 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 					}
 					if c.CompletionTokens > totalCompletionTokens {
 						totalCompletionTokens = c.CompletionTokens
+					}
+					if c.CachedInputTokens > totalCachedInputTokens {
+						totalCachedInputTokens = c.CachedInputTokens
+					}
+					if c.ReasoningTokens > totalReasoningTokens {
+						totalReasoningTokens = c.ReasoningTokens
 					}
 				}
 			}
@@ -349,6 +624,12 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 				if c.CompletionTokens > 0 {
 					totalCompletionTokens = c.CompletionTokens
 				}
+				if c.CachedInputTokens > 0 {
+					totalCachedInputTokens = c.CachedInputTokens
+				}
+				if c.ReasoningTokens > 0 {
+					totalReasoningTokens = c.ReasoningTokens
+				}
 			}
 
 		case provider.ProviderGemini:
@@ -358,6 +639,12 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 				if c.CompletionTokens > 0 {
 					totalCompletionTokens = c.CompletionTokens
 					totalPromptTokens = c.PromptTokens
+				}
+				if c.CachedInputTokens > 0 {
+					totalCachedInputTokens = c.CachedInputTokens
+				}
+				if c.ReasoningTokens > 0 {
+					totalReasoningTokens = c.ReasoningTokens
 				}
 			}
 		}
@@ -369,9 +656,44 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 			lastFinishReason = chunk.FinishReason
 		}
 
+		// Feed tool-call fragments into the accumulator (never streamed
+		// incrementally). OpenAI/Anthropic key by the stable chunk index; Gemini
+		// parts are atomic with no stable cross-chunk index, so key by name.
+		for _, dtc := range chunk.DeltaToolCalls {
+			key := strconv.Itoa(dtc.Index)
+			if target.Provider == provider.ProviderGemini {
+				key = "g:" + dtc.Name
+			}
+			p, ok := acc[key]
+			if !ok {
+				p = &pendingToolCall{key: key}
+				acc[key] = p
+				order = append(order, key)
+			}
+			if p.id == "" {
+				p.id = dtc.ID
+			}
+			if p.name == "" {
+				p.name = dtc.Name
+			}
+			if dtc.Arguments != "" {
+				p.args.WriteString(dtc.Arguments)
+			}
+		}
+
 		if params.InboundFormat == "openai" {
 			// Skip the bare terminal marker; the [DONE] line is written below.
 			if chunk.IsLast && chunk.DeltaContent == "" && chunk.FinishReason == "" {
+				continue
+			}
+			// Pure tool-call fragments carry no text/reasoning to emit — they are
+			// reconstructed at stream end.
+			if len(chunk.DeltaToolCalls) > 0 && chunk.DeltaContent == "" && chunk.DeltaReasoning == "" {
+				continue
+			}
+			// The upstream's own finish_reason:"tool_calls" chunk is replaced by
+			// the reconstructed terminal block (which carries its own finish).
+			if chunk.FinishReason == "tool_calls" && len(acc) > 0 {
 				continue
 			}
 			sseFormatted, fErr := openai.FormatCanonicalToOpenAISSE(chunk)
@@ -380,9 +702,23 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 				flusher.Flush()
 			}
 		} else {
-			// Anthropic inbound: only forward content deltas here.
+			// Anthropic inbound: rebuild the block lifecycle from canonical
+			// deltas. Thinking deltas open the thinking block (index 0) before
+			// the text block (index 1); message_start is emitted lazily ahead
+			// of the first content event.
+			if chunk.DeltaReasoning != "" {
+				emitAnthropicMessageStart()
+				startAnthropicBlock("thinking")
+				sseFormatted, fErr := anthropic.FormatCanonicalToAnthropicSSE(chunk, anthroBlockIndex, "thinking")
+				if fErr == nil && sseFormatted != "" {
+					params.ResponseWriter.Write([]byte(sseFormatted))
+					flusher.Flush()
+				}
+			}
 			if chunk.DeltaContent != "" {
-				sseFormatted, fErr := anthropic.FormatCanonicalToAnthropicSSE(chunk)
+				emitAnthropicMessageStart()
+				startAnthropicBlock("text")
+				sseFormatted, fErr := anthropic.FormatCanonicalToAnthropicSSE(chunk, anthroBlockIndex, "text")
 				if fErr == nil && sseFormatted != "" {
 					params.ResponseWriter.Write([]byte(sseFormatted))
 					flusher.Flush()
@@ -391,14 +727,63 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		}
 	}
 
+	// Reconstruct complete tool calls from the accumulated fragments, preserving
+	// insertion order.
+	var toolCalls []canonical.ToolCall
+	for _, key := range order {
+		p := acc[key]
+		if p.name == "" {
+			continue
+		}
+		toolCalls = append(toolCalls, canonical.ToolCall{
+			ID:        p.id,
+			Name:      p.name,
+			Arguments: p.args.String(),
+		})
+	}
+	hasToolCalls := len(toolCalls) > 0
+
 	// Final stream completion signal
 	if params.InboundFormat == "openai" {
+		if hasToolCalls {
+			// Emit the reconstructed tool calls, then the standard [DONE] marker.
+			if sse, fErr := openai.FormatOpenAIToolCallSSE(toolCalls, canReq.Model, anthroMsgID, time.Now().Unix()); fErr == nil && sse != "" {
+				params.ResponseWriter.Write([]byte(sse))
+			}
+		}
 		params.ResponseWriter.Write([]byte("data: [DONE]\n\n"))
 		flusher.Flush()
 	} else {
+		// Ensure message_start is on the wire even if the upstream produced no
+		// content deltas (e.g. it errored mid-stream), then close any still-open
+		// block before ending the message lifecycle.
+		emitAnthropicMessageStart()
+		if anthroOpenBlock != "" {
+			if data, err := json.Marshal(map[string]interface{}{"type": "content_block_stop", "index": anthroBlockIndex}); err == nil {
+				params.ResponseWriter.Write([]byte("event: content_block_stop\ndata: " + string(data) + "\n\n"))
+			}
+			anthroOpenBlock = ""
+		}
+		// Map the upstream finish reason to Anthropic's stop_reason vocabulary.
+		// Gemini reports raw "STOP"/"MAX_TOKENS"; Anthropic expects
+		// end_turn/max_tokens/stop_sequence/tool_use.
 		stopReason := lastFinishReason
+		switch stopReason {
+		case "STOP":
+			stopReason = "end_turn"
+		case "MAX_TOKENS":
+			stopReason = "max_tokens"
+		}
 		if stopReason == "" {
 			stopReason = "end_turn"
+		}
+		if hasToolCalls {
+			// Reconstructed tool_use blocks, then stop_reason:"tool_use" (the
+			// Anthropic analogue of OpenAI's finish_reason:"tool_calls").
+			for _, tc := range toolCalls {
+				emitAnthropicToolBlock(tc)
+			}
+			stopReason = "tool_use"
 		}
 		messageDelta := fmt.Sprintf(
 			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":%q,\"stop_sequence\":null},\"usage\":{\"output_tokens\":%d}}\n\n",
@@ -410,33 +795,39 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		flusher.Flush()
 	}
 
-	cost := g.costCalc.CalculateCost(string(targetProvider), canReq.Model, totalPromptTokens, totalCompletionTokens)
-	g.recordTelemetry(params, string(targetProvider), canReq.Model, totalPromptTokens, totalCompletionTokens, cost, ttftMs, http.StatusOK, "", startTime)
+	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens)
+	g.recordTelemetry(params, target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens, costResult, ttftMs, http.StatusOK, "", startTime)
 
 	return nil
 }
 
-func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName string, promptTokens, completionTokens int, cost float64, ttftMs int64, statusCode int, errMsg string, startTime time.Time) {
+func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName string, promptTokens, completionTokens, cachedInputTokens, reasoningTokens int, costResult analytics.CostResult, ttftMs int64, statusCode int, errMsg string, startTime time.Time) {
 	if g.telemetry == nil || params.ApiKey == nil {
 		return
 	}
 
 	totalLatency := time.Since(startTime).Milliseconds()
 	logEntry := model.UsageLog{
-		CreatedAt:        time.Now(),
-		UserID:           params.ApiKey.UserID,
-		KeyID:            params.ApiKey.ID,
-		InboundFormat:    params.InboundFormat,
-		Provider:         provider,
-		Model:            modelName,
-		PromptTokens:     promptTokens,
-		CompletionTokens: completionTokens,
-		TotalTokens:      promptTokens + completionTokens,
-		Cost:             cost,
-		TTFTMs:           ttftMs,
-		TotalLatencyMs:   totalLatency,
-		StatusCode:       statusCode,
-		ErrorMessage:     errMsg,
+		CreatedAt:           time.Now(),
+		UserID:              params.ApiKey.UserID,
+		KeyID:               params.ApiKey.ID,
+		InboundFormat:       params.InboundFormat,
+		Provider:            provider,
+		Model:               modelName,
+		PromptTokens:        promptTokens,
+		CompletionTokens:    completionTokens,
+		TotalTokens:         promptTokens + completionTokens,
+		CachedInputTokens:   cachedInputTokens,
+		ReasoningTokens:     reasoningTokens,
+		PromptPriceUsed:     costResult.PromptPriceUsed,
+		CompletionPriceUsed: costResult.CompletionPriceUsed,
+		PricingSource:       costResult.PricingSource,
+		PricingFallback:     costResult.PricingFallback,
+		Cost:                costResult.Cost,
+		TTFTMs:              ttftMs,
+		TotalLatencyMs:      totalLatency,
+		StatusCode:          statusCode,
+		ErrorMessage:        errMsg,
 	}
 
 	g.telemetry.Log(logEntry)
@@ -447,3 +838,269 @@ func IsProviderKeyError(err error) bool {
 	var pkeyErr *ErrProviderKey
 	return errors.As(err, &pkeyErr)
 }
+
+func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParams) error {
+	startTime := time.Now()
+
+	// 1. Parse client payload in OpenAI format
+	var embedReq struct {
+		Model string      `json:"model"`
+		Input interface{} `json:"input"`
+	}
+	if err := json.Unmarshal(params.RequestBody, &embedReq); err != nil {
+		return fmt.Errorf("invalid embeddings payload: %w", err)
+	}
+
+	// 2. Resolve target provider
+	target, err := g.resolveTarget(ctx, embedReq.Model)
+	if err != nil {
+		return err
+	}
+
+	// 3. Resolve upstream API key
+	upstreamKey := params.UpstreamAPIKey
+	if upstreamKey == "" {
+		upstreamKey, err = g.keyStore.GetKey(ctx, target.Name)
+		if err != nil {
+			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
+			return &ErrProviderKey{Provider: target.Name}
+		}
+	}
+
+	// 4. Extract inputs as string slice
+	var inputs []string
+	switch val := embedReq.Input.(type) {
+	case string:
+		inputs = []string{val}
+	case []interface{}:
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				inputs = append(inputs, s)
+			}
+		}
+	}
+
+	// Approximate input tokens
+	promptTokens := 0
+	for _, s := range inputs {
+		tokens := len(s) / 4
+		if tokens == 0 && len(s) > 0 {
+			tokens = 1
+		}
+		promptTokens += tokens
+	}
+
+	// 5. Execute based on Provider protocol
+	if target.Provider == provider.ProviderGemini {
+		// Translation OpenAI -> Gemini -> OpenAI
+		var url string
+		var payloadBytes []byte
+
+		if len(inputs) <= 1 {
+			// Single embedding
+			textVal := ""
+			if len(inputs) == 1 {
+				textVal = inputs[0]
+			}
+			url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:embedContent?key=%s", embedReq.Model, upstreamKey)
+			
+			geminiReq := map[string]interface{}{
+				"content": map[string]interface{}{
+					"parts": []map[string]interface{}{
+						{"text": textVal},
+					},
+				},
+			}
+			payloadBytes, _ = json.Marshal(geminiReq)
+		} else {
+			// Batch embeddings
+			url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchEmbedContents?key=%s", embedReq.Model, upstreamKey)
+			
+			modelPath := embedReq.Model
+			if !strings.HasPrefix(modelPath, "models/") {
+				modelPath = "models/" + modelPath
+			}
+
+			requestsList := make([]interface{}, 0, len(inputs))
+			for _, text := range inputs {
+				requestsList = append(requestsList, map[string]interface{}{
+					"model": modelPath,
+					"content": map[string]interface{}{
+						"parts": []map[string]interface{}{
+							{"text": text},
+						},
+					},
+				})
+			}
+			geminiReq := map[string]interface{}{
+				"requests": requestsList,
+			}
+			payloadBytes, _ = json.Marshal(geminiReq)
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payloadBytes))
+		if err != nil {
+			return fmt.Errorf("failed to create http request: %w", err)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusInternalServerError, err.Error(), startTime)
+			return fmt.Errorf("failed sending request to Gemini: %w", err)
+		}
+		defer resp.Body.Close()
+
+		respBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			params.ResponseWriter.Header().Set("Content-Type", "application/json")
+			params.ResponseWriter.WriteHeader(resp.StatusCode)
+			params.ResponseWriter.Write(respBytes)
+			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, resp.StatusCode, string(respBytes), startTime)
+			return nil
+		}
+
+		// Decode Gemini response and map back to OpenAI
+		type GeminiEmbedding struct {
+			Values []float64 `json:"values"`
+		}
+
+		var openAIRespData map[string]interface{}
+		if len(inputs) <= 1 {
+			var geminiResp struct {
+				Embedding GeminiEmbedding `json:"embedding"`
+			}
+			if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+				return fmt.Errorf("failed to decode Gemini response: %w", err)
+			}
+			openAIRespData = map[string]interface{}{
+				"object": "list",
+				"data": []interface{}{
+					map[string]interface{}{
+						"object":    "embedding",
+						"index":     0,
+						"embedding": geminiResp.Embedding.Values,
+					},
+				},
+				"model": embedReq.Model,
+				"usage": map[string]interface{}{
+					"prompt_tokens": promptTokens,
+					"total_tokens":  promptTokens,
+				},
+			}
+		} else {
+			var geminiResp struct {
+				Embeddings []GeminiEmbedding `json:"embeddings"`
+			}
+			if err := json.Unmarshal(respBytes, &geminiResp); err != nil {
+				return fmt.Errorf("failed to decode Gemini response: %w", err)
+			}
+			dataList := make([]interface{}, 0, len(geminiResp.Embeddings))
+			for i, emb := range geminiResp.Embeddings {
+				dataList = append(dataList, map[string]interface{}{
+					"object":    "embedding",
+					"index":     i,
+					"embedding": emb.Values,
+				})
+			}
+			openAIRespData = map[string]interface{}{
+				"object": "list",
+				"data":   dataList,
+				"model":  embedReq.Model,
+				"usage": map[string]interface{}{
+					"prompt_tokens": promptTokens,
+					"total_tokens":  promptTokens,
+				},
+			}
+		}
+
+		openAIRespBytes, _ := json.Marshal(openAIRespData)
+		params.ResponseWriter.Header().Set("Content-Type", "application/json")
+		params.ResponseWriter.WriteHeader(http.StatusOK)
+		params.ResponseWriter.Write(openAIRespBytes)
+
+		costResult := g.costCalc.CalculateCost(target.Name, embedReq.Model, promptTokens, 0, 0, 0)
+		g.recordTelemetry(params, target.Name, embedReq.Model, promptTokens, 0, 0, 0, costResult, 0, http.StatusOK, "", startTime)
+
+	} else {
+		// For OpenAI & OpenAI-compatible: transparent proxying
+		var url string
+		headers := map[string]string{
+			"Content-Type": "application/json",
+		}
+
+		if target.BaseURL != "" {
+			base := strings.TrimRight(target.BaseURL, "/")
+			if strings.HasSuffix(base, "/chat/completions") {
+				base = strings.TrimSuffix(base, "/chat/completions")
+			} else if strings.HasSuffix(base, "/v1/chat/completions") {
+				base = strings.TrimSuffix(base, "/v1/chat/completions")
+			} else if strings.HasSuffix(base, "/v1") {
+				// keep it
+			}
+			url = base + "/embeddings"
+			if target.Provider == provider.ProviderOpenAI {
+				headers["Authorization"] = "Bearer " + upstreamKey
+			} else if target.Provider == provider.ProviderAnthropic {
+				headers["x-api-key"] = upstreamKey
+				headers["anthropic-version"] = "2023-06-01"
+			}
+		} else {
+			// Built-in OpenAI
+			url = "https://api.openai.com/v1/embeddings"
+			headers["Authorization"] = "Bearer " + upstreamKey
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(params.RequestBody))
+		if err != nil {
+			return fmt.Errorf("failed to create http request: %w", err)
+		}
+		for k, v := range headers {
+			httpReq.Header.Set(k, v)
+		}
+
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusInternalServerError, err.Error(), startTime)
+			return fmt.Errorf("failed sending request to upstream: %w", err)
+		}
+		defer resp.Body.Close()
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
+		params.ResponseWriter.Header().Set("Content-Type", "application/json")
+		params.ResponseWriter.WriteHeader(resp.StatusCode)
+		params.ResponseWriter.Write(bodyBytes)
+
+		if resp.StatusCode == http.StatusOK {
+			var respData struct {
+				Usage struct {
+					PromptTokens int `json:"prompt_tokens"`
+					TotalTokens  int `json:"total_tokens"`
+				} `json:"usage"`
+			}
+			_ = json.Unmarshal(bodyBytes, &respData)
+
+			tokens := respData.Usage.PromptTokens
+			if tokens <= 0 {
+				tokens = promptTokens
+			}
+			costResult := g.costCalc.CalculateCost(target.Name, embedReq.Model, tokens, 0, 0, 0)
+			g.recordTelemetry(params, target.Name, embedReq.Model, tokens, 0, 0, 0, costResult, 0, resp.StatusCode, "", startTime)
+		} else {
+			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, resp.StatusCode, string(bodyBytes), startTime)
+		}
+	}
+
+	return nil
+}
+
