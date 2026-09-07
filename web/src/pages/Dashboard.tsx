@@ -504,6 +504,7 @@ export default function Dashboard() {
       </div>
       <LogDetailDrawer logId={selectedLogId} onClose={() => setSelectedLogId(null)} />
     </div>
+  </div>
   );
 }
 
