@@ -346,11 +346,38 @@ func encodeOpenAIToolChoice(tc *canonical.ToolChoice) json.RawMessage {
 	return nil
 }
 
+// clampMaxTokens ensures requested max_tokens does not exceed provider limits
+func clampMaxTokens(model string, maxTokens int) int {
+	if maxTokens <= 0 {
+		return maxTokens
+	}
+	m := strings.ToLower(model)
+	if strings.Contains(m, "o1") || strings.Contains(m, "o3") {
+		if maxTokens > 100000 {
+			return 100000
+		}
+		return maxTokens
+	}
+	if strings.Contains(m, "gpt-4o") {
+		if maxTokens > 16384 {
+			return 16384
+		}
+		return maxTokens
+	}
+	if strings.Contains(m, "gpt-4") || strings.Contains(m, "gpt-3.5") {
+		if maxTokens > 4096 {
+			return 4096
+		}
+		return maxTokens
+	}
+	return maxTokens
+}
+
 // EncodeCanonicalRequest converts CanonicalRequest to OpenAI Request payload
 func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) {
 	req := OpenAIRequest{
 		Model:           canReq.Model,
-		MaxTokens:       canReq.MaxTokens,
+		MaxTokens:       clampMaxTokens(canReq.Model, canReq.MaxTokens),
 		Temperature:     canReq.Temperature,
 		TopP:            canReq.TopP,
 		Stream:          canReq.Stream,
