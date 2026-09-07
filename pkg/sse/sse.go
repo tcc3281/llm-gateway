@@ -15,17 +15,9 @@ type Reader struct {
 	scanner *bufio.Scanner
 }
 
-const (
-	defaultBufferSize = 64 * 1024
-	maxBufferSize     = 10 * 1024 * 1024 // 10MB to accommodate large tool call parameters or reasoning chains
-)
-
 func NewReader(r io.Reader) *Reader {
-	scanner := bufio.NewScanner(r)
-	buf := make([]byte, defaultBufferSize)
-	scanner.Buffer(buf, maxBufferSize)
 	return &Reader{
-		scanner: scanner,
+		scanner: bufio.NewScanner(r),
 	}
 }
 

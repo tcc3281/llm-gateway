@@ -58,12 +58,6 @@ type GeminiPart struct {
 	Thought          bool                    `json:"thought,omitempty"`
 	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
-	InlineData       *GeminiInlineData       `json:"inlineData,omitempty"`
-}
-
-type GeminiInlineData struct {
-	MimeType string `json:"mimeType"`
-	Data     string `json:"data"`
 }
 
 // GeminiFunctionCall is a model-requested tool invocation. Args carries the
@@ -179,19 +173,9 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 				})
 			}
 		default:
-			if len(msg.ContentParts) > 0 {
-				for _, cp := range msg.ContentParts {
-					if cp.Type == "text" && cp.Text != "" {
-						content.Parts = append(content.Parts, GeminiPart{Text: cp.Text})
-					} else if cp.Type == "image_url" && cp.ImageURL != nil {
-						if inline := parseGeminiInlineData(cp.ImageURL.URL); inline != nil {
-							content.Parts = append(content.Parts, GeminiPart{InlineData: inline})
-						}
-					}
-				}
-			} else if msg.Content != "" {
-				// Skip empty user turns — an empty text part marshals to {} which
-				// Gemini rejects ("required oneof field 'data'").
+			// Skip empty user turns — an empty text part marshals to {} which
+			// Gemini rejects ("required oneof field 'data'").
+			if msg.Content != "" {
 				content.Parts = append(content.Parts, GeminiPart{Text: msg.Content})
 			}
 		}
@@ -446,27 +430,4 @@ func DecodeStreamChunk(chunkBytes []byte, model string) (*canonical.CanonicalStr
 	}
 
 	return chunk, nil
-}
-
-// parseGeminiInlineData extracts mimeType and base64 data from a data: URI.
-func parseGeminiInlineData(rawURL string) *GeminiInlineData {
-	if !strings.HasPrefix(rawURL, "data:") {
-		return nil
-	}
-	parts := strings.SplitN(rawURL[5:], ",", 2)
-	if len(parts) != 2 {
-		return nil
-	}
-	meta := parts[0]
-	data := parts[1]
-	mimeType := "image/jpeg"
-	if strings.Contains(meta, ";") {
-		mimeType = strings.Split(meta, ";")[0]
-	} else if meta != "" {
-		mimeType = meta
-	}
-	return &GeminiInlineData{
-		MimeType: mimeType,
-		Data:     data,
-	}
 }

@@ -30,7 +30,7 @@ func NewAuthService(pg *db.PostgresDB, redis *db.RedisClient, adminKey string) *
 }
 
 // GenerateSecretKey creates a key like: sk-gw-abcdef123456... (returns plain key & struct)
-func (s *AuthService) CreateAPIKey(ctx context.Context, userID uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, cacheTTLSeconds int) (string, *model.APIKey, error) {
+func (s *AuthService) CreateAPIKey(ctx context.Context, userID uuid.UUID, name string, budgetLimit float64, rateLimitRPM int) (string, *model.APIKey, error) {
 	bytes := make([]byte, 24)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", nil, err
@@ -41,14 +41,13 @@ func (s *AuthService) CreateAPIKey(ctx context.Context, userID uuid.UUID, name s
 	hash := s.HashKey(plainKey)
 
 	apiKey := &model.APIKey{
-		UserID:          userID,
-		KeyPrefix:       prefix,
-		KeyHash:         hash,
-		Name:            name,
-		BudgetLimit:     budgetLimit,
-		RateLimitRPM:    rateLimitRPM,
-		CacheTTLSeconds: cacheTTLSeconds,
-		IsActive:        true,
+		UserID:       userID,
+		KeyPrefix:    prefix,
+		KeyHash:      hash,
+		Name:         name,
+		BudgetLimit:  budgetLimit,
+		RateLimitRPM: rateLimitRPM,
+		IsActive:     true,
 	}
 
 	if err := s.pg.CreateAPIKey(apiKey); err != nil {
@@ -117,15 +116,14 @@ func (s *AuthService) RevokeAPIKey(ctx context.Context, id uuid.UUID) error {
 	}
 	if s.redis != nil {
 		_ = s.redis.DeleteCachedKey(ctx, key.KeyHash)
-		_ = s.redis.DeleteCachedBudgetSpent(ctx, key.ID.String())
 	}
 	return nil
 }
 
-// UpdateAPIKey edits a key's name, budget, rate limit, cache TTL and expiry, then
+// UpdateAPIKey edits a key's name, budget, rate limit and expiry, then
 // invalidates the Redis cache so the new limits apply immediately (cached keys
 // would otherwise live up to their 10-minute TTL).
-func (s *AuthService) UpdateAPIKey(ctx context.Context, id uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, cacheTTLSeconds int, expiresAt *time.Time) error {
+func (s *AuthService) UpdateAPIKey(ctx context.Context, id uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, expiresAt *time.Time) error {
 	if s.pg == nil {
 		return errors.New("database unavailable")
 	}
@@ -133,12 +131,11 @@ func (s *AuthService) UpdateAPIKey(ctx context.Context, id uuid.UUID, name strin
 	if err != nil {
 		return err
 	}
-	if err := s.pg.UpdateAPIKey(id, name, budgetLimit, rateLimitRPM, cacheTTLSeconds, expiresAt); err != nil {
+	if err := s.pg.UpdateAPIKey(id, name, budgetLimit, rateLimitRPM, expiresAt); err != nil {
 		return err
 	}
 	if s.redis != nil {
 		_ = s.redis.DeleteCachedKey(ctx, key.KeyHash)
-		_ = s.redis.DeleteCachedBudgetSpent(ctx, key.ID.String())
 	}
 	return nil
 }

@@ -12,13 +12,11 @@ import (
 
 	"llm-gateway/internal/analytics"
 	"llm-gateway/internal/auth"
-	"llm-gateway/internal/cache"
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/service"
-	"llm-gateway/internal/telemetry"
 	"llm-gateway/internal/web"
 )
 
@@ -29,20 +27,6 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
-	}
-
-	// 1b. Initialize OpenTelemetry Tracing
-	otelShutdown, err := telemetry.Setup(context.Background(), "llm-gateway", cfg.OTelExporter, cfg.OTelEndpoint)
-	if err != nil {
-		log.Printf("Warning: OTel initialization error (tracing disabled): %v", err)
-	} else {
-		defer func() {
-			sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := otelShutdown(sCtx); err != nil {
-				log.Printf("Error shutting down OTel: %v", err)
-			}
-		}()
 	}
 
 	// 2. Initialize PostgreSQL (retry until the container dependency is ready)
@@ -66,21 +50,7 @@ func main() {
 	telemetryLogger := analytics.NewTelemetryLogger(pg, 10000)
 	defer telemetryLogger.Close()
 
-	globalCacheTTL := time.Duration(cfg.ResponseCacheTTL) * time.Second
-	responseCache := cache.NewResponseCache(redisClient, globalCacheTTL)
-	gwService := service.NewGatewayService(
-		providerClient,
-		keyStore,
-		costCalc,
-		telemetryLogger,
-		redisClient,
-		pg,
-		responseCache,
-		cfg.ContentCapturePolicy,
-		cfg.SLOMaxTTFTMs,
-		cfg.SLOMaxTBTMs,
-		cfg.AgentMaxToolCalls,
-	)
+	gwService := service.NewGatewayService(providerClient, keyStore, costCalc, telemetryLogger, redisClient, pg)
 
 	// Refresh each provider's discovered model catalog hourly in the background
 	// so new upstream models resolve without an admin touching the UI.
@@ -92,7 +62,6 @@ func main() {
 
 	// 6. Router Setup: Public Gateway Mux (Port 8080)
 	publicMux := http.NewServeMux()
-	publicMux.Handle("GET /metrics", telemetry.PrometheusHandler())
 	publicMux.HandleFunc("POST /v1/chat/completions", gwHandler.HandleOpenAIChatCompletions)
 	publicMux.HandleFunc("POST /v1/messages", gwHandler.HandleAnthropicMessages)
 	publicMux.HandleFunc("POST /v1/embeddings", gwHandler.HandleEmbeddings)
@@ -136,7 +105,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-admin"}`))
 	})
-	adminMux.Handle("GET /metrics", telemetry.PrometheusHandler())
 	// SPA: catch-all for GET requests not matched by a specific /admin/* route.
 	// Client-side routing in the React app owns every path below this handler.
 	adminMux.Handle("/", web.Handler())

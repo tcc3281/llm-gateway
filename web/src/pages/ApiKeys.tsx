@@ -9,7 +9,6 @@ interface KeyForm {
   name: string;
   budget_limit: string;
   rate_limit_rpm: string;
-  cache_ttl_seconds: string;
   expires_at: string;
 }
 
@@ -18,7 +17,6 @@ const empty: KeyForm = {
   name: "",
   budget_limit: "0",
   rate_limit_rpm: "60",
-  cache_ttl_seconds: "0",
   expires_at: "",
 };
 
@@ -69,7 +67,6 @@ export default function ApiKeys() {
         name: form.name.trim(),
         budget_limit: parseFloat(form.budget_limit) || 0,
         rate_limit_rpm: parseInt(form.rate_limit_rpm, 10) || 60,
-        cache_ttl_seconds: parseInt(form.cache_ttl_seconds, 10) ?? 0,
       });
       setCreatedSecret(res.api_key);
       setForm(empty);
@@ -96,7 +93,6 @@ export default function ApiKeys() {
         name: editForm.name,
         budget_limit: parseFloat(editForm.budget_limit) || 0,
         rate_limit_rpm: parseInt(editForm.rate_limit_rpm, 10) || 0,
-        cache_ttl_seconds: parseInt(editForm.cache_ttl_seconds, 10) ?? 0,
         expires_at: editForm.expires_at
           ? `${editForm.expires_at}:00Z`
           : null,
@@ -169,7 +165,6 @@ export default function ApiKeys() {
               <th>User</th>
               <th className="num">Budget</th>
               <th className="num">RPM</th>
-              <th>Cache</th>
               <th>Status</th>
               <th>Expires</th>
               <th style={{ textAlign: "right" }}>Actions</th>
@@ -185,11 +180,6 @@ export default function ApiKeys() {
                 <td className="muted">{userLabel(k.user_id, users)}</td>
                 <td className="num">{fmtMoney(k.budget_limit, 2)}</td>
                 <td className="num">{fmtNum(k.rate_limit_rpm)}</td>
-                <td>
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    {fmtCache(k.cache_ttl_seconds ?? 0)}
-                  </span>
-                </td>
                 <td>
                   {k.is_active ? (
                     <span className="badge badge--success">active</span>
@@ -209,7 +199,6 @@ export default function ApiKeys() {
                           name: k.name,
                           budget_limit: String(k.budget_limit),
                           rate_limit_rpm: String(k.rate_limit_rpm),
-                          cache_ttl_seconds: String(k.cache_ttl_seconds ?? 0),
                           expires_at: k.expires_at
                             ? k.expires_at.replace("Z", "").slice(0, 16)
                             : "",
@@ -411,46 +400,17 @@ function KeyFields({
           />
         </div>
       </div>
-      <div className="row">
-        <div className="field" style={{ flex: 1 }}>
-          <label className="field__label">
-            Cache TTL (seconds: 0=global 1h, -1=off)
-          </label>
-          <input
-            className="input"
-            type="number"
-            step="1"
-            value={form.cache_ttl_seconds}
-            onChange={(e) =>
-              setForm({ ...form, cache_ttl_seconds: e.target.value })
-            }
-          />
-        </div>
-        <div className="field" style={{ flex: 1 }}>
-          <label className="field__label">Expires (empty = never)</label>
-          <input
-            className="input"
-            type="datetime-local"
-            value={form.expires_at}
-            onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
-            onClick={(e) => {
-              try {
-                e.currentTarget.showPicker();
-              } catch {}
-            }}
-          />
-        </div>
+      <div className="field">
+        <label className="field__label">Expires (empty = never)</label>
+        <input
+          className="input"
+          type="datetime-local"
+          value={form.expires_at}
+          onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+        />
       </div>
     </>
   );
-}
-
-function fmtCache(ttl: number): string {
-  if (ttl === -1) return "Off";
-  if (ttl === 0) return "Default (1h)";
-  if (ttl % 3600 === 0) return `${ttl / 3600}h`;
-  if (ttl % 60 === 0) return `${ttl / 60}m`;
-  return `${ttl}s`;
 }
 
 function userLabel(id: string, users: User[]): string {

@@ -6,16 +6,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"llm-gateway/internal/auth"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
 	"llm-gateway/internal/service"
-	"llm-gateway/internal/telemetry"
-
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 type GatewayHandler struct {
@@ -47,21 +42,14 @@ func (e *GateErr) Error() string {
 
 // OpenAI Compatible Endpoint: POST /v1/chat/completions
 func (h *GatewayHandler) HandleOpenAIChatCompletions(w http.ResponseWriter, r *http.Request) {
-	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	tracer := otel.Tracer(telemetry.TracerName)
-	ctx, span := tracer.Start(ctx, "llmgw.chat_completions")
-	defer span.End()
-
 	apiKey, gateErr := h.authenticate(r)
 	if gateErr != nil {
-		span.RecordError(gateErr)
 		WriteErrorResponse(w, "openai", gateErr.StatusCode, gateErr.Message, gateErr.Type, gateErr.Code)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		span.RecordError(err)
 		WriteErrorResponse(w, "openai", http.StatusBadRequest, "Failed to read request body", "invalid_request_error", "bad_request")
 		return
 	}
@@ -74,29 +62,21 @@ func (h *GatewayHandler) HandleOpenAIChatCompletions(w http.ResponseWriter, r *h
 		ResponseWriter: w,
 	}
 
-	if err := h.gwService.HandleRequest(ctx, params); err != nil {
-		span.RecordError(err)
+	if err := h.gwService.HandleRequest(r.Context(), params); err != nil {
 		h.writeServiceError(w, "openai", err)
 	}
 }
 
 // OpenAI Compatible Endpoint: POST /v1/embeddings
 func (h *GatewayHandler) HandleEmbeddings(w http.ResponseWriter, r *http.Request) {
-	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	tracer := otel.Tracer(telemetry.TracerName)
-	ctx, span := tracer.Start(ctx, "llmgw.embeddings")
-	defer span.End()
-
 	apiKey, gateErr := h.authenticate(r)
 	if gateErr != nil {
-		span.RecordError(gateErr)
 		WriteErrorResponse(w, "openai", gateErr.StatusCode, gateErr.Message, gateErr.Type, gateErr.Code)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		span.RecordError(err)
 		WriteErrorResponse(w, "openai", http.StatusBadRequest, "Failed to read request body", "invalid_request_error", "bad_request")
 		return
 	}
@@ -109,29 +89,21 @@ func (h *GatewayHandler) HandleEmbeddings(w http.ResponseWriter, r *http.Request
 		ResponseWriter: w,
 	}
 
-	if err := h.gwService.HandleEmbeddings(ctx, params); err != nil {
-		span.RecordError(err)
+	if err := h.gwService.HandleEmbeddings(r.Context(), params); err != nil {
 		h.writeServiceError(w, "openai", err)
 	}
 }
 
 // Anthropic Compatible Endpoint: POST /v1/messages
 func (h *GatewayHandler) HandleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
-	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-	tracer := otel.Tracer(telemetry.TracerName)
-	ctx, span := tracer.Start(ctx, "llmgw.messages")
-	defer span.End()
-
 	apiKey, gateErr := h.authenticate(r)
 	if gateErr != nil {
-		span.RecordError(gateErr)
 		WriteErrorResponse(w, "anthropic", gateErr.StatusCode, gateErr.Message, gateErr.Type, gateErr.Code)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		span.RecordError(err)
 		WriteErrorResponse(w, "anthropic", http.StatusBadRequest, "Failed to read request body", "invalid_request_error", "bad_request")
 		return
 	}
@@ -144,8 +116,7 @@ func (h *GatewayHandler) HandleAnthropicMessages(w http.ResponseWriter, r *http.
 		ResponseWriter: w,
 	}
 
-	if err := h.gwService.HandleRequest(ctx, params); err != nil {
-		span.RecordError(err)
+	if err := h.gwService.HandleRequest(r.Context(), params); err != nil {
 		h.writeServiceError(w, "anthropic", err)
 	}
 }
@@ -271,26 +242,9 @@ func (h *GatewayHandler) authenticate(r *http.Request) (*model.APIKey, *GateErr)
 		}
 	}
 
-	// 2. Check Budget Limit Quota (cached in Redis to avoid synchronous PostgreSQL aggregation on hot path)
-	if apiKey.BudgetLimit > 0 {
-		var spent float64
-		var err error
-		gotFromCache := false
-
-		if h.redis != nil {
-			if cachedSpent, cErr := h.redis.GetCachedBudgetSpent(r.Context(), apiKey.ID.String()); cErr == nil {
-				spent = cachedSpent
-				gotFromCache = true
-			}
-		}
-
-		if !gotFromCache && h.pg != nil {
-			spent, err = h.pg.GetSpentCostByKeyID(apiKey.ID)
-			if err == nil && h.redis != nil {
-				_ = h.redis.SetCachedBudgetSpent(r.Context(), apiKey.ID.String(), spent, 60*time.Second)
-			}
-		}
-
+	// 2. Check Budget Limit Quota
+	if h.pg != nil && apiKey.BudgetLimit > 0 {
+		spent, err := h.pg.GetSpentCostByKeyID(apiKey.ID)
 		if err == nil && spent >= apiKey.BudgetLimit {
 			return nil, &GateErr{
 				StatusCode: http.StatusTooManyRequests,

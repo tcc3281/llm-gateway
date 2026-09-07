@@ -36,30 +36,16 @@ type ToolCallDelta struct {
 	Arguments string `json:"arguments,omitempty"`
 }
 
-// ContentPart represents a multimodal part in a chat message (text, image, etc.)
-type ContentPart struct {
-	Type     string    `json:"type"` // "text" | "image_url"
-	Text     string    `json:"text,omitempty"`
-	ImageURL *ImageURL `json:"image_url,omitempty"`
-}
-
-type ImageURL struct {
-	URL    string `json:"url"`
-	Detail string `json:"detail,omitempty"`
-}
-
 // ChatMessage is one message in the conversation. Text lives in Content; an
 // assistant message may additionally carry ToolCalls, and a role=="tool"
 // message (a tool result) carries ToolCallID identifying which call it answers.
 // ToolCallID doubles as the Anthropic tool_use_id and the key used to resolve a
 // Gemini functionResponse name from the preceding assistant tool call.
-// Multimodal parts (images, structured content) are stored in ContentParts.
 type ChatMessage struct {
-	Role         string        `json:"role"` // "system" | "user" | "assistant" | "tool"
-	Content      string        `json:"content"`
-	ContentParts []ContentPart `json:"content_parts,omitempty"`
-	ToolCallID   string        `json:"tool_call_id,omitempty"`
-	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
+	Role       string     `json:"role"` // "system" | "user" | "assistant" | "tool"
+	Content    string     `json:"content"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type CanonicalRequest struct {

@@ -50,7 +50,7 @@ export default function Settings() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="settings-row">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
             Health <span className="mono">[GET /health]</span>

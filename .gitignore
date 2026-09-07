@@ -38,11 +38,3 @@ internal/web/dist/*
 # Editor/IDE
 # .idea/
 # .vscode/
-
-# Python / CLI
-__pycache__/
-*.py[cod]
-*$py.class
-cli/.venv/
-cli/dist/
-cli/*.egg-info/
