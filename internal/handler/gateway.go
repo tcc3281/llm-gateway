@@ -310,6 +310,10 @@ func (h *GatewayHandler) authenticate(r *http.Request) (*model.APIKey, *GateErr)
 // is not in the registry is surfaced as 404 model_not_found — the gateway never
 // guesses an upstream from the model-name prefix.
 func (h *GatewayHandler) writeServiceError(w http.ResponseWriter, inboundFormat string, err error) {
+	if service.IsPermissionDeniedError(err) {
+		WriteErrorResponse(w, inboundFormat, http.StatusForbidden, err.Error(), "permission_error", "forbidden")
+		return
+	}
 	if service.IsUnknownModelError(err) {
 		WriteErrorResponse(w, inboundFormat, http.StatusNotFound, err.Error(), "invalid_request_error", "model_not_found")
 		return

@@ -4,10 +4,12 @@ import { useAuth } from "../auth";
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: "dashboard" },
   { to: "/users", label: "Users", icon: "group" },
+  { to: "/groups", label: "Groups & IAM", icon: "badge" },
   { to: "/keys", label: "API Keys", icon: "key" },
   { to: "/providers", label: "Providers", icon: "hub" },
   { to: "/models", label: "Models & Pricing", icon: "payments" },
   { to: "/logs", label: "Usage Logs", icon: "list_alt" },
+  { to: "/audit-logs", label: "Audit Trail", icon: "history" },
   { to: "/settings", label: "Settings", icon: "settings" },
 ];
 

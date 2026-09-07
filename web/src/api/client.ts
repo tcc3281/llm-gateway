@@ -1,6 +1,11 @@
 import type {
   APIKey,
+  AuditLog,
+  AuditLogsPage,
   DashboardStats,
+  Group,
+  GroupPolicy,
+  KeyModelPolicy,
   ModelPricing,
   ProviderKey,
   SystemInfo,
@@ -71,9 +76,9 @@ export interface CreateKeyResult {
 export const api = {
   // Users
   listUsers: () => request<User[]>("/admin/users"),
-  createUser: (u: { email: string; name: string; role?: string }) =>
+  createUser: (u: { email: string; name: string; role?: string; is_root?: boolean }) =>
     request<User>("/admin/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: { name?: string; role?: string }) =>
+  updateUser: (id: string, patch: { name?: string; role?: string; is_root?: boolean }) =>
     request<User>(`/admin/users?id=${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -191,6 +196,91 @@ export const api = {
       `/admin/logs${qs(params as Record<string, string | number | undefined>)}`,
     ),
   getLog: (id: number | string) => request<UsageLogDetail>(`/admin/logs/${id}`),
+
+  // Key Model Policies
+  listKeyModelPolicies: (keyId: string) =>
+    request<KeyModelPolicy[]>(`/admin/keys/${keyId}/models`),
+  createKeyModelPolicy: (keyId: string, p: { model_pattern: string; is_allowlist?: boolean }) =>
+    request<KeyModelPolicy>(`/admin/keys/${keyId}/models`, {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  deleteKeyModelPolicy: (keyId: string, policyId: string) =>
+    request<{ message: string }>(`/admin/keys/${keyId}/models/${policyId}`, {
+      method: "DELETE",
+    }),
+
+  // Groups & IAM
+  listGroups: () => request<Group[]>("/admin/groups"),
+  createGroup: (g: {
+    name: string;
+    description?: string;
+    budget_limit_monthly?: number;
+    rate_limit_rpm?: number;
+    is_active?: boolean;
+  }) =>
+    request<Group>("/admin/groups", {
+      method: "POST",
+      body: JSON.stringify(g),
+    }),
+  getGroup: (id: string) => request<Group>(`/admin/groups/${id}`),
+  updateGroup: (id: string, patch: Partial<Group>) =>
+    request<Group>(`/admin/groups/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteGroup: (id: string) =>
+    request<{ message: string }>(`/admin/groups/${id}`, { method: "DELETE" }),
+
+  // Group Policies
+  listGroupPolicies: (groupId: string) =>
+    request<GroupPolicy[]>(`/admin/groups/${groupId}/policies`),
+  createGroupPolicy: (
+    groupId: string,
+    p: { name: string; policy: any; priority?: number; is_active?: boolean },
+  ) =>
+    request<GroupPolicy>(`/admin/groups/${groupId}/policies`, {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  updateGroupPolicy: (
+    groupId: string,
+    policyId: string,
+    p: { name?: string; policy: any; priority?: number; is_active?: boolean },
+  ) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/policies/${policyId}`, {
+      method: "PATCH",
+      body: JSON.stringify(p),
+    }),
+  deleteGroupPolicy: (groupId: string, policyId: string) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/policies/${policyId}`, {
+      method: "DELETE",
+    }),
+
+  // Group Members
+  listGroupMembers: (groupId: string) =>
+    request<User[]>(`/admin/groups/${groupId}/members`),
+  addGroupMember: (groupId: string, userId: string) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    }),
+  removeGroupMember: (groupId: string, userId: string) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
+  // Audit Logs
+  auditLogs: (params: {
+    actor_type?: string;
+    action?: string;
+    target_type?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    request<AuditLogsPage>(
+      `/admin/audit-logs${qs(params as Record<string, string | number | undefined>)}`,
+    ),
 
   // System
   systemInfo: () => request<SystemInfo>("/admin/system/info"),

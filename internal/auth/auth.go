@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -99,7 +100,10 @@ func (s *AuthService) ValidateAPIKey(ctx context.Context, plainKey string) (*mod
 }
 
 func (s *AuthService) ValidateAdminKey(key string) bool {
-	return key != "" && key == s.adminKey
+	if key == "" || s.adminKey == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(key), []byte(s.adminKey)) == 1
 }
 
 // RevokeAPIKey deactivates a key in PostgreSQL and invalidates its Redis cache

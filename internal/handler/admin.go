@@ -19,6 +19,7 @@ import (
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
+	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/service"
 
@@ -34,9 +35,10 @@ type AdminHandler struct {
 	allowedIPs  []string
 	cfg         *config.Config
 	gwService   *service.GatewayService // model discovery (optional — may be nil)
+	permEngine  *permission.PermissionEngine
 }
 
-func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore *provider.KeyStore, costCalc *analytics.CostCalculator, redis *db.RedisClient, allowedIPsStr string, cfg *config.Config, gwService *service.GatewayService) *AdminHandler {
+func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore *provider.KeyStore, costCalc *analytics.CostCalculator, redis *db.RedisClient, allowedIPsStr string, cfg *config.Config, gwService *service.GatewayService, permEngine *permission.PermissionEngine) *AdminHandler {
 	var allowedIPs []string
 	if allowedIPsStr != "" {
 		parts := strings.Split(allowedIPsStr, ",")
@@ -57,7 +59,29 @@ func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore 
 		allowedIPs:  allowedIPs,
 		cfg:         cfg,
 		gwService:   gwService,
+		permEngine:  permEngine,
 	}
+}
+
+func (h *AdminHandler) logAudit(r *http.Request, actorType, action, targetType, targetID string, details interface{}) {
+	if h.pg == nil {
+		return
+	}
+	clientIP := h.getClientIP(r)
+	var rawDetails json.RawMessage
+	if details != nil {
+		if b, err := json.Marshal(details); err == nil {
+			rawDetails = b
+		}
+	}
+	_ = h.pg.CreateAuditLog(&model.AuditLog{
+		ActorType:  actorType,
+		ActorIP:    clientIP,
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Details:    rawDetails,
+	})
 }
 
 func (h *AdminHandler) getClientIP(r *http.Request) string {
@@ -123,9 +147,10 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-		Role  string `json:"role"`
+		Email  string `json:"email"`
+		Name   string `json:"name"`
+		Role   string `json:"role"`
+		IsRoot bool   `json:"is_root"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -138,15 +163,23 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := &model.User{
-		Email: req.Email,
-		Name:  req.Name,
-		Role:  req.Role,
+		Email:  req.Email,
+		Name:   req.Name,
+		Role:   req.Role,
+		IsRoot: req.IsRoot,
 	}
 
 	if err := h.pg.CreateUser(user); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logAudit(r, "admin", "user.create", "user", user.ID.String(), map[string]interface{}{
+		"email":   user.Email,
+		"name":    user.Name,
+		"role":    user.Role,
+		"is_root": user.IsRoot,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -197,6 +230,13 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		"api_key":  plainKey, // Secret returned only ONCE upon creation!
 		"key_info": apiKey,
 	}
+
+	h.logAudit(r, "admin", "key.create", "key", apiKey.ID.String(), map[string]interface{}{
+		"name":           apiKey.Name,
+		"user_id":        apiKey.UserID,
+		"budget_limit":   apiKey.BudgetLimit,
+		"rate_limit_rpm": apiKey.RateLimitRPM,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -279,6 +319,8 @@ func (h *AdminHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logAudit(r, "admin", "key.revoke", "key", id.String(), nil)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "API key revoked successfully"})
 }
@@ -296,8 +338,9 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name *string `json:"name"`
-		Role *string `json:"role"`
+		Name   *string `json:"name"`
+		Role   *string `json:"role"`
+		IsRoot *bool   `json:"is_root"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
@@ -309,22 +352,28 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "user not found"}`, http.StatusNotFound)
 		return
 	}
-	name, role := current.Name, current.Role
+	name, role, isRoot := current.Name, current.Role, current.IsRoot
 	if req.Name != nil {
 		name = *req.Name
 	}
 	if req.Role != nil {
 		role = *req.Role
 	}
+	if req.IsRoot != nil {
+		isRoot = *req.IsRoot
+	}
 
-	if err := h.pg.UpdateUser(id, name, role); err != nil {
+	if err := h.pg.UpdateUser(id, name, role, isRoot); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
 
+	h.logAudit(r, "admin", "user.update", "user", id.String(), req)
+
 	updated := *current
 	updated.Name = name
 	updated.Role = role
+	updated.IsRoot = isRoot
 	updated.UpdatedAt = time.Now()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -347,6 +396,8 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logAudit(r, "admin", "user.delete", "user", id.String(), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
@@ -417,6 +468,8 @@ func (h *AdminHandler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logAudit(r, "admin", "key.update", "key", id.String(), req)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "API key updated successfully"})
 }
@@ -436,6 +489,8 @@ func (h *AdminHandler) ReactivateAPIKey(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logAudit(r, "admin", "key.reactivate", "key", id.String(), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "API key reactivated successfully"})
@@ -1099,6 +1154,12 @@ func (h *AdminHandler) SetProviderKey(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	h.logAudit(r, "admin", "provider.set", "provider", req.Provider, map[string]interface{}{
+		"provider": req.Provider,
+		"base_url": baseURL,
+		"protocol": protocol,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Provider API key saved successfully", "provider": req.Provider})
@@ -1127,6 +1188,8 @@ func (h *AdminHandler) DeleteProviderKey(w http.ResponseWriter, r *http.Request)
 	if h.costCalc != nil {
 		_ = h.costCalc.RefreshCatalog()
 	}
+
+	h.logAudit(r, "admin", "provider.delete", "provider", providerName, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

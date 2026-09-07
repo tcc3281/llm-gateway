@@ -21,6 +21,7 @@ import (
 	"llm-gateway/internal/cache"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
+	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/telemetry"
 	"llm-gateway/pkg/sse"
@@ -28,6 +29,20 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// ErrPermissionDenied is returned when a user or API key lacks IAM permission for a model.
+type ErrPermissionDenied struct {
+	Message string
+}
+
+func (e *ErrPermissionDenied) Error() string {
+	return e.Message
+}
+
+func IsPermissionDeniedError(err error) bool {
+	var ep *ErrPermissionDenied
+	return errors.As(err, &ep)
+}
 
 // ErrProviderKey is returned when the upstream provider has no API key
 // configured in the stateful provider_keys table.
@@ -47,6 +62,7 @@ type GatewayService struct {
 	redis                *db.RedisClient
 	pg                   *db.PostgresDB
 	responseCache        *cache.ResponseCache
+	permEngine           *permission.PermissionEngine
 	contentCapturePolicy string
 	sloMaxTTFTMs         int
 	sloMaxTBTMs          int
@@ -61,6 +77,7 @@ func NewGatewayService(
 	redis *db.RedisClient,
 	pg *db.PostgresDB,
 	rc *cache.ResponseCache,
+	permEngine *permission.PermissionEngine,
 	contentCapturePolicy string,
 	sloMaxTTFTMs int,
 	sloMaxTBTMs int,
@@ -74,6 +91,7 @@ func NewGatewayService(
 		redis:                redis,
 		pg:                   pg,
 		responseCache:        rc,
+		permEngine:           permEngine,
 		contentCapturePolicy: contentCapturePolicy,
 		sloMaxTTFTMs:         sloMaxTTFTMs,
 		sloMaxTBTMs:          sloMaxTBTMs,
@@ -404,6 +422,25 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 
 	if err != nil {
 		return fmt.Errorf("failed to decode request: %w", err)
+	}
+
+	// 1b. IAM & Key Model Permission Check
+	if g.permEngine != nil && params.ApiKey != nil {
+		// Evaluate per-key allowlist/denylist rules
+		allowed, pErr := g.permEngine.CheckKeyModelAccess(ctx, params.ApiKey.ID, canReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by API key policy", canReq.Model),
+			}
+		}
+
+		// Evaluate user IAM group policies
+		allowed, pErr = g.permEngine.CheckModelAccess(ctx, params.ApiKey.UserID, canReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by IAM group policy", canReq.Model),
+			}
+		}
 	}
 
 	// Capture prompt event if policy allows
@@ -1135,6 +1172,23 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 	}
 	if err := json.Unmarshal(params.RequestBody, &embedReq); err != nil {
 		return fmt.Errorf("invalid embeddings payload: %w", err)
+	}
+
+	// 1b. IAM & Key Model Permission Check
+	if g.permEngine != nil && params.ApiKey != nil {
+		allowed, pErr := g.permEngine.CheckKeyModelAccess(ctx, params.ApiKey.ID, embedReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by API key policy", embedReq.Model),
+			}
+		}
+
+		allowed, pErr = g.permEngine.CheckModelAccess(ctx, params.ApiKey.UserID, embedReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by IAM group policy", embedReq.Model),
+			}
+		}
 	}
 
 	// 2. Resolve target provider

@@ -8,9 +8,10 @@ interface UserForm {
   name: string;
   email: string;
   role: string;
+  is_root: boolean;
 }
 
-const empty: UserForm = { name: "", email: "", role: "user" };
+const empty: UserForm = { name: "", email: "", role: "user", is_root: false };
 
 export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
@@ -64,6 +65,7 @@ export default function Users() {
       await api.updateUser(editTarget.id, {
         name: editForm.name,
         role: editForm.role,
+        is_root: editForm.is_root,
       });
       setEditTarget(null);
       await load();
@@ -124,11 +126,29 @@ export default function Users() {
                   {u.email}
                 </td>
                 <td>
-                  {u.role === "admin" ? (
-                    <span className="badge badge--violet">admin</span>
-                  ) : (
-                    <span className="badge">user</span>
-                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {u.role === "admin" ? (
+                      <span className="badge badge--violet">admin</span>
+                    ) : (
+                      <span className="badge">user</span>
+                    )}
+                    {u.is_root && (
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "1px 5px",
+                          borderRadius: 3,
+                          background: "rgba(245, 158, 11, 0.15)",
+                          color: "var(--amber)",
+                          border: "1px solid rgba(245, 158, 11, 0.3)",
+                        }}
+                      >
+                        ROOT
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="muted">{fmtDate(u.created_at)}</td>
                 <td>
@@ -137,7 +157,7 @@ export default function Users() {
                       className="btn btn--sm"
                       onClick={() => {
                         setEditTarget(u);
-                        setEditForm({ name: u.name, email: u.email, role: u.role });
+                        setEditForm({ name: u.name, email: u.email, role: u.role, is_root: Boolean(u.is_root) });
                       }}
                     >
                       Edit
@@ -275,6 +295,21 @@ function UserFields({
           <option value="user">user</option>
           <option value="admin">admin</option>
         </select>
+      </div>
+      <div className="field" style={{ marginTop: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={form.is_root}
+            onChange={(e) => setForm({ ...form, is_root: e.target.checked })}
+          />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+            Root Administrator (IAM Bypass)
+          </span>
+        </label>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 22 }}>
+          Root users bypass all IAM group and model permission checks.
+        </div>
       </div>
     </>
   );

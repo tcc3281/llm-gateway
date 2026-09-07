@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,22 +12,25 @@ type User struct {
 	Email     string    `json:"email"`
 	Name      string    `json:"name"`
 	Role      string    `json:"role"` // "admin" or "user"
+	IsRoot    bool      `json:"is_root"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type APIKey struct {
-	ID              uuid.UUID  `json:"id"`
-	UserID          uuid.UUID  `json:"user_id"`
-	KeyPrefix       string     `json:"key_prefix"`
-	KeyHash         string     `json:"-"`
-	Name            string     `json:"name"`
-	BudgetLimit     float64    `json:"budget_limit"`     // USD, 0 = unlimited
-	RateLimitRPM    int        `json:"rate_limit_rpm"`   // Requests per minute
-	CacheTTLSeconds int        `json:"cache_ttl_seconds"` // -1 = disabled, 0 = global default, >0 = custom TTL in seconds
-	IsActive        bool       `json:"is_active"`
-	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID                  uuid.UUID  `json:"id"`
+	UserID              uuid.UUID  `json:"user_id"`
+	KeyPrefix           string     `json:"key_prefix"`
+	KeyHash             string     `json:"-"`
+	Name                string     `json:"name"`
+	BudgetLimit         float64    `json:"budget_limit"`      // USD, 0 = unlimited
+	RateLimitRPM        int        `json:"rate_limit_rpm"`    // Requests per minute
+	CacheTTLSeconds     int        `json:"cache_ttl_seconds"`  // -1 = disabled, 0 = global default, >0 = custom TTL in seconds
+	BudgetPeriod        *string    `json:"budget_period,omitempty"` // nil = lifetime, "daily", "weekly", "monthly"
+	BudgetPeriodResetAt *time.Time `json:"budget_period_reset_at,omitempty"`
+	IsActive            bool       `json:"is_active"`
+	ExpiresAt           *time.Time `json:"expires_at,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 type ProviderKey struct {
@@ -206,3 +210,67 @@ type UsageLogDetail struct {
 	UserEmail string `json:"user_email,omitempty"`
 	KeyName   string `json:"key_name,omitempty"`
 }
+
+// Group represents a team or department for IAM permission evaluation and budget pooling.
+type Group struct {
+	ID                 uuid.UUID `json:"id"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description"`
+	BudgetLimitMonthly float64   `json:"budget_limit_monthly"` // USD, 0 = unlimited
+	RateLimitRPM       int       `json:"rate_limit_rpm"`       // 0 = no override
+	IsActive           bool      `json:"is_active"`
+	MemberCount        int       `json:"member_count,omitempty"`
+	PolicyCount        int       `json:"policy_count,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// GroupPolicy stores an AWS IAM-style policy JSON document attached to a group.
+type GroupPolicy struct {
+	ID        uuid.UUID       `json:"id"`
+	GroupID   uuid.UUID       `json:"group_id"`
+	Name      string          `json:"name"`
+	Policy    json.RawMessage `json:"policy"`
+	Priority  int             `json:"priority"`
+	IsActive  bool            `json:"is_active"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
+// UserGroup links a user to a group.
+type UserGroup struct {
+	UserID    uuid.UUID `json:"user_id"`
+	GroupID   uuid.UUID `json:"group_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// KeyModelPolicy specifies per-key model allowlist/denylist rules.
+type KeyModelPolicy struct {
+	ID           uuid.UUID `json:"id"`
+	KeyID        uuid.UUID `json:"key_id"`
+	ModelPattern string    `json:"model_pattern"`
+	IsAllowlist  bool      `json:"is_allowlist"` // true = allowlist, false = denylist
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// AuditLog tracks administrative actions, mutations, and security events.
+type AuditLog struct {
+	ID         int64           `json:"id"`
+	ActorID    *uuid.UUID      `json:"actor_id,omitempty"`
+	ActorType  string          `json:"actor_type"` // "root", "admin", "user", "system"
+	ActorIP    string          `json:"actor_ip,omitempty"`
+	Action     string          `json:"action"`
+	TargetType string          `json:"target_type,omitempty"`
+	TargetID   string          `json:"target_id,omitempty"`
+	Details    json.RawMessage `json:"details,omitempty"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+// AuditLogFilter specifies query filters for audit log retrieval.
+type AuditLogFilter struct {
+	ActorType  string
+	Action     string
+	TargetType string
+	Limit      int
+	Offset     int
+}
+

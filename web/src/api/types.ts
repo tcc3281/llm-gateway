@@ -7,6 +7,7 @@ export interface User {
   email: string;
   name: string;
   role: "admin" | "user";
+  is_root?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +20,8 @@ export interface APIKey {
   budget_limit: number;
   rate_limit_rpm: number;
   cache_ttl_seconds: number;
+  budget_period?: string | null;
+  budget_period_reset_at?: string | null;
   is_active: boolean;
   expires_at: string | null;
   created_at: string;
@@ -174,3 +177,54 @@ export interface SystemInfo {
   admin_allowed_ips: string;
   version: string;
 }
+
+export interface Group {
+  id: string;
+  name: string;
+  description: string;
+  budget_limit_monthly: number;
+  rate_limit_rpm: number;
+  is_active: boolean;
+  member_count?: number;
+  policy_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupPolicy {
+  id: string;
+  group_id: string;
+  name: string;
+  policy: any;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface KeyModelPolicy {
+  id: string;
+  key_id: string;
+  model_pattern: string;
+  is_allowlist: boolean;
+  created_at: string;
+}
+
+export interface AuditLog {
+  id: number;
+  actor_id?: string;
+  actor_type: string;
+  actor_ip?: string;
+  action: string;
+  target_type?: string;
+  target_id?: string;
+  details?: any;
+  created_at: string;
+}
+
+export interface AuditLogsPage {
+  data: AuditLog[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
