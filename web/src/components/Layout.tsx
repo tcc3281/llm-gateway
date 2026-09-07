@@ -3,9 +3,7 @@ import { useAuth } from "../auth";
 
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: "dashboard" },
-  { to: "/analytics/members", label: "Member Analytics", icon: "insights" },
-  { to: "/users", label: "Users", icon: "group" },
-  { to: "/groups", label: "Groups & IAM", icon: "badge" },
+  { to: "/people", label: "People & Access", icon: "shield_person" },
   { to: "/keys", label: "API Keys", icon: "key" },
   { to: "/providers", label: "Providers", icon: "hub" },
   { to: "/models", label: "Models & Pricing", icon: "payments" },

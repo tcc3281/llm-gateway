@@ -438,6 +438,7 @@ func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		UserID string `json:"user_id"`
+		Role   string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
@@ -449,7 +450,12 @@ func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.pg.AddUserToGroup(userID, groupID); err != nil {
+	role := "member"
+	if req.Role == "admin" {
+		role = "admin"
+	}
+
+	if err := h.pg.AddUserToGroupWithRole(userID, groupID, role); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
@@ -461,11 +467,70 @@ func (h *AdminHandler) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 	h.logAudit(r, "admin", "group.add_member", "group", groupID.String(), map[string]string{
 		"user_id":  userID.String(),
 		"group_id": groupID.String(),
+		"role":     role,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"message": "User added to group successfully"})
+}
+
+// PUT /admin/groups/{id}/members/{uid}/role -> Update a member's role (admin or member)
+func (h *AdminHandler) SetGroupMemberRole(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.URL.Query().Get("id")
+	}
+	groupID, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid group ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	uidStr := r.PathValue("uid")
+	if uidStr == "" {
+		uidStr = r.URL.Query().Get("uid")
+	}
+	userID, err := uuid.Parse(uidStr)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid user ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Role != "admin" && req.Role != "member" {
+		http.Error(w, `{"error": "Role must be 'admin' or 'member'"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.pg.SetGroupMemberRole(userID, groupID, req.Role); err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if h.permEngine != nil {
+		h.permEngine.InvalidateCache()
+	}
+
+	h.logAudit(r, "admin", "group.set_member_role", "group", groupID.String(), map[string]string{
+		"user_id":  userID.String(),
+		"group_id": groupID.String(),
+		"role":     req.Role,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Member role updated successfully"})
 }
 
 // DELETE /admin/groups/{id}/members/{uid} -> Remove a user from a group

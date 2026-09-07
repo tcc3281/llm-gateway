@@ -1,7 +1,7 @@
 import type {
+  ActionDef,
   AnalyticsMembersResponse,
   APIKey,
-  AuditLog,
   AuditLogsPage,
   DashboardStats,
   Group,
@@ -211,6 +211,10 @@ export const api = {
     model?: string;
     status?: string;
     inbound?: string;
+    modality?: string;
+    has_images?: boolean;
+    has_audio?: boolean;
+    structure_hash?: string;
     limit?: number;
     offset?: number;
   }) =>
@@ -278,14 +282,20 @@ export const api = {
     request<{ message: string }>(`/admin/groups/${groupId}/policies/${policyId}`, {
       method: "DELETE",
     }),
+  getIAMActions: () => request<ActionDef[]>("/admin/iam/actions"),
 
   // Group Members
   listGroupMembers: (groupId: string) =>
     request<User[]>(`/admin/groups/${groupId}/members`),
-  addGroupMember: (groupId: string, userId: string) =>
+  addGroupMember: (groupId: string, userId: string, role?: "member" | "admin") =>
     request<{ message: string }>(`/admin/groups/${groupId}/members`, {
       method: "POST",
-      body: JSON.stringify({ user_id: userId }),
+      body: JSON.stringify({ user_id: userId, role: role || "member" }),
+    }),
+  setGroupMemberRole: (groupId: string, userId: string, role: "member" | "admin") =>
+    request<{ message: string }>(`/admin/groups/${groupId}/members/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
     }),
   removeGroupMember: (groupId: string, userId: string) =>
     request<{ message: string }>(`/admin/groups/${groupId}/members/${userId}`, {

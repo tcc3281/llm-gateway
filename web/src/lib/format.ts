@@ -42,3 +42,11 @@ export function shortTs(iso: string): string {
 export function localToRFC3339(v: string): string {
   return v ? `${v}:00Z` : "";
 }
+
+export function fmtBytes(b?: number | null): string {
+  if (b === null || b === undefined || Number.isNaN(b) || b <= 0) return "0 B";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+}
+

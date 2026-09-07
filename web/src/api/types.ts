@@ -8,6 +8,7 @@ export interface User {
   name: string;
   role: "admin" | "user";
   is_root?: boolean;
+  group_role?: "member" | "admin";
   created_at: string;
   updated_at: string;
 }
@@ -114,6 +115,48 @@ export interface UsageRecent {
   latency_ms: number;
 }
 
+export interface ModalityBreakdown {
+  text_only: number;
+  vision: number;
+  audio: number;
+  tool_calls: number;
+  total_images: number;
+  total_audio: number;
+}
+
+export interface RequestShape {
+  structure_hash: string;
+  message_count: number;
+  roles: string[];
+  char_count: number;
+  word_count: number;
+  system_prompt_chars?: number;
+  has_images: boolean;
+  image_count: number;
+  image_total_bytes: number;
+  image_formats?: string[];
+  has_audio: boolean;
+  audio_count: number;
+  audio_total_bytes: number;
+  audio_formats?: string[];
+  tools_count: number;
+  tool_calls_count: number;
+  tool_names?: string[];
+  tool_parameter_keys?: string[];
+  has_reasoning: boolean;
+  reasoning_effort?: string;
+  modality: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  max_tokens?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  seed?: number;
+  stop_sequences?: string[];
+  stream?: boolean;
+}
+
 export interface DashboardStats {
   from: string;
   to: string;
@@ -124,6 +167,7 @@ export interface DashboardStats {
   by_user: UsageByUser[];
   recent: UsageRecent[];
   status_breakdown?: Record<number, number>;
+  modality_breakdown?: ModalityBreakdown;
 }
 
 export interface UsageLog {
@@ -148,6 +192,7 @@ export interface UsageLog {
   total_latency_ms: number;
   status_code: number;
   error_message?: string;
+  request_shape?: RequestShape;
 }
 
 export interface UsageLogDetail extends UsageLog {
@@ -195,10 +240,29 @@ export interface GroupPolicy {
   id: string;
   group_id: string;
   name: string;
-  policy: any;
+  policy: PolicyDocument | any;
   priority: number;
   is_active: boolean;
   created_at: string;
+}
+
+export interface ActionDef {
+  action: string;
+  namespace: string;
+  label: string;
+  description: string;
+}
+
+export interface PolicyStatement {
+  Sid?: string;
+  Effect: "Allow" | "Deny";
+  Action: string[];
+  Resource: string[];
+}
+
+export interface PolicyDocument {
+  Version?: string;
+  Statement: PolicyStatement[];
 }
 
 export interface KeyModelPolicy {

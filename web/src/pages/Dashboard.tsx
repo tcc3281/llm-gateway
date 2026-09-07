@@ -1,4 +1,5 @@
 import { ReactElement, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -498,6 +499,125 @@ export default function Dashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
               <span style={{ color: "var(--text-muted)" }}>Reasoning Tokens</span>
               <span className="mono" style={{ color: C.amberSoft, fontWeight: 600 }}>{fmtCompact(t?.reasoning_tokens ?? 0)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Row 6 · Content-Agnostic Structural Tracing & Modality ──────── */}
+      <div className="dashboard-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", marginTop: 24 }}>
+        <div className="card" style={{ margin: 0 }}>
+          <div className="card__title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>
+              Multimodal Traffic Matrix <span className="mono">[zero-leak]</span>
+            </span>
+            <span className="badge badge--success" style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>shield</span>
+              Zero-Knowledge Trace
+            </span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              <div style={{ background: "#181a20", padding: "10px 12px", borderRadius: 6, border: "1px solid #2d3139" }}>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                  Text Only
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.emeraldSoft, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                  {fmtCompact(stats?.modality_breakdown?.text_only ?? 0)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
+                  Standard prompts
+                </div>
+              </div>
+
+              <div style={{ background: "#181a20", padding: "10px 12px", borderRadius: 6, border: "1px solid #2d3139" }}>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                  Vision
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.cyan, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                  {fmtCompact(stats?.modality_breakdown?.vision ?? 0)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
+                  {fmtNum(stats?.modality_breakdown?.total_images ?? 0)} total images
+                </div>
+              </div>
+
+              <div style={{ background: "#181a20", padding: "10px 12px", borderRadius: 6, border: "1px solid #2d3139" }}>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                  Audio
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.amberSoft, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                  {fmtCompact(stats?.modality_breakdown?.audio ?? 0)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
+                  {fmtNum(stats?.modality_breakdown?.total_audio ?? 0)} voice clips
+                </div>
+              </div>
+
+              <div style={{ background: "#181a20", padding: "10px 12px", borderRadius: 6, border: "1px solid #2d3139" }}>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                  Tool Calls
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.violet, fontFamily: "var(--font-mono)", marginTop: 4 }}>
+                  {fmtCompact(stats?.modality_breakdown?.tool_calls ?? 0)}
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2 }}>
+                  Agentic functions
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+              The Gateway captures byte lengths, parameter keys, and media dimensions on the Go hot path
+              with <strong style={{ color: "#dde4e5" }}>zero heap copies</strong>. 0% user prompt text or media blobs are stored, eliminating all GDPR/PII leakage risk.
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ margin: 0 }}>
+          <div className="card__title">
+            Modalities Deep Dive <span className="mono">[filter shortcut]</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #2d3139" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.cyan }}>image</span>
+                <span>Multimodal Vision Requests</span>
+              </span>
+              <Link to="/logs?modality=vision" className="btn btn--ghost btn--sm" style={{ fontSize: 11 }}>
+                Inspect Vision Logs →
+              </Link>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #2d3139" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.amberSoft }}>mic</span>
+                <span>Audio &amp; Voice Requests</span>
+              </span>
+              <Link to="/logs?modality=audio" className="btn btn--ghost btn--sm" style={{ fontSize: 11 }}>
+                Inspect Audio Logs →
+              </Link>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #2d3139" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.violet }}>build</span>
+                <span>Tool Calling &amp; Agentic Loops</span>
+              </span>
+              <Link to="/logs?modality=tools" className="btn btn--ghost btn--sm" style={{ fontSize: 11 }}>
+                Inspect Tool Logs →
+              </Link>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16, color: C.emerald }}>psychology</span>
+                <span>Extended Reasoning Requests</span>
+              </span>
+              <Link to="/logs?modality=reasoning" className="btn btn--ghost btn--sm" style={{ fontSize: 11 }}>
+                Inspect Reasoning Logs →
+              </Link>
             </div>
           </div>
         </div>

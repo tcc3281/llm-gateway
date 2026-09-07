@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { UsageLog, UsageLogDetail } from "../api/types";
-import { fmtDate, fmtMoney, fmtNum } from "../lib/format";
+import { fmtBytes, fmtDate, fmtMoney, fmtNum } from "../lib/format";
 
 export function getStatusInfo(code: number): { label: string; text: string; color: string; bg: string; border: string } {
   const map: Record<number, string> = {
@@ -509,6 +509,454 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                   >
                     {log.error_message || "No error details recorded by upstream provider."}
                   </div>
+                </div>
+              )}
+
+              {/* Zero-Leak Structural Tracing */}
+              {log.request_shape && (
+                <div
+                  style={{
+                    background: "var(--surface-high)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontFamily: "var(--font-mono)",
+                          fontWeight: 700,
+                          color: "var(--text-muted)",
+                          letterSpacing: "0.05em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Structural Shape &amp; Modality
+                      </span>
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: 10,
+                          padding: "2px 6px",
+                          borderRadius: 3,
+                          background:
+                            log.request_shape.modality === "vision"
+                              ? "rgba(34, 211, 238, 0.15)"
+                              : log.request_shape.modality === "audio"
+                              ? "rgba(245, 158, 11, 0.15)"
+                              : log.request_shape.modality === "tools"
+                              ? "rgba(168, 85, 247, 0.15)"
+                              : "rgba(16, 185, 129, 0.15)",
+                          color:
+                            log.request_shape.modality === "vision"
+                              ? "var(--primary)"
+                              : log.request_shape.modality === "audio"
+                              ? "var(--amber-soft)"
+                              : log.request_shape.modality === "tools"
+                              ? "var(--violet)"
+                              : "var(--emerald-soft)",
+                          border: "1px solid currentColor",
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        [{log.request_shape.modality}]
+                      </span>
+                    </div>
+
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--emerald-soft)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontFamily: "var(--font-mono)",
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                        shield
+                      </span>
+                      Zero PII Stored
+                    </span>
+                  </div>
+
+                  {/* Structure Fingerprint Hash */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      background: "rgba(0, 0, 0, 0.25)",
+                      padding: "8px 10px",
+                      borderRadius: 4,
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                        Signature Hash
+                      </span>
+                      <span className="mono" style={{ fontSize: 12, color: "var(--primary)", fontWeight: 600 }}>
+                        {log.request_shape.structure_hash || "—"}
+                      </span>
+                    </div>
+                    {log.request_shape.structure_hash && (
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        style={{ padding: "1px 6px", height: "auto", fontSize: 10, fontFamily: "var(--font-mono)" }}
+                        onClick={() => handleCopy(log.request_shape!.structure_hash, "Hash")}
+                      >
+                        {copied === "Hash" ? "Copied" : "Copy"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Metrics grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                    <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Messages</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
+                        {log.request_shape.message_count}
+                      </div>
+                    </div>
+                    <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Char Count</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
+                        {fmtNum(log.request_shape.char_count)}
+                      </div>
+                    </div>
+                    <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Word Count</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
+                        {fmtNum(log.request_shape.word_count)}
+                      </div>
+                    </div>
+                    <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>System Chars</div>
+                      <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
+                        {fmtNum(log.request_shape.system_prompt_chars || 0)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Roles list */}
+                  {log.request_shape.roles && log.request_shape.roles.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                        Roles:
+                      </span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {log.request_shape.roles.map((r) => (
+                          <span
+                            key={r}
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "1px 6px",
+                              borderRadius: 3,
+                              background: "rgba(255, 255, 255, 0.06)",
+                              border: "1px solid var(--border)",
+                              color:
+                                r === "system"
+                                  ? "var(--amber-soft)"
+                                  : r === "user"
+                                  ? "var(--primary)"
+                                  : r === "assistant"
+                                  ? "var(--emerald-soft)"
+                                  : "var(--violet)",
+                            }}
+                          >
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Multimodal Details (Images & Audio) */}
+                  {(log.request_shape.has_images || log.request_shape.has_audio) && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 6, borderTop: "1px solid var(--border)" }}>
+                      {log.request_shape.has_images && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)" }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--primary)" }}>
+                              image
+                            </span>
+                            Vision Payload: <strong>{log.request_shape.image_count} image{log.request_shape.image_count > 1 ? "s" : ""}</strong>
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span className="mono" style={{ color: "var(--primary)", fontWeight: 600 }}>
+                              {fmtBytes(log.request_shape.image_total_bytes)}
+                            </span>
+                            {log.request_shape.image_formats?.map((fmt) => (
+                              <span key={fmt} className="mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                                ({fmt})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {log.request_shape.has_audio && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)" }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--amber-soft)" }}>
+                              mic
+                            </span>
+                            Audio Payload: <strong>{log.request_shape.audio_count} clip{log.request_shape.audio_count > 1 ? "s" : ""}</strong>
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span className="mono" style={{ color: "var(--amber-soft)", fontWeight: 600 }}>
+                              {fmtBytes(log.request_shape.audio_total_bytes)}
+                            </span>
+                            {log.request_shape.audio_formats?.map((fmt) => (
+                              <span key={fmt} className="mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                                ({fmt})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tool Calling Details */}
+                  {(log.request_shape.tools_count > 0 || log.request_shape.tool_calls_count > 0) && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 6, borderTop: "1px solid var(--border)", fontSize: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)" }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--violet)" }}>
+                            build
+                          </span>
+                          Tool Calling: <strong>{log.request_shape.tool_calls_count} call{log.request_shape.tool_calls_count > 1 ? "s" : ""}</strong>
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({log.request_shape.tools_count} offered)</span>
+                        </span>
+                      </div>
+
+                      {log.request_shape.tool_names && log.request_shape.tool_names.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                            Tools:
+                          </span>
+                          {log.request_shape.tool_names.map((name) => (
+                            <span
+                              key={name}
+                              className="mono"
+                              style={{
+                                fontSize: 11,
+                                padding: "1px 6px",
+                                borderRadius: 3,
+                                background: "rgba(168, 85, 247, 0.12)",
+                                color: "var(--violet)",
+                                border: "1px solid rgba(168, 85, 247, 0.3)",
+                              }}
+                            >
+                              {name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {log.request_shape.tool_parameter_keys && log.request_shape.tool_parameter_keys.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                            Param Keys:
+                          </span>
+                          {log.request_shape.tool_parameter_keys.map((k) => (
+                            <span
+                              key={k}
+                              className="mono"
+                              style={{
+                                fontSize: 10,
+                                padding: "1px 5px",
+                                borderRadius: 3,
+                                background: "var(--surface-raised)",
+                                color: "var(--text-muted)",
+                                border: "1px solid var(--border)",
+                              }}
+                            >
+                              {k}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Extended Thinking / Reasoning */}
+                  {log.request_shape.has_reasoning && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 6, borderTop: "1px solid var(--border)", fontSize: 12 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)" }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--amber-soft)" }}>
+                          psychology
+                        </span>
+                        Extended Thinking / Reasoning
+                      </span>
+                      <span className="mono" style={{ fontSize: 11, color: "var(--amber-soft)", fontWeight: 600 }}>
+                        {log.request_shape.reasoning_effort || "active"}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Inference Hyperparameters & Execution Settings */}
+                  {(log.request_shape.temperature !== undefined ||
+                    log.request_shape.top_p !== undefined ||
+                    log.request_shape.top_k !== undefined ||
+                    log.request_shape.max_tokens !== undefined ||
+                    log.request_shape.presence_penalty !== undefined ||
+                    log.request_shape.frequency_penalty !== undefined ||
+                    log.request_shape.seed !== undefined ||
+                    (log.request_shape.stop_sequences && log.request_shape.stop_sequences.length > 0)) && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 6, borderTop: "1px solid var(--border)", fontSize: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text)" }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--primary)" }}>
+                          tune
+                        </span>
+                        <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                          Hyperparameters &amp; Settings
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {log.request_shape.temperature !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "rgba(34, 211, 238, 0.08)",
+                              color: "var(--primary)",
+                              border: "1px solid rgba(34, 211, 238, 0.2)",
+                            }}
+                          >
+                            temperature: <strong>{log.request_shape.temperature}</strong>
+                          </span>
+                        )}
+                        {log.request_shape.top_p !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "rgba(34, 211, 238, 0.08)",
+                              color: "var(--primary)",
+                              border: "1px solid rgba(34, 211, 238, 0.2)",
+                            }}
+                          >
+                            top_p: <strong>{log.request_shape.top_p}</strong>
+                          </span>
+                        )}
+                        {log.request_shape.top_k !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "rgba(168, 85, 247, 0.08)",
+                              color: "var(--violet)",
+                              border: "1px solid rgba(168, 85, 247, 0.2)",
+                            }}
+                          >
+                            top_k: <strong>{log.request_shape.top_k}</strong>
+                          </span>
+                        )}
+                        {log.request_shape.max_tokens !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "rgba(16, 185, 129, 0.08)",
+                              color: "var(--emerald-soft)",
+                              border: "1px solid rgba(16, 185, 129, 0.2)",
+                            }}
+                          >
+                            max_tokens: <strong>{fmtNum(log.request_shape.max_tokens)}</strong>
+                          </span>
+                        )}
+                        {log.request_shape.seed !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "var(--surface-raised)",
+                              color: "var(--text-muted)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            seed: <strong>{log.request_shape.seed}</strong>
+                          </span>
+                        )}
+                        {log.request_shape.presence_penalty !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "var(--surface-raised)",
+                              color: "var(--text-muted)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            presence_penalty: <strong>{log.request_shape.presence_penalty}</strong>
+                          </span>
+                        )}
+                        {log.request_shape.frequency_penalty !== undefined && (
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: "var(--surface-raised)",
+                              color: "var(--text-muted)",
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            frequency_penalty: <strong>{log.request_shape.frequency_penalty}</strong>
+                          </span>
+                        )}
+                      </div>
+
+                      {log.request_shape.stop_sequences && log.request_shape.stop_sequences.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                          <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+                            Stop Sequences:
+                          </span>
+                          {log.request_shape.stop_sequences.map((s, idx) => (
+                            <span
+                              key={idx}
+                              className="mono"
+                              style={{
+                                fontSize: 10,
+                                padding: "1px 6px",
+                                borderRadius: 3,
+                                background: "var(--surface-raised)",
+                                color: "var(--text)",
+                                border: "1px solid var(--border)",
+                              }}
+                            >
+                              {JSON.stringify(s)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

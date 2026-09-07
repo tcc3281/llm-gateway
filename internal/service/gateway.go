@@ -443,9 +443,13 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		}
 	}
 
+	// Content-Agnostic Structural Tracing on OTel span
+	requestShape := telemetry.InspectPayloadShape(params.InboundFormat, params.RequestBody)
+
 	// Capture prompt event if policy allows
 	span := trace.SpanFromContext(ctx)
 	if span != nil && span.IsRecording() {
+		telemetry.SetGenAIShapeAttributes(span, requestShape)
 		telemetry.RecordPromptEvent(span, g.contentCapturePolicy, canReq.Messages)
 	}
 
@@ -1130,6 +1134,8 @@ func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName
 	}
 
 	totalLatency := time.Since(startTime).Milliseconds()
+	shape := telemetry.InspectPayloadShape(params.InboundFormat, params.RequestBody)
+
 	logEntry := model.UsageLog{
 		CreatedAt:           time.Now(),
 		UserID:              params.ApiKey.UserID,
@@ -1151,6 +1157,7 @@ func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName
 		TotalLatencyMs:      totalLatency,
 		StatusCode:          statusCode,
 		ErrorMessage:        errMsg,
+		RequestShape:        shape,
 	}
 
 	g.telemetry.Log(logEntry)

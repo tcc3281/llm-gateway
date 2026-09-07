@@ -15,6 +15,7 @@ type User struct {
 	IsRoot       bool      `json:"is_root"`
 	IsActive     bool      `json:"is_active"`
 	PasswordHash string    `json:"-"` // secret, never serialized
+	GroupRole    string    `json:"group_role,omitempty"` // "member" or "admin" when scoped to group context
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -97,8 +98,55 @@ type UsageLog struct {
 	Cost                float64   `json:"cost"`
 	TTFTMs              int64     `json:"ttft_ms"`          // Time to first token
 	TotalLatencyMs      int64     `json:"total_latency_ms"` // Total duration
-	StatusCode          int       `json:"status_code"`
-	ErrorMessage        string    `json:"error_message,omitempty"`
+	StatusCode          int           `json:"status_code"`
+	ErrorMessage        string        `json:"error_message,omitempty"`
+	RequestShape        *RequestShape `json:"request_shape,omitempty"`
+}
+
+// RequestShape captures content-agnostic structural telemetry without retaining raw text, PII, or media blobs.
+type RequestShape struct {
+	StructureHash     string   `json:"structure_hash"`               // Deterministic SHA-256 fingerprint of request structure
+	MessageCount      int      `json:"message_count"`
+	Roles             []string `json:"roles"`
+	CharCount         int      `json:"char_count"`
+	WordCount         int      `json:"word_count"`
+	SystemPromptChars int      `json:"system_prompt_chars,omitempty"`
+	HasImages         bool     `json:"has_images"`
+	ImageCount        int      `json:"image_count"`
+	ImageTotalBytes   int64    `json:"image_total_bytes"`
+	ImageFormats      []string `json:"image_formats,omitempty"`
+	HasAudio          bool     `json:"has_audio"`
+	AudioCount        int      `json:"audio_count"`
+	AudioTotalBytes   int64    `json:"audio_total_bytes"`
+	AudioFormats      []string `json:"audio_formats,omitempty"`
+	ToolsCount        int      `json:"tools_count"`
+	ToolCallsCount    int      `json:"tool_calls_count"`
+	ToolNames         []string `json:"tool_names,omitempty"`
+	ToolParameterKeys []string `json:"tool_parameter_keys,omitempty"`
+	HasReasoning      bool     `json:"has_reasoning"`
+	ReasoningEffort   string   `json:"reasoning_effort,omitempty"`
+	Modality          string   `json:"modality"` // "text", "vision", "audio", "multimodal", "tools", "embeddings"
+
+	// Inference Hyperparameters & Execution Settings
+	Temperature      *float64 `json:"temperature,omitempty"`
+	TopP             *float64 `json:"top_p,omitempty"`
+	TopK             *int     `json:"top_k,omitempty"`
+	MaxTokens        *int     `json:"max_tokens,omitempty"`
+	PresencePenalty  *float64 `json:"presence_penalty,omitempty"`
+	FrequencyPenalty *float64 `json:"frequency_penalty,omitempty"`
+	Seed             *int     `json:"seed,omitempty"`
+	StopSequences    []string `json:"stop_sequences,omitempty"`
+	Stream           *bool    `json:"stream,omitempty"`
+}
+
+// ModalityBreakdown aggregates high-level request traffic types for dashboard analytics.
+type ModalityBreakdown struct {
+	TextOnly    int64 `json:"text_only"`
+	Vision      int64 `json:"vision"`
+	Audio       int64 `json:"audio"`
+	ToolCalls   int64 `json:"tool_calls"`
+	TotalImages int64 `json:"total_images"`
+	TotalAudio  int64 `json:"total_audio"`
 }
 
 type UsageStats struct {
@@ -203,6 +251,10 @@ type UsageLogFilter struct {
 	Model         string
 	Status        string
 	InboundFormat string
+	Modality      string
+	HasImages     *bool
+	HasAudio      *bool
+	StructureHash string
 }
 
 // UsageLogDetail enriches UsageLog with joined user email and api key name
@@ -242,6 +294,7 @@ type GroupPolicy struct {
 type UserGroup struct {
 	UserID    uuid.UUID `json:"user_id"`
 	GroupID   uuid.UUID `json:"group_id"`
+	GroupRole string    `json:"group_role"` // "member" or "admin"
 	CreatedAt time.Time `json:"created_at"`
 }
 

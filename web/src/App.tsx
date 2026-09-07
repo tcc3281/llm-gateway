@@ -3,14 +3,12 @@ import { AuthProvider, RequireAuth } from "./auth";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
-import Users from "./pages/Users";
-import Groups from "./pages/Groups";
+import PeopleAccess from "./pages/PeopleAccess";
 import ApiKeys from "./pages/ApiKeys";
 import Providers from "./pages/Providers";
 import Models from "./pages/Models";
 import UsageLogs from "./pages/UsageLogs";
 import AuditLogs from "./pages/AuditLogs";
-import MemberAnalytics from "./pages/MemberAnalytics";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -29,9 +27,11 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="analytics/members" element={<MemberAnalytics />} />
-            <Route path="users" element={<Users />} />
-            <Route path="groups" element={<Groups />} />
+            <Route path="people" element={<PeopleAccess />} />
+            {/* Backwards-compatible aliases */}
+            <Route path="users" element={<Navigate to="/people?tab=users" replace />} />
+            <Route path="groups" element={<Navigate to="/people?tab=groups" replace />} />
+            <Route path="analytics/members" element={<Navigate to="/people?tab=analytics" replace />} />
             <Route path="keys" element={<ApiKeys />} />
             <Route path="providers" element={<Providers />} />
             <Route path="models" element={<Models />} />

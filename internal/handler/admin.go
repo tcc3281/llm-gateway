@@ -593,6 +593,16 @@ func (h *AdminHandler) GetUsageLogs(w http.ResponseWriter, r *http.Request) {
 	f.Model = q.Get("model")
 	f.Status = q.Get("status")
 	f.InboundFormat = q.Get("inbound")
+	f.Modality = q.Get("modality")
+	f.StructureHash = q.Get("structure_hash")
+	if v := q.Get("has_images"); v != "" {
+		b := v == "true" || v == "1"
+		f.HasImages = &b
+	}
+	if v := q.Get("has_audio"); v != "" {
+		b := v == "true" || v == "1"
+		f.HasAudio = &b
+	}
 
 	limit := 50
 	if v := q.Get("limit"); v != "" {
@@ -843,18 +853,24 @@ func (h *AdminHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	modalityBreakdown, err := h.pg.GetModalityBreakdown(filter, from, to)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"from":             from.Format(time.RFC3339),
-		"to":               to.Format(time.RFC3339),
-		"interval":         interval,
-		"totals":           totals,
-		"time_series":      orEmpty(series),
-		"by_model":         orEmpty(byModel),
-		"by_user":          orEmpty(byUser),
-		"recent":           orEmpty(recent),
-		"status_breakdown": statusBreakdown,
+		"from":               from.Format(time.RFC3339),
+		"to":                 to.Format(time.RFC3339),
+		"interval":           interval,
+		"totals":             totals,
+		"time_series":        orEmpty(series),
+		"by_model":           orEmpty(byModel),
+		"by_user":            orEmpty(byUser),
+		"recent":             orEmpty(recent),
+		"status_breakdown":   statusBreakdown,
+		"modality_breakdown": modalityBreakdown,
 	})
 }
 
@@ -1523,5 +1539,15 @@ func (h *AdminHandler) GetMemberDetail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(detail)
+}
+
+// GET /admin/iam/actions -> Return catalog of available IAM actions for policy builders
+func (h *AdminHandler) GetIAMActions(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(permission.AllActions)
 }
 

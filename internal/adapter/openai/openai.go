@@ -10,10 +10,11 @@ import (
 )
 
 type OpenAIRequest struct {
-	Model           string          `json:"model"`
-	Messages        []OpenAIMessage `json:"messages"`
-	MaxTokens       int             `json:"max_tokens,omitempty"`
-	Temperature     *float64        `json:"temperature,omitempty"`
+	Model               string          `json:"model"`
+	Messages            []OpenAIMessage `json:"messages"`
+	MaxTokens           int             `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
+	Temperature         *float64        `json:"temperature,omitempty"`
 	TopP            *float64        `json:"top_p,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
 	Stop            interface{}     `json:"stop,omitempty"`
@@ -218,10 +219,15 @@ func DecodeInboundRequest(body []byte) (*canonical.CanonicalRequest, error) {
 		return nil, fmt.Errorf("invalid openai payload: %w", err)
 	}
 
+	maxTokens := req.MaxTokens
+	if maxTokens == 0 && req.MaxCompletionTokens > 0 {
+		maxTokens = req.MaxCompletionTokens
+	}
+
 	canReq := &canonical.CanonicalRequest{
 		InboundFormat:   "openai",
 		Model:           req.Model,
-		MaxTokens:       req.MaxTokens,
+		MaxTokens:       maxTokens,
 		Temperature:     req.Temperature,
 		TopP:            req.TopP,
 		Stream:          req.Stream,
@@ -352,7 +358,7 @@ func clampMaxTokens(model string, maxTokens int) int {
 		return maxTokens
 	}
 	m := strings.ToLower(model)
-	if strings.Contains(m, "o1") || strings.Contains(m, "o3") {
+	if strings.Contains(m, "o1") || strings.Contains(m, "o3") || strings.Contains(m, "o4") || strings.Contains(m, "gpt-5") {
 		if maxTokens > 100000 {
 			return 100000
 		}
@@ -373,16 +379,39 @@ func clampMaxTokens(model string, maxTokens int) int {
 	return maxTokens
 }
 
+// isReasoningOrNewOpenAIModel detects models that reject 'max_tokens' in favor of 'max_completion_tokens'.
+func isReasoningOrNewOpenAIModel(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "o1") ||
+		strings.HasPrefix(m, "o3") ||
+		strings.HasPrefix(m, "o4") ||
+		strings.Contains(m, "gpt-5") ||
+		strings.Contains(m, "-o1") ||
+		strings.Contains(m, "-o3")
+}
+
 // EncodeCanonicalRequest converts CanonicalRequest to OpenAI Request payload
 func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) {
+	tokens := clampMaxTokens(canReq.Model, canReq.MaxTokens)
 	req := OpenAIRequest{
 		Model:           canReq.Model,
-		MaxTokens:       clampMaxTokens(canReq.Model, canReq.MaxTokens),
-		Temperature:     canReq.Temperature,
-		TopP:            canReq.TopP,
 		Stream:          canReq.Stream,
 		ReasoningEffort: canReq.ReasoningEffort,
 		ToolChoice:      encodeOpenAIToolChoice(canReq.ToolChoice),
+	}
+
+	if isReasoningOrNewOpenAIModel(canReq.Model) {
+		req.MaxCompletionTokens = tokens
+		m := strings.ToLower(canReq.Model)
+		// Early o1 models (o1-preview, o1-mini) reject custom temperature & top_p
+		if !strings.Contains(m, "o1-mini") && !strings.Contains(m, "o1-preview") {
+			req.Temperature = canReq.Temperature
+			req.TopP = canReq.TopP
+		}
+	} else {
+		req.MaxTokens = tokens
+		req.Temperature = canReq.Temperature
+		req.TopP = canReq.TopP
 	}
 
 	for _, t := range canReq.Tools {

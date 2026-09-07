@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -475,8 +477,8 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 		INSERT INTO usage_logs 
 		(created_at, user_id, key_id, inbound_format, provider, model, prompt_tokens, completion_tokens, total_tokens, 
 		 cached_input_tokens, reasoning_tokens, prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
-		 cost, ttft_ms, total_latency_ms, status_code, error_message)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`)
+		 cost, ttft_ms, total_latency_ms, status_code, error_message, request_shape)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`)
 	if err != nil {
 		return err
 	}
@@ -486,11 +488,15 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 		if l.CreatedAt.IsZero() {
 			l.CreatedAt = time.Now()
 		}
+		var shapeBytes []byte
+		if l.RequestShape != nil {
+			shapeBytes, _ = json.Marshal(l.RequestShape)
+		}
 		_, err := stmt.Exec(
 			l.CreatedAt, l.UserID, l.KeyID, l.InboundFormat, l.Provider, l.Model,
 			l.PromptTokens, l.CompletionTokens, l.TotalTokens,
 			l.CachedInputTokens, l.ReasoningTokens, l.PromptPriceUsed, l.CompletionPriceUsed, l.PricingSource, l.PricingFallback,
-			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage,
+			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage, shapeBytes,
 		)
 		if err != nil {
 			return err
@@ -825,7 +831,8 @@ func (p *PostgresDB) ListUsageLogs(f model.UsageLogFilter, limit, offset int) ([
 		       cached_input_tokens, reasoning_tokens,
 		       prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
 		       cost, ttft_ms, total_latency_ms, status_code,
-		       COALESCE(error_message, '') AS error_message
+		       COALESCE(error_message, '') AS error_message,
+		       request_shape
 		FROM usage_logs
 		WHERE ` + where + `
 		ORDER BY created_at DESC
@@ -841,15 +848,22 @@ func (p *PostgresDB) ListUsageLogs(f model.UsageLogFilter, limit, offset int) ([
 	var logs []model.UsageLog
 	for rows.Next() {
 		var l model.UsageLog
+		var rawShape []byte
 		if err := rows.Scan(
 			&l.ID, &l.CreatedAt, &l.UserID, &l.KeyID, &l.InboundFormat, &l.Provider, &l.Model,
 			&l.PromptTokens, &l.CompletionTokens, &l.TotalTokens,
 			&l.CachedInputTokens, &l.ReasoningTokens,
 			&l.PromptPriceUsed, &l.CompletionPriceUsed, &l.PricingSource, &l.PricingFallback,
 			&l.Cost, &l.TTFTMs, &l.TotalLatencyMs, &l.StatusCode,
-			&l.ErrorMessage,
+			&l.ErrorMessage, &rawShape,
 		); err != nil {
 			return nil, err
+		}
+		if len(rawShape) > 0 {
+			var s model.RequestShape
+			if err := json.Unmarshal(rawShape, &s); err == nil {
+				l.RequestShape = &s
+			}
 		}
 		logs = append(logs, l)
 	}
@@ -910,6 +924,24 @@ func buildUsageLogWhere(f model.UsageLogFilter) (string, []interface{}) {
 		clauses = append(clauses, fmt.Sprintf("status_code < $%d", len(args)))
 	}
 
+	// Modality and structural filters
+	if f.Modality != "" && f.Modality != "all" {
+		args = append(args, f.Modality)
+		clauses = append(clauses, fmt.Sprintf("request_shape->>'modality' = $%d", len(args)))
+	}
+	if f.HasImages != nil {
+		args = append(args, *f.HasImages)
+		clauses = append(clauses, fmt.Sprintf("(request_shape->>'has_images')::boolean = $%d", len(args)))
+	}
+	if f.HasAudio != nil {
+		args = append(args, *f.HasAudio)
+		clauses = append(clauses, fmt.Sprintf("(request_shape->>'has_audio')::boolean = $%d", len(args)))
+	}
+	if f.StructureHash != "" {
+		args = append(args, f.StructureHash)
+		clauses = append(clauses, fmt.Sprintf("request_shape->>'structure_hash' = $%d", len(args)))
+	}
+
 	return strings.Join(clauses, " AND "), args
 }
 
@@ -924,24 +956,60 @@ func (p *PostgresDB) GetUsageLogByID(id int64) (*model.UsageLogDetail, error) {
 		       l.cost, l.ttft_ms, l.total_latency_ms, l.status_code,
 		       COALESCE(l.error_message, '') AS error_message,
 		       COALESCE(u.email, '') AS user_email,
-		       COALESCE(k.name, '') AS key_name
+		       COALESCE(k.name, '') AS key_name,
+		       l.request_shape
 		FROM usage_logs l
 		LEFT JOIN users u ON u.id = l.user_id
 		LEFT JOIN api_keys k ON k.id = l.key_id
 		WHERE l.id = $1`
 
 	var d model.UsageLogDetail
+	var rawShape []byte
 	if err := p.QueryRow(query, id).Scan(
 		&d.ID, &d.CreatedAt, &d.UserID, &d.KeyID, &d.InboundFormat, &d.Provider, &d.Model,
 		&d.PromptTokens, &d.CompletionTokens, &d.TotalTokens,
 		&d.CachedInputTokens, &d.ReasoningTokens,
 		&d.PromptPriceUsed, &d.CompletionPriceUsed, &d.PricingSource, &d.PricingFallback,
 		&d.Cost, &d.TTFTMs, &d.TotalLatencyMs, &d.StatusCode,
-		&d.ErrorMessage, &d.UserEmail, &d.KeyName,
+		&d.ErrorMessage, &d.UserEmail, &d.KeyName, &rawShape,
 	); err != nil {
 		return nil, err
 	}
+	if len(rawShape) > 0 {
+		var s model.RequestShape
+		if err := json.Unmarshal(rawShape, &s); err == nil {
+			d.RequestShape = &s
+		}
+	}
 	return &d, nil
+}
+
+// GetModalityBreakdown aggregates high-level request modalities across usage_logs.
+func (p *PostgresDB) GetModalityBreakdown(f model.DashboardFilter, from, to time.Time) (*model.ModalityBreakdown, error) {
+	where, args := buildDashboardWhere(f, from, to, "")
+	query := `
+		SELECT 
+			COUNT(*) FILTER (WHERE request_shape IS NULL OR (COALESCE((request_shape->>'has_images')::boolean, false) = false AND COALESCE((request_shape->>'has_audio')::boolean, false) AND COALESCE((request_shape->>'tool_calls_count')::int, 0) = 0)) AS text_only,
+			COUNT(*) FILTER (WHERE COALESCE((request_shape->>'has_images')::boolean, false) = true) AS vision,
+			COUNT(*) FILTER (WHERE COALESCE((request_shape->>'has_audio')::boolean, false) = true) AS audio,
+			COUNT(*) FILTER (WHERE COALESCE((request_shape->>'tool_calls_count')::int, 0) > 0 OR COALESCE((request_shape->>'tools_count')::int, 0) > 0) AS tool_calls,
+			COALESCE(SUM(COALESCE((request_shape->>'image_count')::int, 0)), 0) AS total_images,
+			COALESCE(SUM(COALESCE((request_shape->>'audio_count')::int, 0)), 0) AS total_audio
+		FROM usage_logs
+		WHERE ` + where
+
+	var b model.ModalityBreakdown
+	if err := p.QueryRow(query, args...).Scan(
+		&b.TextOnly,
+		&b.Vision,
+		&b.Audio,
+		&b.ToolCalls,
+		&b.TotalImages,
+		&b.TotalAudio,
+	); err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
 
 // parseStatusClass interprets a status filter. "200" → (200, 201, true);
@@ -1091,12 +1159,76 @@ func (p *PostgresDB) DeleteGroupPolicy(id uuid.UUID) error {
 // ---------------------------------------------------------------------------
 
 func (p *PostgresDB) AddUserToGroup(userID, groupID uuid.UUID) error {
+	return p.AddUserToGroupWithRole(userID, groupID, "member")
+}
+
+func (p *PostgresDB) AddUserToGroupWithRole(userID, groupID uuid.UUID, role string) error {
+	if role == "" {
+		role = "member"
+	}
 	query := `
-		INSERT INTO user_groups (user_id, group_id)
-		VALUES ($1, $2)
-		ON CONFLICT (user_id, group_id) DO NOTHING`
-	_, err := p.Exec(query, userID, groupID)
+		INSERT INTO user_groups (user_id, group_id, group_role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, group_id) DO UPDATE SET group_role = EXCLUDED.group_role`
+	_, err := p.Exec(query, userID, groupID, role)
 	return err
+}
+
+func (p *PostgresDB) SetGroupMemberRole(userID, groupID uuid.UUID, role string) error {
+	if role != "admin" && role != "member" {
+		return fmt.Errorf("invalid group role: %s (must be 'admin' or 'member')", role)
+	}
+	query := `UPDATE user_groups SET group_role = $1 WHERE user_id = $2 AND group_id = $3`
+	res, err := p.Exec(query, role, userID, groupID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("user is not a member of this group")
+	}
+	return nil
+}
+
+func (p *PostgresDB) GetGroupMemberRole(userID, groupID uuid.UUID) (string, error) {
+	var role string
+	err := p.QueryRow(`SELECT COALESCE(group_role, 'member') FROM user_groups WHERE user_id = $1 AND group_id = $2`, userID, groupID).Scan(&role)
+	if err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+func (p *PostgresDB) IsUserGroupAdmin(userID, groupID uuid.UUID) (bool, error) {
+	role, err := p.GetGroupMemberRole(userID, groupID)
+	if err != nil {
+		return false, err
+	}
+	return role == "admin", nil
+}
+
+func (p *PostgresDB) GetUserAdminGroups(userID uuid.UUID) ([]model.Group, error) {
+	query := `
+		SELECT g.id, g.name, COALESCE(g.description, ''), g.budget_limit_monthly, g.rate_limit_rpm, g.is_active, g.created_at, g.updated_at
+		FROM groups g
+		JOIN user_groups ug ON ug.group_id = g.id
+		WHERE ug.user_id = $1 AND ug.group_role = 'admin' AND g.is_active = TRUE
+		ORDER BY g.name ASC`
+	rows, err := p.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []model.Group
+	for rows.Next() {
+		var g model.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.BudgetLimitMonthly, &g.RateLimitRPM, &g.IsActive, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
 }
 
 func (p *PostgresDB) RemoveUserFromGroup(userID, groupID uuid.UUID) error {
@@ -1130,11 +1262,11 @@ func (p *PostgresDB) GetUserGroups(userID uuid.UUID) ([]model.Group, error) {
 
 func (p *PostgresDB) GetGroupMembers(groupID uuid.UUID) ([]model.User, error) {
 	query := `
-		SELECT u.id, u.email, u.name, u.role, u.is_root, COALESCE(u.is_active, TRUE), COALESCE(u.password_hash, ''), u.created_at, u.updated_at
+		SELECT u.id, u.email, u.name, u.role, u.is_root, COALESCE(u.is_active, TRUE), COALESCE(u.password_hash, ''), COALESCE(ug.group_role, 'member'), u.created_at, u.updated_at
 		FROM users u
 		JOIN user_groups ug ON ug.user_id = u.id
 		WHERE ug.group_id = $1
-		ORDER BY u.created_at DESC`
+		ORDER BY (ug.group_role = 'admin') DESC, u.created_at DESC`
 	rows, err := p.Query(query, groupID)
 	if err != nil {
 		return nil, err
@@ -1144,7 +1276,7 @@ func (p *PostgresDB) GetGroupMembers(groupID uuid.UUID) ([]model.User, error) {
 	var users []model.User
 	for rows.Next() {
 		var u model.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.GroupRole, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)

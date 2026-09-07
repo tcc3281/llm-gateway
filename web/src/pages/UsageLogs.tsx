@@ -28,6 +28,7 @@ interface Filters {
   key_id: string;
   status: string;
   inbound: string;
+  modality: string;
   from: string;
   to: string;
 }
@@ -39,6 +40,7 @@ const empty: Filters = {
   key_id: "",
   status: "",
   inbound: "",
+  modality: "",
   from: "",
   to: "",
 };
@@ -84,6 +86,7 @@ export default function UsageLogs() {
           model: f.model || undefined,
           status: f.status || undefined,
           inbound: f.inbound || undefined,
+          modality: f.modality || undefined,
           limit: PAGE_SIZE,
           offset,
         });
@@ -329,6 +332,19 @@ export default function UsageLogs() {
           <option value="openai">openai</option>
           <option value="anthropic">anthropic</option>
         </select>
+        <select
+          className="select"
+          style={{ width: 130 }}
+          value={filters.modality}
+          onChange={(e) => set("modality")(e.target.value)}
+        >
+          <option value="">All modalities</option>
+          <option value="text">Text only</option>
+          <option value="vision">Vision</option>
+          <option value="audio">Audio</option>
+          <option value="tools">Tools / Agents</option>
+          <option value="reasoning">Reasoning</option>
+        </select>
         {preset === "custom" && (
           <>
             <input
@@ -413,8 +429,77 @@ export default function UsageLogs() {
                   {fmtDate(l.created_at)}
                 </td>
                 <td>{l.provider}</td>
-                <td className="truncate" style={{ maxWidth: 220 }}>
-                  {l.model}
+                <td style={{ maxWidth: 220 }}>
+                  <div className="truncate" style={{ fontWeight: 500 }}>
+                    {l.model}
+                  </div>
+                  {l.request_shape && (
+                    <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
+                      {l.request_shape.has_images && (
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 9,
+                            padding: "1px 4px",
+                            borderRadius: 3,
+                            background: "rgba(34, 211, 238, 0.15)",
+                            color: "var(--primary)",
+                            border: "1px solid rgba(34, 211, 238, 0.3)",
+                          }}
+                          title={`${l.request_shape.image_count} image(s)`}
+                        >
+                          🖼️ img:{l.request_shape.image_count}
+                        </span>
+                      )}
+                      {l.request_shape.has_audio && (
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 9,
+                            padding: "1px 4px",
+                            borderRadius: 3,
+                            background: "rgba(245, 158, 11, 0.15)",
+                            color: "var(--amber-soft)",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                          }}
+                          title="Audio input"
+                        >
+                          🎙️ aud:{l.request_shape.audio_count}
+                        </span>
+                      )}
+                      {(l.request_shape.tool_calls_count > 0 || l.request_shape.tools_count > 0) && (
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 9,
+                            padding: "1px 4px",
+                            borderRadius: 3,
+                            background: "rgba(168, 85, 247, 0.15)",
+                            color: "var(--violet)",
+                            border: "1px solid rgba(168, 85, 247, 0.3)",
+                          }}
+                          title={`Tools: ${l.request_shape.tool_names?.join(", ") || "active"}`}
+                        >
+                          ⚙️ {l.request_shape.tool_calls_count > 0 ? `call:${l.request_shape.tool_calls_count}` : "tools"}
+                        </span>
+                      )}
+                      {l.request_shape.has_reasoning && (
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 9,
+                            padding: "1px 4px",
+                            borderRadius: 3,
+                            background: "rgba(245, 158, 11, 0.1)",
+                            color: "var(--amber)",
+                            border: "1px solid rgba(245, 158, 11, 0.25)",
+                          }}
+                        >
+                          🧠 think
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td className="num">
                   <StatusBadge code={l.status_code} />

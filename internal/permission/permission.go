@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"llm-gateway/internal/db"
-	"llm-gateway/internal/model"
 
 	"github.com/google/uuid"
 )
@@ -159,6 +158,30 @@ func (pe *PermissionEngine) InvalidateCache() {
 	defer pe.mu.Unlock()
 	pe.policyCache = make(map[uuid.UUID][]cachedPolicy)
 	pe.cacheExpiry = time.Time{}
+}
+
+// CheckGroupAdmin evaluates whether a user is an admin of the specified group or root.
+func (pe *PermissionEngine) CheckGroupAdmin(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
+	if pe.pg == nil {
+		return false, fmt.Errorf("database unavailable for permission evaluation")
+	}
+	user, err := pe.pg.GetUserByID(userID)
+	if err == nil && user.IsRoot {
+		return true, nil
+	}
+	return pe.pg.IsUserGroupAdmin(userID, groupID)
+}
+
+// CheckGroupMember evaluates whether a user belongs to the specified group.
+func (pe *PermissionEngine) CheckGroupMember(ctx context.Context, userID, groupID uuid.UUID) (bool, error) {
+	if pe.pg == nil {
+		return false, fmt.Errorf("database unavailable for permission evaluation")
+	}
+	_, err := pe.pg.GetGroupMemberRole(userID, groupID)
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (pe *PermissionEngine) getGroupPolicies(ctx context.Context, groupID uuid.UUID) ([]cachedPolicy, error) {

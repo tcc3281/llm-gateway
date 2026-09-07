@@ -1,89 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Group, GroupPolicy, User } from "../api/types";
-import { fmtDate, fmtMoney, fmtNum } from "../lib/format";
+import { fmtDate, fmtMoney } from "../lib/format";
 import Modal from "../components/Modal";
-
-const POLICY_TEMPLATES = [
-  {
-    name: "Full Access",
-    desc: "Unrestricted access to all gateway models and management resources",
-    policy: {
-      Version: "1",
-      Statement: [
-        {
-          Sid: "FullAccess",
-          Effect: "Allow",
-          Action: ["*:*", "*"],
-          Resource: ["*"],
-        },
-      ],
-    },
-  },
-  {
-    name: "Developer Chat (Standard)",
-    desc: "Allows standard chat models; denies expensive models like opus/128k",
-    policy: {
-      Version: "1",
-      Statement: [
-        {
-          Sid: "AllowStandardChat",
-          Effect: "Allow",
-          Action: ["model:use", "model:list"],
-          Resource: ["model:gpt-4o", "model:gpt-4o-mini", "model:claude-3-5-sonnet", "model:gemini-*"],
-        },
-        {
-          Sid: "DenyExpensiveModels",
-          Effect: "Deny",
-          Action: ["model:use"],
-          Resource: ["model:gpt-4o-128k", "model:claude-3-opus", "model:o1-preview"],
-        },
-      ],
-    },
-  },
-  {
-    name: "Data & Embeddings Team",
-    desc: "Permits text embedding models only; blocks all generative chat models",
-    policy: {
-      Version: "1",
-      Statement: [
-        {
-          Sid: "AllowEmbeddings",
-          Effect: "Allow",
-          Action: ["model:use", "model:list"],
-          Resource: ["model:text-embedding-*", "model:embeddings-*"],
-        },
-        {
-          Sid: "DenyChatModels",
-          Effect: "Deny",
-          Action: ["model:use"],
-          Resource: ["model:gpt-*", "model:claude-*", "model:gemini-*"],
-        },
-      ],
-    },
-  },
-  {
-    name: "Read-Only Auditor",
-    desc: "View analytics, logs, and catalogs; no model usage or mutations permitted",
-    policy: {
-      Version: "1",
-      Statement: [
-        {
-          Sid: "ReadOnlyAudit",
-          Effect: "Allow",
-          Action: ["analytics:read", "log:read", "model:list", "audit:read"],
-          Resource: ["*"],
-        },
-        {
-          Sid: "DenyModelUsage",
-          Effect: "Deny",
-          Action: ["model:use", "key:create", "user:create"],
-          Resource: ["*"],
-        },
-      ],
-    },
-  },
-];
+import PolicyBuilder from "../components/PolicyBuilder";
 
 export default function Groups() {
   const [groups, setGroups] = useState<Group[]>([]);
@@ -105,14 +25,11 @@ export default function Groups() {
   // Policy Modal
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<GroupPolicy | null>(null);
-  const [policyName, setPolicyName] = useState("");
-  const [policyJSON, setPolicyJSON] = useState("");
-  const [policyPriority, setPolicyPriority] = useState(0);
-  const [policyError, setPolicyError] = useState<string | null>(null);
 
   // Add Member Modal
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedMemberRole, setSelectedMemberRole] = useState<"member" | "admin">("member");
 
   const loadGroups = async () => {
     try {
@@ -186,47 +103,6 @@ export default function Groups() {
     }
   };
 
-  const handleSavePolicy = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedGroup) return;
-
-    setPolicyError(null);
-    let parsed: any;
-    try {
-      parsed = JSON.parse(policyJSON);
-    } catch {
-      setPolicyError("Invalid JSON syntax. Please check brackets, quotes, and commas.");
-      return;
-    }
-
-    try {
-      if (editingPolicy) {
-        await api.updateGroupPolicy(selectedGroup.id, editingPolicy.id, {
-          name: policyName.trim(),
-          policy: parsed,
-          priority: policyPriority,
-          is_active: true,
-        });
-      } else {
-        await api.createGroupPolicy(selectedGroup.id, {
-          name: policyName.trim(),
-          policy: parsed,
-          priority: policyPriority,
-          is_active: true,
-        });
-      }
-      setPolicyModalOpen(false);
-      setEditingPolicy(null);
-      setPolicyName("");
-      setPolicyJSON("");
-      setPolicyPriority(0);
-      await loadGroupDetails(selectedGroup);
-      await loadGroups();
-    } catch (err) {
-      setPolicyError(err instanceof Error ? err.message : "Failed to save policy");
-    }
-  };
-
   const handleDeletePolicy = async (policyId: string) => {
     if (!selectedGroup) return;
     if (!confirm("Are you sure you want to remove this IAM policy?")) return;
@@ -243,13 +119,24 @@ export default function Groups() {
     e.preventDefault();
     if (!selectedGroup || !selectedUserId) return;
     try {
-      await api.addGroupMember(selectedGroup.id, selectedUserId);
+      await api.addGroupMember(selectedGroup.id, selectedUserId, selectedMemberRole);
       setMemberModalOpen(false);
       setSelectedUserId("");
+      setSelectedMemberRole("member");
       await loadGroupDetails(selectedGroup);
       await loadGroups();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to add member");
+    }
+  };
+
+  const handleToggleRole = async (userId: string, newRole: "member" | "admin") => {
+    if (!selectedGroup) return;
+    try {
+      await api.setGroupMemberRole(selectedGroup.id, userId, newRole);
+      await loadGroupDetails(selectedGroup);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update member role");
     }
   };
 
@@ -267,25 +154,12 @@ export default function Groups() {
 
   const openCreatePolicy = () => {
     setEditingPolicy(null);
-    setPolicyName("");
-    setPolicyJSON(JSON.stringify(POLICY_TEMPLATES[1].policy, null, 2));
-    setPolicyPriority(10);
-    setPolicyError(null);
     setPolicyModalOpen(true);
   };
 
   const openEditPolicy = (p: GroupPolicy) => {
     setEditingPolicy(p);
-    setPolicyName(p.name);
-    setPolicyJSON(typeof p.policy === "string" ? p.policy : JSON.stringify(p.policy, null, 2));
-    setPolicyPriority(p.priority);
-    setPolicyError(null);
     setPolicyModalOpen(true);
-  };
-
-  const loadTemplate = (tmpl: typeof POLICY_TEMPLATES[0]) => {
-    setPolicyName(tmpl.name);
-    setPolicyJSON(JSON.stringify(tmpl.policy, null, 2));
   };
 
   const availableUsersToAdd = allUsers.filter(
@@ -475,7 +349,7 @@ export default function Groups() {
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <button className="btn btn--ghost btn--sm" onClick={() => openEditPolicy(p)}>
-                                Edit JSON
+                                Edit Policy
                               </button>
                               <button className="btn btn--ghost btn--sm" style={{ color: "var(--danger)" }} onClick={() => handleDeletePolicy(p.id)}>
                                 Remove
@@ -524,9 +398,9 @@ export default function Groups() {
                   <thead>
                     <tr>
                       <th>User</th>
-                      <th>Role</th>
-                      <th>Root</th>
-                      <th style={{ textAlign: "right" }}>Action</th>
+                      <th>System Role</th>
+                      <th>Group Role</th>
+                      <th style={{ textAlign: "right" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -535,31 +409,61 @@ export default function Groups() {
                         <td colSpan={4} className="empty">No users assigned to this group.</td>
                       </tr>
                     ) : (
-                      members.map((m) => (
-                        <tr key={m.id}>
-                          <td>
-                            <div><strong>{m.name}</strong></div>
-                            <div className="mono muted" style={{ fontSize: 11 }}>{m.email}</div>
-                          </td>
-                          <td className="mono">{m.role}</td>
-                          <td>
-                            {m.is_root && (
-                              <span className="mono" style={{ fontSize: 11, color: "var(--amber)", fontWeight: 700 }}>
-                                ROOT
+                      members.map((m) => {
+                        const isGroupAdmin = m.group_role === "admin";
+                        return (
+                          <tr key={m.id}>
+                            <td>
+                              <div><strong>{m.name}</strong></div>
+                              <div className="mono muted" style={{ fontSize: 11 }}>{m.email}</div>
+                            </td>
+                            <td>
+                              <span className="mono">{m.role}</span>
+                              {m.is_root && (
+                                <span className="mono" style={{ fontSize: 10, color: "var(--amber)", fontWeight: 700, marginLeft: 6 }}>
+                                  [ROOT]
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <span
+                                className="mono"
+                                style={{
+                                  fontSize: 11,
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                  fontWeight: 600,
+                                  background: isGroupAdmin ? "rgba(99, 102, 241, 0.15)" : "rgba(255, 255, 255, 0.06)",
+                                  color: isGroupAdmin ? "var(--primary)" : "var(--text-muted)",
+                                  border: `1px solid ${isGroupAdmin ? "rgba(99, 102, 241, 0.3)" : "var(--border)"}`,
+                                }}
+                              >
+                                {isGroupAdmin ? "★ GROUP ADMIN" : "MEMBER"}
                               </span>
-                            )}
-                          </td>
-                          <td style={{ textAlign: "right" }}>
-                            <button
-                              className="btn btn--ghost btn--sm"
-                              style={{ color: "var(--danger)" }}
-                              onClick={() => handleRemoveMember(m.id)}
-                            >
-                              Remove
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td style={{ textAlign: "right" }}>
+                              <div style={{ display: "inline-flex", gap: 6 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--sm"
+                                  onClick={() => handleToggleRole(m.id, isGroupAdmin ? "member" : "admin")}
+                                  title={isGroupAdmin ? "Demote to standard group member" : "Promote to Group Admin (leader)"}
+                                >
+                                  {isGroupAdmin ? "Demote" : "Make Admin"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--sm"
+                                  style={{ color: "var(--danger)" }}
+                                  onClick={() => handleRemoveMember(m.id)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -629,74 +533,38 @@ export default function Groups() {
       )}
 
       {/* Policy Editor Modal */}
-      {policyModalOpen && (
+      {policyModalOpen && selectedGroup && (
         <Modal
-          title={editingPolicy ? `Edit Policy: ${editingPolicy.name}` : `Attach Policy to ${selectedGroup?.name}`}
+          title={editingPolicy ? `Edit Policy: ${editingPolicy.name}` : `Attach Policy to ${selectedGroup.name}`}
           onClose={() => setPolicyModalOpen(false)}
         >
-          <form onSubmit={handleSavePolicy}>
-            {/* Template Selector */}
-            <div style={{ marginBottom: 14 }}>
-              <label className="form-label">Insert Policy Template:</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {POLICY_TEMPLATES.map((tmpl) => (
-                  <button
-                    key={tmpl.name}
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    style={{ fontSize: 11 }}
-                    onClick={() => loadTemplate(tmpl)}
-                  >
-                    {tmpl.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
-              <div className="form-group">
-                <label className="form-label">Policy Name *</label>
-                <input
-                  className="input"
-                  required
-                  placeholder="e.g. AllowDeveloperModels"
-                  value={policyName}
-                  onChange={(e) => setPolicyName(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Priority (higher runs first)</label>
-                <input
-                  className="input"
-                  type="number"
-                  value={policyPriority}
-                  onChange={(e) => setPolicyPriority(parseInt(e.target.value, 10) || 0)}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">IAM JSON Document *</label>
-              <textarea
-                className="input mono"
-                style={{ height: 260, fontSize: 12, lineHeight: 1.4 }}
-                required
-                value={policyJSON}
-                onChange={(e) => setPolicyJSON(e.target.value)}
-              />
-            </div>
-
-            {policyError && <div className="error-banner" style={{ marginBottom: 12 }}>{policyError}</div>}
-
-            <div className="modal-actions">
-              <button type="button" className="btn btn--ghost" onClick={() => setPolicyModalOpen(false)}>
-                Cancel
-              </button>
-              <button type="submit" className="btn btn--primary">
-                Save Policy
-              </button>
-            </div>
-          </form>
+          <PolicyBuilder
+            initialName={editingPolicy ? editingPolicy.name : ""}
+            initialPriority={editingPolicy ? editingPolicy.priority : 10}
+            initialPolicy={editingPolicy ? editingPolicy.policy : undefined}
+            onCancel={() => setPolicyModalOpen(false)}
+            onSave={async ({ name, priority, policy }) => {
+              if (editingPolicy) {
+                await api.updateGroupPolicy(selectedGroup.id, editingPolicy.id, {
+                  name,
+                  priority,
+                  policy,
+                  is_active: true,
+                });
+              } else {
+                await api.createGroupPolicy(selectedGroup.id, {
+                  name,
+                  priority,
+                  policy,
+                  is_active: true,
+                });
+              }
+              setPolicyModalOpen(false);
+              setEditingPolicy(null);
+              await loadGroupDetails(selectedGroup);
+              await loadGroups();
+            }}
+          />
         </Modal>
       )}
 
@@ -718,6 +586,18 @@ export default function Groups() {
                     {u.name} ({u.email}) - {u.role}
                   </option>
                 ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Role in Group:</label>
+              <select
+                className="input"
+                value={selectedMemberRole}
+                onChange={(e) => setSelectedMemberRole(e.target.value as "member" | "admin")}
+              >
+                <option value="member">Regular Member (Subject to Group Policies)</option>
+                <option value="admin">Group Admin / Leader (Delegated group management)</option>
               </select>
             </div>
 
