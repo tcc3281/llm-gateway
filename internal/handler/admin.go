@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -465,6 +467,11 @@ func (h *AdminHandler) GetUsageLogs(w http.ResponseWriter, r *http.Request) {
 			f.UserID = &id
 		}
 	}
+	if v := q.Get("key_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			f.KeyID = &id
+		}
+	}
 	f.Provider = q.Get("provider")
 	f.Model = q.Get("model")
 	f.Status = q.Get("status")
@@ -501,6 +508,41 @@ func (h *AdminHandler) GetUsageLogs(w http.ResponseWriter, r *http.Request) {
 		"limit":  limit,
 		"offset": offset,
 	})
+}
+
+// GET /admin/logs/{id} -> Single usage log detail with user & key metadata
+func (h *AdminHandler) GetUsageLogDetail(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.URL.Query().Get("id")
+	}
+	if idStr == "" {
+		http.Error(w, `{"error": "Missing log ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid log ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	logDetail, err := h.pg.GetUsageLogByID(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, `{"error": "Log entry not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logDetail)
 }
 
 // GET /admin/system/info -> Redacted runtime configuration for the Settings
@@ -619,12 +661,19 @@ func (h *AdminHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request)
 		interval = "hour"
 	}
 
-	var userID *uuid.UUID
+	var filter model.DashboardFilter
 	if idStr := query.Get("user_id"); idStr != "" {
 		if parsed, err := uuid.Parse(idStr); err == nil {
-			userID = &parsed
+			filter.UserID = &parsed
 		}
 	}
+	if keyStr := query.Get("key_id"); keyStr != "" {
+		if parsed, err := uuid.Parse(keyStr); err == nil {
+			filter.KeyID = &parsed
+		}
+	}
+	filter.Provider = query.Get("provider")
+	filter.Model = query.Get("model")
 
 	now := time.Now()
 	from := now.Add(-24 * time.Hour)
@@ -647,27 +696,32 @@ func (h *AdminHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	totals, err := h.pg.GetUsageTotals(userID, from, to)
+	totals, err := h.pg.GetUsageTotals(filter, from, to)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
-	series, err := h.pg.GetUsageTimeSeries(userID, interval, from, to)
+	series, err := h.pg.GetUsageTimeSeries(filter, interval, from, to)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
-	byModel, err := h.pg.GetUsageByModel(userID, from, to)
+	byModel, err := h.pg.GetUsageByModel(filter, from, to)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
-	byUser, err := h.pg.GetUsageByUser(from, to)
+	byUser, err := h.pg.GetUsageByUser(filter, from, to)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
-	recent, err := h.pg.GetRecentUsageLogs(limit, from, to)
+	recent, err := h.pg.GetRecentUsageLogs(filter, limit, from, to)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	statusBreakdown, err := h.pg.GetStatusCodeBreakdown(filter, from, to)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -675,14 +729,15 @@ func (h *AdminHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"from":        from.Format(time.RFC3339),
-		"to":          to.Format(time.RFC3339),
-		"interval":    interval,
-		"totals":      totals,
-		"time_series": orEmpty(series),
-		"by_model":    orEmpty(byModel),
-		"by_user":     orEmpty(byUser),
-		"recent":      orEmpty(recent),
+		"from":             from.Format(time.RFC3339),
+		"to":               to.Format(time.RFC3339),
+		"interval":         interval,
+		"totals":           totals,
+		"time_series":      orEmpty(series),
+		"by_model":         orEmpty(byModel),
+		"by_user":          orEmpty(byUser),
+		"recent":           orEmpty(recent),
+		"status_breakdown": statusBreakdown,
 	})
 }
 

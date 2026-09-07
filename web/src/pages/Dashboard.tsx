@@ -14,8 +14,9 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api/client";
-import type { DashboardStats, UsageByModel, UsageByUser } from "../api/types";
+import type { APIKey, DashboardStats, UsageByModel, UsageByUser, User } from "../api/types";
 import { fmtMoney, fmtNum, shortTs } from "../lib/format";
+import LogDetailDrawer, { getStatusInfo } from "../components/LogDetailDrawer";
 
 // Obsidian Telemetry palette — mirrors tokens in styles/theme.css so the
 // dashboard reads as one system with the rest of the admin.
@@ -64,46 +65,67 @@ function fmtCompact(n: number | null | undefined): string {
 export default function Dashboard() {
   const [interval, setInterval] = useState("hour");
   const [userFilter, setUserFilter] = useState("");
+  const [keyFilter, setKeyFilter] = useState("");
+  const [providerFilter, setProviderFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const [modelInput, setModelInput] = useState("");
+  const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [users, setUsers] = useState<{ id: string; email: string }[]>([]);
-  const [errStats, setErrStats] = useState<{ success: number; client: number; rateLimit: number; server: number } | null>(null);
-  const [errSampled, setErrSampled] = useState(0);
+  const [users, setUsers] = useState<User[]>([]);
+  const [keys, setKeys] = useState<APIKey[]>([]);
+  const [providerOptions, setProviderOptions] = useState<string[]>(["openai", "anthropic", "gemini"]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Debounce model filter text input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setModelFilter(modelInput);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [modelInput]);
+
+  // Load API keys when user filter changes
+  useEffect(() => {
+    api.listKeys(userFilter || undefined).then(setKeys).catch(() => {});
+    setKeyFilter("");
+  }, [userFilter]);
+
+  // Load available providers
+  useEffect(() => {
+    api
+      .listProviders()
+      .then((ps) => {
+        const known = new Set(["openai", "anthropic", "gemini"]);
+        const opts = ["openai", "anthropic", "gemini"];
+        for (const p of ps) {
+          if (!known.has(p.provider)) opts.push(p.provider);
+        }
+        setProviderOptions(opts);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
+    setLoading(true);
     try {
       const d = await api.dashboard({
         interval,
         user_id: userFilter || undefined,
+        key_id: keyFilter || undefined,
+        provider: providerFilter || undefined,
+        model: modelFilter || undefined,
         limit: 20,
       });
       setStats(d);
-
-      // Error breakdown needs per-request status codes, which the dashboard
-      // aggregates only as totals.error_rate. Pull the raw recent log rows for
-      // the same 24h window and bucket them by status class here.
-      const to = new Date().toISOString();
-      const from = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-      try {
-        const page = await api.logs({ from, to, limit: 200 });
-        const b = { success: 0, client: 0, rateLimit: 0, server: 0 };
-        for (const r of page.data) {
-          if (r.status_code < 400) b.success++;
-          else if (r.status_code === 429) b.rateLimit++;
-          else if (r.status_code < 500) b.client++;
-          else b.server++;
-        }
-        setErrStats(b);
-        setErrSampled(page.data.length);
-      } catch {
-        setErrStats(null);
-        setErrSampled(0);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load dashboard");
+    } finally {
+      setLoading(false);
     }
-  }, [interval, userFilter]);
+  }, [interval, userFilter, keyFilter, providerFilter, modelFilter]);
 
   useEffect(() => {
     load();
@@ -112,6 +134,16 @@ export default function Dashboard() {
   useEffect(() => {
     api.listUsers().then(setUsers).catch(() => {});
   }, []);
+
+  const clearFilters = () => {
+    setUserFilter("");
+    setKeyFilter("");
+    setProviderFilter("");
+    setModelFilter("");
+    setModelInput("");
+  };
+
+  const isFiltered = Boolean(userFilter || keyFilter || providerFilter || modelFilter || modelInput);
 
   const t = stats?.totals;
   const series = stats?.time_series ?? [];
@@ -122,38 +154,106 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="page__header">
+      <div className="page__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
         <div>
           <h1 className="page__title">Overview</h1>
-          <p className="page__sub">Live gateway usage across the last 24h</p>
+          <p className="page__sub">Live gateway telemetry and workload intelligence across the last 24h</p>
         </div>
-        <div className="row">
-          <select
-            className="select"
-            style={{ width: 150 }}
-            value={interval}
-            onChange={(e) => setInterval(e.target.value)}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            className="btn btn--primary"
+            style={{ height: 32, display: "flex", alignItems: "center", gap: 6 }}
+            disabled={loading}
+            onClick={load}
           >
-            <option value="hour">Hourly buckets</option>
-            <option value="day">Daily buckets</option>
-          </select>
-          <select
-            className="select"
-            style={{ width: 180 }}
-            value={userFilter}
-            onChange={(e) => setUserFilter(e.target.value)}
-          >
-            <option value="">All users</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.email}
-              </option>
-            ))}
-          </select>
-          <button className="btn" onClick={load}>
-            Refresh
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>refresh</span>
+            {loading ? "Refreshing..." : "Refresh"}
           </button>
         </div>
+      </div>
+
+      {/* ── Filter Toolbar ─────────────────────────────────────────────── */}
+      <div className="filter-bar" style={{ marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <select
+          className="select"
+          style={{ width: 140 }}
+          value={interval}
+          onChange={(e) => setInterval(e.target.value)}
+        >
+          <option value="hour">Hourly buckets</option>
+          <option value="day">Daily buckets</option>
+        </select>
+
+        <select
+          className="select"
+          style={{ width: 170 }}
+          value={userFilter}
+          onChange={(e) => setUserFilter(e.target.value)}
+        >
+          <option value="">All users</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.email}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="select"
+          style={{ width: 170 }}
+          value={keyFilter}
+          onChange={(e) => setKeyFilter(e.target.value)}
+        >
+          <option value="">All API keys</option>
+          {keys.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.name} ({k.key_prefix}…)
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="select"
+          style={{ width: 140 }}
+          value={providerFilter}
+          onChange={(e) => setProviderFilter(e.target.value)}
+        >
+          <option value="">All providers</option>
+          {providerOptions.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+
+        <input
+          className="input"
+          style={{ width: 170 }}
+          placeholder="Filter by model…"
+          value={modelInput}
+          onChange={(e) => setModelInput(e.target.value)}
+        />
+
+        {isFiltered && (
+          <button
+            className="btn btn--ghost btn--sm"
+            style={{
+              textDecoration: "underline",
+              border: "none",
+              background: "transparent",
+              color: "var(--text-muted)",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              cursor: "pointer",
+              padding: "0 4px",
+              minHeight: "auto",
+              boxShadow: "none",
+            }}
+            onClick={clearFilters}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -304,14 +404,14 @@ export default function Dashboard() {
           <div className="card__title">
             Error Breakdown <span className="mono">[by status]</span>
           </div>
-          <ErrorBreakdown stats={errStats} sampled={errSampled} />
+          <ErrorBreakdown breakdown={stats?.status_breakdown} totalRequests={t?.requests ?? 0} />
         </div>
 
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
             Recent Requests <span className="mono">[recent]</span>
           </div>
-          <RecentTable rows={stats?.recent ?? []} />
+          <RecentTable rows={stats?.recent ?? []} onInspect={(id) => setSelectedLogId(id)} />
         </div>
       </div>
 
@@ -402,7 +502,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-      </div>
+      <LogDetailDrawer logId={selectedLogId} onClose={() => setSelectedLogId(null)} />
     </div>
   );
 }
@@ -620,59 +720,153 @@ function StatTile({ label, value, color }: { label: string; value: string; color
 /* ────────────────────────── Row 4 helpers ────────────────────────── */
 
 function ErrorBreakdown({
-  stats,
-  sampled,
+  breakdown,
+  totalRequests,
 }: {
-  stats: { success: number; client: number; rateLimit: number; server: number } | null;
-  sampled: number;
+  breakdown?: Record<number, number>;
+  totalRequests: number;
 }) {
-  if (!stats || sampled === 0)
+  if (!breakdown || Object.keys(breakdown).length === 0 || totalRequests === 0) {
     return (
       <div className="empty">
         No logged requests in window to bucket
-        <div style={{ marginTop: 6, color: C.amberSoft }}>Backend aggregates AVG only</div>
+        <div style={{ marginTop: 6, color: C.emeraldSoft }}>All systems operational</div>
       </div>
     );
+  }
 
-  const buckets = [
-    { key: "success", label: "2xx / 3xx", count: stats.success, color: C.emerald },
-    { key: "client", label: "4xx (other)", count: stats.client, color: C.amber },
-    { key: "rateLimit", label: "429 rate-limit", count: stats.rateLimit, color: C.amberSoft },
-    { key: "server", label: "5xx provider", count: stats.server, color: C.red },
-  ];
-  const total = Math.max(stats.success + stats.client + stats.rateLimit + stats.server, 1);
+  // Convert map to sorted entries
+  const entries = Object.entries(breakdown)
+    .map(([codeStr, count]) => {
+      const code = parseInt(codeStr, 10);
+      const info = getStatusInfo(code);
+      return {
+        code,
+        count: Number(count),
+        info,
+        pct: (Number(count) / totalRequests) * 100,
+      };
+    })
+    .sort((a, b) => {
+      // Prioritize error codes (>=400) first, then sort by highest count
+      if (a.code >= 400 && b.code < 400) return -1;
+      if (a.code < 400 && b.code >= 400) return 1;
+      return b.count - a.count;
+    });
+
+  const totalErrors = entries
+    .filter((e) => e.code >= 400)
+    .reduce((acc, cur) => acc + cur.count, 0);
 
   return (
     <div>
       {/* stacked distribution bar */}
-      <div style={{ display: "flex", height: 10, borderRadius: 3, overflow: "hidden", marginBottom: 14 }}>
-        {buckets.map((b) =>
-          b.count > 0 ? (
-            <div key={b.key} style={{ width: `${(b.count / total) * 100}%`, background: b.color }} title={`${b.label}: ${b.count}`} />
+      <div
+        style={{
+          display: "flex",
+          height: 10,
+          borderRadius: 3,
+          overflow: "hidden",
+          marginBottom: 12,
+          background: "var(--surface-high)",
+        }}
+      >
+        {entries.map((e) =>
+          e.count > 0 ? (
+            <div
+              key={e.code}
+              style={{
+                width: `${Math.max(1, e.pct)}%`,
+                background: e.info.color,
+                transition: "width 0.3s ease",
+              }}
+              title={`${e.code} ${e.info.text}: ${e.count} (${e.pct.toFixed(1)}%)`}
+            />
           ) : null,
         )}
       </div>
-      {buckets.map((b) => (
-        <div key={b.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
-          <span style={{ width: 8, height: 8, borderRadius: 2, background: b.color, display: "inline-block", flexShrink: 0 }} />
-          <span style={{ flex: 1, fontSize: 12, color: C.muted }}>{b.label}</span>
-          <span className="mono" style={{ fontSize: 12 }}>
-            {fmtNum(b.count)}
-          </span>
-          <span className="mono" style={{ fontSize: 11, color: C.faint, width: 42, textAlign: "right" }}>
-            {((b.count / total) * 100).toFixed(1)}%
-          </span>
-        </div>
-      ))}
+
+      {/* Summary health pill */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 10,
+          padding: "5px 10px",
+          borderRadius: 4,
+          background: totalErrors > 0 ? "rgba(248, 113, 113, 0.08)" : "rgba(16, 185, 129, 0.08)",
+          border: `1px solid ${totalErrors > 0 ? "rgba(248, 113, 113, 0.25)" : "rgba(16, 185, 129, 0.2)"}`,
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+        }}
+      >
+        <span style={{ color: totalErrors > 0 ? "var(--danger)" : "var(--emerald)", fontWeight: 600 }}>
+          {totalErrors > 0 ? `${fmtNum(totalErrors)} errors (${((totalErrors / totalRequests) * 100).toFixed(1)}%)` : "0 errors (100% healthy)"}
+        </span>
+        <span style={{ color: "var(--text-muted)" }}>
+          {fmtNum(totalRequests)} reqs
+        </span>
+      </div>
+
+      {/* Per-status code breakdown list */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 220, overflowY: "auto" }}>
+        {entries.map((e) => (
+          <div
+            key={e.code}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "5px 8px",
+              background: "var(--surface-raised)",
+              borderRadius: 4,
+              border: "1px solid var(--border)",
+            }}
+          >
+            <span
+              className="mono"
+              style={{
+                fontSize: 11,
+                padding: "1px 6px",
+                borderRadius: 3,
+                background: e.info.bg,
+                color: e.info.color,
+                border: `1px solid ${e.info.border}`,
+                fontWeight: 600,
+                minWidth: 44,
+                textAlign: "center",
+              }}
+            >
+              {e.code}
+            </span>
+            <span style={{ flex: 1, fontSize: 12, color: e.code >= 400 ? "var(--text)" : "var(--text-muted)" }}>
+              {e.info.text}
+            </span>
+            <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
+              {fmtNum(e.count)}
+            </span>
+            <span className="mono" style={{ fontSize: 11, color: C.faint, width: 44, textAlign: "right" }}>
+              {e.pct.toFixed(1)}%
+            </span>
+          </div>
+        ))}
+      </div>
+
       <div className="muted" style={{ fontSize: 10, marginTop: 10, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
-        Bucketed from last {sampled} logged requests in window. Upstream statuses (400 context-window, 429, 5xx) are
-        recorded per request; gateway-side 401/403/429 rejections are not.
+        Exact HTTP status breakdown from all {fmtNum(totalRequests)} logged requests in the current window.
       </div>
     </div>
   );
 }
 
-function RecentTable({ rows }: { rows: DashboardStats["recent"] }) {
+function RecentTable({
+  rows,
+  onInspect,
+}: {
+  rows: DashboardStats["recent"];
+  onInspect: (id: number) => void;
+}) {
   if (!rows.length) return <div className="empty">No requests in the selected window</div>;
   return (
     <div className="table-wrap">
@@ -686,22 +880,48 @@ function RecentTable({ rows }: { rows: DashboardStats["recent"] }) {
             <th className="num">TTFT</th>
             <th className="num">Latency</th>
             <th className="num">Cost</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr
+              key={r.id ?? i}
+              style={{ cursor: r.id ? "pointer" : "default" }}
+              onClick={() => r.id && onInspect(r.id)}
+            >
               <td className="mono" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
                 {shortTs(r.created_at)}
               </td>
               <td>{r.provider}</td>
-              <td className="truncate">{r.model}</td>
+              <td className="truncate" style={{ maxWidth: 160 }}>{r.model}</td>
               <td className="num">
                 <StatusBadge code={r.status_code} />
               </td>
-              <td className="num">{fmtNum(r.ttft_ms)} ms</td>
-              <td className="num">{fmtNum(r.latency_ms)} ms</td>
+              <td className="num">{r.ttft_ms ? `${fmtNum(r.ttft_ms)}ms` : "—"}</td>
+              <td className="num">{r.latency_ms ? `${fmtNum(r.latency_ms)}ms` : "—"}</td>
               <td className="num">{fmtMoney(r.cost_usd)}</td>
+              <td style={{ textAlign: "right", paddingRight: 6 }}>
+                {r.id && (
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    style={{
+                      padding: "2px 8px",
+                      height: "auto",
+                      minHeight: "auto",
+                      fontSize: 11,
+                      fontFamily: "var(--font-mono)",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onInspect(r.id!);
+                    }}
+                    title="Inspect request log"
+                  >
+                    Inspect
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

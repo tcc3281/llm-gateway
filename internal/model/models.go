@@ -165,6 +165,7 @@ type UsageByUser struct {
 }
 
 type UsageRecent struct {
+	ID             int64     `json:"id"`
 	CreatedAt      time.Time `json:"created_at"`
 	UserID         uuid.UUID `json:"user_id"`
 	Provider       string    `json:"provider"`
@@ -176,6 +177,14 @@ type UsageRecent struct {
 	TotalLatencyMs int64     `json:"latency_ms"`
 }
 
+// DashboardFilter carries optional criteria to scope the dashboard analytics.
+type DashboardFilter struct {
+	UserID   *uuid.UUID
+	KeyID    *uuid.UUID
+	Provider string
+	Model    string
+}
+
 // UsageLogFilter carries the dynamic WHERE clauses for the paginated
 // GET /admin/logs endpoint. Status accepts an exact code ("200") or a
 // class ("2xx"/"4xx"/"5xx"); empty values are ignored.
@@ -183,8 +192,17 @@ type UsageLogFilter struct {
 	From          *time.Time
 	To            *time.Time
 	UserID        *uuid.UUID
+	KeyID         *uuid.UUID
 	Provider      string
 	Model         string
 	Status        string
 	InboundFormat string
+}
+
+// UsageLogDetail enriches UsageLog with joined user email and api key name
+// for high-density log inspection.
+type UsageLogDetail struct {
+	UsageLog
+	UserEmail string `json:"user_email,omitempty"`
+	KeyName   string `json:"key_name,omitempty"`
 }
