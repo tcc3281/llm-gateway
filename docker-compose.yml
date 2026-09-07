@@ -25,6 +25,10 @@ services:
       - CACHE_RESPONSE_TTL_SECONDS=${CACHE_RESPONSE_TTL_SECONDS:-3600}
       - OTEL_EXPORTER=${OTEL_EXPORTER:-none}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-otel-collector:4317}
+      - OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:-none}
+      - SLO_MAX_TTFT_MS=${SLO_MAX_TTFT_MS:-500}
+      - SLO_MAX_TBT_MS=${SLO_MAX_TBT_MS:-250}
+      - AGENT_MAX_TOOL_CALLS=${AGENT_MAX_TOOL_CALLS:-10}
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +63,40 @@ services:
       - redisdata:/data
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: llm_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    profiles: ["monitoring", "all"]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: llm_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    profiles: ["monitoring", "all"]
+
 volumes:
   pgdata:
   redisdata:
+  promdata:
+  grafanadata:

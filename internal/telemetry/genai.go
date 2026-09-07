@@ -40,3 +40,15 @@ func SetLLMGWAttributes(span trace.Span, provider string, cacheHit, fallbackUsed
 		attribute.Int64("llmgw.ttft_ms", ttftMs),
 	)
 }
+
+// RecordRunawayLoopEvent records a warning event on the span when tool calls exceed the threshold.
+func RecordRunawayLoopEvent(span trace.Span, toolCallsCount, threshold int) {
+	if span == nil || !span.IsRecording() {
+		return
+	}
+	span.AddEvent("gen_ai.agent.runaway_loop_detected", trace.WithAttributes(
+		attribute.Int("gen_ai.tool_calls.count", toolCallsCount),
+		attribute.Int("gen_ai.tool_calls.threshold", threshold),
+		attribute.String("gen_ai.agent.warning", "Agent tool calls exceeded configured loop threshold"),
+	))
+}

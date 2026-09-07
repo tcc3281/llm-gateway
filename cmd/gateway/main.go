@@ -68,7 +68,19 @@ func main() {
 
 	globalCacheTTL := time.Duration(cfg.ResponseCacheTTL) * time.Second
 	responseCache := cache.NewResponseCache(redisClient, globalCacheTTL)
-	gwService := service.NewGatewayService(providerClient, keyStore, costCalc, telemetryLogger, redisClient, pg, responseCache)
+	gwService := service.NewGatewayService(
+		providerClient,
+		keyStore,
+		costCalc,
+		telemetryLogger,
+		redisClient,
+		pg,
+		responseCache,
+		cfg.ContentCapturePolicy,
+		cfg.SLOMaxTTFTMs,
+		cfg.SLOMaxTBTMs,
+		cfg.AgentMaxToolCalls,
+	)
 
 	// Refresh each provider's discovered model catalog hourly in the background
 	// so new upstream models resolve without an admin touching the UI.
@@ -80,6 +92,7 @@ func main() {
 
 	// 6. Router Setup: Public Gateway Mux (Port 8080)
 	publicMux := http.NewServeMux()
+	publicMux.Handle("GET /metrics", telemetry.PrometheusHandler())
 	publicMux.HandleFunc("POST /v1/chat/completions", gwHandler.HandleOpenAIChatCompletions)
 	publicMux.HandleFunc("POST /v1/messages", gwHandler.HandleAnthropicMessages)
 	publicMux.HandleFunc("POST /v1/embeddings", gwHandler.HandleEmbeddings)
@@ -123,6 +136,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-admin"}`))
 	})
+	adminMux.Handle("GET /metrics", telemetry.PrometheusHandler())
 	// SPA: catch-all for GET requests not matched by a specific /admin/* route.
 	// Client-side routing in the React app owns every path below this handler.
 	adminMux.Handle("/", web.Handler())

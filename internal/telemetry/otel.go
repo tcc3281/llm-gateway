@@ -42,6 +42,13 @@ func Setup(ctx context.Context, serviceName, exporterType, otlpEndpoint string) 
 		propagation.Baggage{},
 	))
 
+	// Always initialize Prometheus & OTel Metrics instruments
+	if mErr := InitMetrics(); mErr != nil {
+		log.Printf("Warning: failed initializing metrics: %v", mErr)
+	} else {
+		log.Println("Prometheus & OTel metrics initialized")
+	}
+
 	if exporterType == "none" || exporterType == "disabled" {
 		log.Println("OTel tracing is disabled (noop tracer installed)")
 		return func(context.Context) error { return nil }, nil

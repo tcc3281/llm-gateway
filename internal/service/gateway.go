@@ -40,24 +40,44 @@ func (e *ErrProviderKey) Error() string {
 }
 
 type GatewayService struct {
-	providerClient *provider.ProviderClient
-	keyStore       *provider.KeyStore
-	costCalc       *analytics.CostCalculator
-	telemetry      *analytics.TelemetryLogger
-	redis          *db.RedisClient
-	pg             *db.PostgresDB
-	responseCache  *cache.ResponseCache
+	providerClient       *provider.ProviderClient
+	keyStore             *provider.KeyStore
+	costCalc             *analytics.CostCalculator
+	telemetry            *analytics.TelemetryLogger
+	redis                *db.RedisClient
+	pg                   *db.PostgresDB
+	responseCache        *cache.ResponseCache
+	contentCapturePolicy string
+	sloMaxTTFTMs         int
+	sloMaxTBTMs          int
+	agentMaxToolCalls    int
 }
 
-func NewGatewayService(p *provider.ProviderClient, k *provider.KeyStore, c *analytics.CostCalculator, t *analytics.TelemetryLogger, redis *db.RedisClient, pg *db.PostgresDB, rc *cache.ResponseCache) *GatewayService {
+func NewGatewayService(
+	p *provider.ProviderClient,
+	k *provider.KeyStore,
+	c *analytics.CostCalculator,
+	t *analytics.TelemetryLogger,
+	redis *db.RedisClient,
+	pg *db.PostgresDB,
+	rc *cache.ResponseCache,
+	contentCapturePolicy string,
+	sloMaxTTFTMs int,
+	sloMaxTBTMs int,
+	agentMaxToolCalls int,
+) *GatewayService {
 	return &GatewayService{
-		providerClient: p,
-		keyStore:       k,
-		costCalc:       c,
-		telemetry:      t,
-		redis:          redis,
-		pg:             pg,
-		responseCache:  rc,
+		providerClient:       p,
+		keyStore:             k,
+		costCalc:             c,
+		telemetry:            t,
+		redis:                redis,
+		pg:                   pg,
+		responseCache:        rc,
+		contentCapturePolicy: contentCapturePolicy,
+		sloMaxTTFTMs:         sloMaxTTFTMs,
+		sloMaxTBTMs:          sloMaxTBTMs,
+		agentMaxToolCalls:    agentMaxToolCalls,
 	}
 }
 
@@ -356,6 +376,17 @@ func (g *GatewayService) StartModelDiscoveryLoop(ctx context.Context, interval t
 	}
 }
 
+func countMessagesToolCalls(messages []canonical.ChatMessage) int {
+	count := 0
+	for _, msg := range messages {
+		count += len(msg.ToolCalls)
+		if len(msg.ToolCalls) == 0 && msg.Role == "tool" {
+			count++
+		}
+	}
+	return count
+}
+
 func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
 	startTime := time.Now()
 
@@ -375,6 +406,14 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		return fmt.Errorf("failed to decode request: %w", err)
 	}
 
+	// Capture prompt event if policy allows
+	span := trace.SpanFromContext(ctx)
+	if span != nil && span.IsRecording() {
+		telemetry.RecordPromptEvent(span, g.contentCapturePolicy, canReq.Messages)
+	}
+
+	inputToolCalls := countMessagesToolCalls(canReq.Messages)
+
 	// 2. Exact-Match Response Cache Check (non-streaming only, per API key)
 	var cacheKey string
 	var cacheTTL time.Duration
@@ -393,6 +432,11 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 				// Record Telemetry for cache hit
 				g.recordTelemetry(params, "cache", canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusOK, "", startTime)
 
+				// Metrics
+				telemetry.RecordCacheMetric(ctx, "hit", canReq.Model)
+				durationSec := time.Since(startTime).Seconds()
+				telemetry.RecordDurationMetric(ctx, "cache", canReq.Model, "chat", durationSec, http.StatusOK)
+
 				// Set OTel span attributes
 				if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
 					telemetry.SetGenAIAttributes(span, "cache", canReq.Model, "chat")
@@ -400,6 +444,7 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 				}
 				return nil
 			}
+			telemetry.RecordCacheMetric(ctx, "miss", canReq.Model)
 		}
 	}
 
@@ -414,6 +459,8 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	// 4. Dispatch with Fallback Ladder
 	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey)
 	if err != nil {
+		durationSec := time.Since(startTime).Seconds()
+		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, canReq.Model, "chat", durationSec, http.StatusServiceUnavailable)
 		g.recordTelemetry(params, primaryTarget.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
 		if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
 			span.RecordError(err)
@@ -423,8 +470,13 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	defer upResp.Body.Close()
 
 	fallbackUsed := len(attempts) > 1
+	if fallbackUsed {
+		telemetry.RecordFallbackMetric(ctx, primaryTarget.Name, usedTarget.Name, canReq.Model)
+	}
 
 	if upResp.StatusCode != http.StatusOK {
+		durationSec := time.Since(startTime).Seconds()
+		telemetry.RecordDurationMetric(ctx, usedTarget.Name, usedModel, "chat", durationSec, upResp.StatusCode)
 		bodyBytes, _ := io.ReadAll(upResp.Body)
 		params.ResponseWriter.WriteHeader(upResp.StatusCode)
 		params.ResponseWriter.Write(bodyBytes)
@@ -438,13 +490,13 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 
 	// 5. Handle Streaming vs Non-Streaming Response
 	if canReq.Stream {
-		return g.handleStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, fallbackUsed)
+		return g.handleStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, fallbackUsed, inputToolCalls)
 	}
 
-	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed)
+	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed, inputToolCalls)
 }
 
-func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool) error {
+func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool, inputToolCalls int) error {
 	bodyBytes, err := io.ReadAll(upResp.Body)
 	if err != nil {
 		return err
@@ -492,21 +544,44 @@ func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params Pro
 		g.responseCache.Set(ctx, cacheKey, clientResponseBytes, cacheTTL)
 	}
 
+	var keyID, userID string
+	if params.ApiKey != nil {
+		keyID = params.ApiKey.ID.String()
+		userID = params.ApiKey.UserID.String()
+	}
+
 	// Record Telemetry
 	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens, canResp.ReasoningTokens)
 	g.recordTelemetry(params, target.Name, canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens, canResp.ReasoningTokens, costResult, 0, http.StatusOK, "", startTime)
 
-	// Set OTel attributes
-	if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+	// Set OTel attributes and completion event
+	span := trace.SpanFromContext(ctx)
+	if span != nil && span.IsRecording() {
 		telemetry.SetGenAIAttributes(span, target.Name, canReq.Model, "chat")
 		telemetry.SetGenAIUsage(span, canResp.PromptTokens, canResp.CompletionTokens)
 		telemetry.SetLLMGWAttributes(span, target.Name, false, fallbackUsed, 0)
+		telemetry.RecordCompletionEvent(span, g.contentCapturePolicy, canResp.Content)
 	}
+
+	// Agent runaway loop detection
+	totalToolCalls := inputToolCalls + len(canResp.ToolCalls)
+	if g.agentMaxToolCalls > 0 && totalToolCalls > g.agentMaxToolCalls {
+		telemetry.RecordRunawayLoop(ctx, target.Name, canReq.Model, keyID, totalToolCalls)
+		if span != nil && span.IsRecording() {
+			telemetry.RecordRunawayLoopEvent(span, totalToolCalls, g.agentMaxToolCalls)
+		}
+	}
+
+	// Metrics recording
+	durationSec := time.Since(startTime).Seconds()
+	telemetry.RecordDurationMetric(ctx, target.Name, canReq.Model, "chat", durationSec, http.StatusOK)
+	telemetry.RecordTokenMetrics(ctx, target.Name, canReq.Model, keyID, userID, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens)
+	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
 
 	return nil
 }
 
-func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, fallbackUsed bool) error {
+func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, fallbackUsed bool, inputToolCalls int) error {
 	flusher, ok := params.ResponseWriter.(http.Flusher)
 	if !ok {
 		return fmt.Errorf("streaming unsupported by response writer")
@@ -535,6 +610,7 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	var totalCachedInputTokens, totalReasoningTokens int
 	var lastFinishReason string
 	isFirstChunk := true
+	var streamContent strings.Builder
 
 	// emitAnthropicMessageStart lazily writes the message_start opener once,
 	// using the real input/cache counts accumulated so far from the upstream.
@@ -705,6 +781,9 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		if chunk.FinishReason != "" {
 			lastFinishReason = chunk.FinishReason
 		}
+		if chunk.DeltaContent != "" && strings.EqualFold(g.contentCapturePolicy, "event_only") {
+			streamContent.WriteString(chunk.DeltaContent)
+		}
 
 		// Feed tool-call fragments into the accumulator (never streamed
 		// incrementally). OpenAI/Anthropic key by the stable chunk index; Gemini
@@ -845,14 +924,65 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		flusher.Flush()
 	}
 
+	var keyID, userID string
+	if params.ApiKey != nil {
+		keyID = params.ApiKey.ID.String()
+		userID = params.ApiKey.UserID.String()
+	}
+
+	totalDurationMs := time.Since(startTime).Milliseconds()
+	totalDurationSec := float64(totalDurationMs) / 1000.0
+	ttftSec := float64(ttftMs) / 1000.0
+
+	var tbtMs float64
+	var tbtSec float64
+	if totalCompletionTokens > 1 {
+		tbtMs = float64(totalDurationMs-ttftMs) / float64(totalCompletionTokens-1)
+		tbtSec = tbtMs / 1000.0
+	}
+
+	isGoodput := true
+	var violationType string
+	if g.sloMaxTTFTMs > 0 && int(ttftMs) > g.sloMaxTTFTMs {
+		isGoodput = false
+		violationType = "ttft"
+	}
+	if totalCompletionTokens > 1 && g.sloMaxTBTMs > 0 && int(tbtMs) > g.sloMaxTBTMs {
+		isGoodput = false
+		if violationType == "" {
+			violationType = "tbt"
+		} else {
+			violationType = "both"
+		}
+	}
+
 	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens)
 	g.recordTelemetry(params, target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens, costResult, ttftMs, http.StatusOK, "", startTime)
 
-	if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+	span := trace.SpanFromContext(ctx)
+	if span != nil && span.IsRecording() {
 		telemetry.SetGenAIAttributes(span, target.Name, canReq.Model, "chat")
 		telemetry.SetGenAIUsage(span, totalPromptTokens, totalCompletionTokens)
 		telemetry.SetLLMGWAttributes(span, target.Name, false, fallbackUsed, ttftMs)
+		if streamContent.Len() > 0 {
+			telemetry.RecordCompletionEvent(span, g.contentCapturePolicy, streamContent.String())
+		}
 	}
+
+	// Agent runaway loop detection
+	totalToolCalls := inputToolCalls + len(toolCalls)
+	if g.agentMaxToolCalls > 0 && totalToolCalls > g.agentMaxToolCalls {
+		telemetry.RecordRunawayLoop(ctx, target.Name, canReq.Model, keyID, totalToolCalls)
+		if span != nil && span.IsRecording() {
+			telemetry.RecordRunawayLoopEvent(span, totalToolCalls, g.agentMaxToolCalls)
+		}
+	}
+
+	// Metrics recording
+	telemetry.RecordStreamSLOMetrics(ctx, target.Name, canReq.Model, keyID, ttftSec, tbtSec, isGoodput, violationType)
+	telemetry.RecordDurationMetric(ctx, target.Name, canReq.Model, "chat", totalDurationSec, http.StatusOK)
+	telemetry.RecordTokenMetrics(ctx, target.Name, canReq.Model, keyID, userID, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens)
+	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
 
 	return nil
 }
@@ -1087,6 +1217,15 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 			telemetry.SetLLMGWAttributes(span, target.Name, false, false, 0)
 		}
 
+		var keyID, userID string
+		if params.ApiKey != nil {
+			keyID = params.ApiKey.ID.String()
+			userID = params.ApiKey.UserID.String()
+		}
+		telemetry.RecordDurationMetric(ctx, target.Name, embedReq.Model, "embeddings", time.Since(startTime).Seconds(), http.StatusOK)
+		telemetry.RecordTokenMetrics(ctx, target.Name, embedReq.Model, keyID, userID, promptTokens, 0, 0)
+		telemetry.RecordCostMetric(ctx, target.Name, embedReq.Model, keyID, userID, costResult.Cost)
+
 	} else {
 		// For OpenAI & OpenAI-compatible: transparent proxying
 		var url string
@@ -1140,6 +1279,13 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 		params.ResponseWriter.WriteHeader(resp.StatusCode)
 		params.ResponseWriter.Write(bodyBytes)
 
+		var keyID, userID string
+		if params.ApiKey != nil {
+			keyID = params.ApiKey.ID.String()
+			userID = params.ApiKey.UserID.String()
+		}
+		telemetry.RecordDurationMetric(ctx, target.Name, embedReq.Model, "embeddings", time.Since(startTime).Seconds(), resp.StatusCode)
+
 		if resp.StatusCode == http.StatusOK {
 			var respData struct {
 				Usage struct {
@@ -1160,6 +1306,8 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 				telemetry.SetGenAIUsage(span, tokens, 0)
 				telemetry.SetLLMGWAttributes(span, target.Name, false, false, 0)
 			}
+			telemetry.RecordTokenMetrics(ctx, target.Name, embedReq.Model, keyID, userID, tokens, 0, 0)
+			telemetry.RecordCostMetric(ctx, target.Name, embedReq.Model, keyID, userID, costResult.Cost)
 		} else {
 			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, resp.StatusCode, string(bodyBytes), startTime)
 		}
