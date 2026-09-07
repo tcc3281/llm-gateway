@@ -8,13 +8,15 @@ import (
 )
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"` // "admin" or "user"
-	IsRoot    bool      `json:"is_root"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           uuid.UUID `json:"id"`
+	Email        string    `json:"email"`
+	Name         string    `json:"name"`
+	Role         string    `json:"role"` // "admin" or "user"
+	IsRoot       bool      `json:"is_root"`
+	IsActive     bool      `json:"is_active"`
+	PasswordHash string    `json:"-"` // secret, never serialized
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type APIKey struct {
@@ -273,4 +275,60 @@ type AuditLogFilter struct {
 	Limit      int
 	Offset     int
 }
+
+// Member & Team Usage Analytics models
+type UserModelUsage struct {
+	Model               string  `json:"model"`
+	TotalRequests       int64   `json:"requests"`
+	TotalCost           float64 `json:"cost_usd"`
+	SumPromptTokens     int64   `json:"prompt_tokens"`
+	SumCompletionTokens int64   `json:"completion_tokens"`
+}
+
+type MemberUsageSummary struct {
+	UserID              uuid.UUID        `json:"user_id"`
+	Email               string           `json:"email"`
+	Name                string           `json:"name"`
+	Role                string           `json:"role"`
+	IsRoot              bool             `json:"is_root"`
+	IsActive            bool             `json:"is_active"`
+	Groups              []string         `json:"groups"`
+	TopModels           []UserModelUsage `json:"top_models"`
+	TotalRequests       int64            `json:"requests"`
+	SumPromptTokens     int64            `json:"prompt_tokens"`
+	SumCompletionTokens int64            `json:"completion_tokens"`
+	TotalCost           float64          `json:"cost_usd"`
+	BudgetLimit         float64          `json:"budget_limit"`
+	BudgetUsedPercent   float64          `json:"budget_used_percent"`
+}
+
+type TeamUsageSummary struct {
+	GroupID            uuid.UUID `json:"group_id"`
+	GroupName          string    `json:"group_name"`
+	Description        string    `json:"description"`
+	MemberCount        int       `json:"member_count"`
+	TotalRequests      int64     `json:"requests"`
+	TotalCost          float64   `json:"cost_usd"`
+	BudgetLimitMonthly float64   `json:"budget_limit_monthly"`
+	UtilizationPercent float64   `json:"utilization_percent"`
+}
+
+type AnalyticsMembersResponse struct {
+	Summary struct {
+		ActiveMembers int64   `json:"active_members"`
+		TotalSpend    float64 `json:"total_spend"`
+		BudgetLimit   float64 `json:"budget_limit"`
+		TopModel      string  `json:"top_model"`
+		TotalTokens   int64   `json:"total_tokens"`
+	} `json:"summary"`
+	Members []MemberUsageSummary `json:"members"`
+	Teams   []TeamUsageSummary   `json:"teams"`
+}
+
+type MemberDetailResponse struct {
+	Member       MemberUsageSummary `json:"member"`
+	ModelDetails []UserModelUsage   `json:"model_details"`
+	DailyTrends  []UsageSeriesPoint `json:"daily_trends"`
+}
+
 

@@ -2,12 +2,16 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"llm-gateway/internal/db"
@@ -170,3 +174,134 @@ func (s *AuthService) HashKey(plainKey string) string {
 	h := sha256.Sum256([]byte(plainKey))
 	return hex.EncodeToString(h[:])
 }
+
+// HashPassword hashes a plain text password with a 16-byte random salt using HMAC-SHA256
+func (s *AuthService) HashPassword(password string) (string, error) {
+	saltBytes := make([]byte, 16)
+	if _, err := rand.Read(saltBytes); err != nil {
+		return "", err
+	}
+	saltHex := hex.EncodeToString(saltBytes)
+
+	mac := hmac.New(sha256.New, saltBytes)
+	mac.Write([]byte(password))
+	hashHex := hex.EncodeToString(mac.Sum(nil))
+
+	return fmt.Sprintf("sha256$%s$%s", saltHex, hashHex), nil
+}
+
+// VerifyPassword verifies a plain text password against a stored salted hash
+func (s *AuthService) VerifyPassword(password, storedHash string) bool {
+	if password == "" || storedHash == "" {
+		return false
+	}
+	parts := strings.Split(storedHash, "$")
+	if len(parts) != 3 || parts[0] != "sha256" {
+		return false
+	}
+	saltBytes, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	expectedHashBytes, err := hex.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, saltBytes)
+	mac.Write([]byte(password))
+	computedHashBytes := mac.Sum(nil)
+
+	return subtle.ConstantTimeCompare(expectedHashBytes, computedHashBytes) == 1
+}
+
+// SessionClaims carries identity information in signed session tokens
+type SessionClaims struct {
+	UserID    uuid.UUID `json:"user_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	IsRoot    bool      `json:"is_root"`
+	ExpiresAt int64     `json:"exp"`
+}
+
+// CreateSessionToken generates a tamper-proof HMAC-SHA256 signed bearer token
+func (s *AuthService) CreateSessionToken(user *model.User, duration time.Duration) (string, error) {
+	expiresAt := time.Now().Add(duration).Unix()
+	payloadRaw := fmt.Sprintf("%s|%s|%s|%s|%t|%d",
+		user.ID.String(),
+		user.Email,
+		user.Name,
+		user.Role,
+		user.IsRoot,
+		expiresAt,
+	)
+	payloadB64 := base64.RawURLEncoding.EncodeToString([]byte(payloadRaw))
+
+	secret := []byte(s.adminKey)
+	if len(secret) == 0 {
+		secret = []byte("default-emergency-signing-key")
+	}
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(payloadB64))
+	sigHex := hex.EncodeToString(mac.Sum(nil))
+
+	return fmt.Sprintf("%s.%s", payloadB64, sigHex), nil
+}
+
+// VerifySessionToken verifies and decodes a signed bearer session token
+func (s *AuthService) VerifySessionToken(tokenString string) (*SessionClaims, error) {
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 2 {
+		return nil, errors.New("invalid token format")
+	}
+	payloadB64 := parts[0]
+	sigHex := parts[1]
+
+	secret := []byte(s.adminKey)
+	if len(secret) == 0 {
+		secret = []byte("default-emergency-signing-key")
+	}
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(payloadB64))
+	computedSigHex := hex.EncodeToString(mac.Sum(nil))
+
+	if subtle.ConstantTimeCompare([]byte(sigHex), []byte(computedSigHex)) != 1 {
+		return nil, errors.New("invalid token signature")
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadB64)
+	if err != nil {
+		return nil, errors.New("malformed token payload")
+	}
+
+	fields := strings.Split(string(payloadBytes), "|")
+	if len(fields) < 6 {
+		return nil, errors.New("invalid claims payload")
+	}
+
+	uid, err := uuid.Parse(fields[0])
+	if err != nil {
+		return nil, errors.New("invalid user id in claims")
+	}
+
+	isRoot, _ := strconv.ParseBool(fields[4])
+	expiresAt, err := strconv.ParseInt(fields[5], 10, 64)
+	if err != nil {
+		return nil, errors.New("invalid expiry in claims")
+	}
+
+	if time.Now().Unix() > expiresAt {
+		return nil, errors.New("session token expired")
+	}
+
+	return &SessionClaims{
+		UserID:    uid,
+		Email:     fields[1],
+		Name:      fields[2],
+		Role:      fields[3],
+		IsRoot:    isRoot,
+		ExpiresAt: expiresAt,
+	}, nil
+}
+

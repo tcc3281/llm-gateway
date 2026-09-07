@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { User } from "../api/types";
 import { fmtDate } from "../lib/format";
@@ -14,6 +15,7 @@ interface UserForm {
 const empty: UserForm = { name: "", email: "", role: "user", is_root: false };
 
 export default function Users() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -23,6 +25,10 @@ export default function Users() {
 
   const [editTarget, setEditTarget] = useState<User | null>(null);
   const [editForm, setEditForm] = useState<UserForm>(empty);
+
+  const [passwordTarget, setPasswordTarget] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
@@ -91,18 +97,49 @@ export default function Users() {
     }
   };
 
+  const submitPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!passwordTarget || !newPassword.trim()) return;
+    setBusy(true);
+    setError(null);
+    setPasswordSuccess(null);
+    try {
+      await api.setPassword(passwordTarget.id, newPassword.trim());
+      setPasswordSuccess(`Password updated for ${passwordTarget.email}`);
+      setNewPassword("");
+      setTimeout(() => {
+        setPasswordTarget(null);
+        setPasswordSuccess(null);
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update password");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="page__header">
         <div>
-          <h1 className="page__title">Users</h1>
+          <h1 className="page__title">Users &amp; Members</h1>
           <p className="page__sub">
-            {users.length} account(s). Deleting a user also revokes their API keys.
+            {users.length} account(s). Manage team credentials, passwords, and roles.
           </p>
         </div>
-        <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
-          + New user
-        </button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            className="btn"
+            style={{ backgroundColor: "#1a2122", border: "1px solid #2d3139", color: "#22d3ee", fontFamily: "JetBrains Mono, monospace", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
+            onClick={() => navigate("/analytics/members")}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>insights</span>
+            Member Analytics
+          </button>
+          <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
+            + New user
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -153,6 +190,17 @@ export default function Users() {
                 <td className="muted">{fmtDate(u.created_at)}</td>
                 <td>
                   <div className="table__actions">
+                    <button
+                      className="btn btn--sm"
+                      style={{ color: "#22d3ee" }}
+                      onClick={() => {
+                        setPasswordTarget(u);
+                        setNewPassword("");
+                        setPasswordSuccess(null);
+                      }}
+                    >
+                      Password
+                    </button>
                     <button
                       className="btn btn--sm"
                       onClick={() => {
@@ -226,6 +274,47 @@ export default function Users() {
           }
         >
           <UserFields form={editForm} setForm={setEditForm} emailDisabled />
+        </Modal>
+      )}
+
+      {passwordTarget && (
+        <Modal
+          title={`Set Password: ${passwordTarget.email}`}
+          onClose={() => setPasswordTarget(null)}
+          footer={
+            <>
+              <button className="btn btn--ghost" onClick={() => setPasswordTarget(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn--primary"
+                onClick={submitPassword}
+                disabled={busy || newPassword.length < 6}
+              >
+                {busy ? "Updating…" : "Update Password"}
+              </button>
+            </>
+          }
+        >
+          {passwordSuccess && (
+            <div style={{ padding: "8px 12px", backgroundColor: "rgba(16, 185, 129, 0.15)", border: "1px solid rgba(16, 185, 129, 0.4)", borderRadius: 4, color: "#10b981", fontSize: 13, marginBottom: 12 }}>
+              {passwordSuccess}
+            </div>
+          )}
+          <div className="field">
+            <label className="field__label">New Password (min 6 characters)</label>
+            <input
+              className="input"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="••••••••••••"
+              autoFocus
+            />
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Setting a password allows this member to authenticate directly via Member Login.
+          </p>
         </Modal>
       )}
 

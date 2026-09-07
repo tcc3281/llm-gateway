@@ -228,3 +228,70 @@ export interface AuditLogsPage {
   offset: number;
 }
 
+export interface UserModelUsage {
+  model: string;
+  requests: number;
+  cost_usd: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface MemberUsageSummary {
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  is_root: boolean;
+  is_active: boolean;
+  groups: string[];
+  top_models: UserModelUsage[];
+  requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number;
+  budget_limit: number;
+  budget_used_percent: number;
+}
+
+export interface TeamUsageSummary {
+  group_id: string;
+  group_name: string;
+  description: string;
+  member_count: number;
+  requests: number;
+  cost_usd: number;
+  budget_limit_monthly: number;
+  utilization_percent: number;
+}
+
+export interface AnalyticsMembersResponse {
+  summary: {
+    active_members: number;
+    total_spend: number;
+    budget_limit: number;
+    top_model: string;
+    total_tokens: number;
+  };
+  members: MemberUsageSummary[];
+  teams: TeamUsageSummary[];
+}
+
+export interface MemberDetailResponse {
+  member: MemberUsageSummary;
+  model_details: UserModelUsage[];
+  daily_trends: UsageSeriesPoint[];
+}
+
+export interface LoginResponse {
+  token: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    is_root: boolean;
+    groups: string[];
+  };
+}
+
+

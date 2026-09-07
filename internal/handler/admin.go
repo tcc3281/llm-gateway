@@ -63,6 +63,16 @@ func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore 
 	}
 }
 
+type AuthContext struct {
+	UserID uuid.UUID `json:"user_id"`
+	Email  string    `json:"email"`
+	Name   string    `json:"name"`
+	Role   string    `json:"role"`
+	IsRoot bool      `json:"is_root"`
+}
+
+type authContextKey struct{}
+
 func (h *AdminHandler) logAudit(r *http.Request, actorType, action, targetType, targetID string, details interface{}) {
 	if h.pg == nil {
 		return
@@ -74,7 +84,18 @@ func (h *AdminHandler) logAudit(r *http.Request, actorType, action, targetType, 
 			rawDetails = b
 		}
 	}
+	var actorID *uuid.UUID
+	ac := h.getAuthContext(r)
+	if ac.UserID != uuid.Nil {
+		actorID = &ac.UserID
+	}
+	if ac.IsRoot {
+		actorType = "root"
+	} else if ac.Email != "" {
+		actorType = ac.Role
+	}
 	_ = h.pg.CreateAuditLog(&model.AuditLog{
+		ActorID:    actorID,
 		ActorType:  actorType,
 		ActorIP:    clientIP,
 		Action:     action,
@@ -131,13 +152,54 @@ func (h *AdminHandler) checkAdminAuth(w http.ResponseWriter, r *http.Request) bo
 		return false
 	}
 
-	// 2. Secret Key check
+	// 2. Secret Key check (Break-glass Root Admin)
 	adminKey := r.Header.Get("X-Admin-API-Key")
-	if !h.authService.ValidateAdminKey(adminKey) {
-		http.Error(w, `{"error": "Unauthorized admin access"}`, http.StatusUnauthorized)
-		return false
+	if adminKey != "" && h.authService.ValidateAdminKey(adminKey) {
+		ctx := context.WithValue(r.Context(), authContextKey{}, &AuthContext{
+			Email:  "root",
+			Name:   "Root Administrator",
+			Role:   "admin",
+			IsRoot: true,
+		})
+		*r = *r.WithContext(ctx)
+		return true
 	}
-	return true
+
+	// 3. Bearer Session Token check
+	token := ""
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+	} else if sessHeader := r.Header.Get("X-Session-Token"); sessHeader != "" {
+		token = sessHeader
+	}
+
+	if token != "" {
+		claims, err := h.authService.VerifySessionToken(token)
+		if err == nil && claims != nil {
+			ctx := context.WithValue(r.Context(), authContextKey{}, &AuthContext{
+				UserID: claims.UserID,
+				Email:  claims.Email,
+				Name:   claims.Name,
+				Role:   claims.Role,
+				IsRoot: claims.IsRoot,
+			})
+			*r = *r.WithContext(ctx)
+			return true
+		}
+	}
+
+	http.Error(w, `{"error": "Unauthorized admin access"}`, http.StatusUnauthorized)
+	return false
+}
+
+func (h *AdminHandler) getAuthContext(r *http.Request) *AuthContext {
+	if val := r.Context().Value(authContextKey{}); val != nil {
+		if ac, ok := val.(*AuthContext); ok {
+			return ac
+		}
+	}
+	return &AuthContext{Role: "user"}
 }
 
 // POST /admin/users -> Create a new user
@@ -1203,3 +1265,263 @@ func (h *AdminHandler) invalidateModelsCache(ctx context.Context) {
 		_ = h.redis.InvalidateModelsCache(ctx)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Member Authentication & User Profile
+// ---------------------------------------------------------------------------
+
+// POST /admin/auth/login
+func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
+	clientIP := h.getClientIP(r)
+	if !h.isIPAllowed(clientIP) {
+		http.Error(w, `{"error": "Forbidden: Client IP `+clientIP+` is not allowed"}`, http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Email == "" || req.Password == "" {
+		http.Error(w, `{"error": "Email and password are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var user *model.User
+	var err error
+
+	// Check if this is an emergency break-glass login using the admin key as password or master admin email
+	isEmergencyRoot := (req.Email == "root" || req.Email == "admin" || req.Email == "admin@llm-gateway.internal" || req.Email == "admin@llm-gateway.local") && h.authService.ValidateAdminKey(req.Password)
+
+	if isEmergencyRoot {
+		user, err = h.pg.GetUserByEmail(req.Email)
+		if err != nil {
+			user = &model.User{
+				Email:    req.Email,
+				Name:     "Root Administrator",
+				Role:     "admin",
+				IsRoot:   true,
+				IsActive: true,
+			}
+		}
+	} else {
+		user, err = h.pg.GetUserByEmail(req.Email)
+		if err != nil {
+			http.Error(w, `{"error": "Invalid email or password"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if !user.IsActive {
+			http.Error(w, `{"error": "Account is inactive"}`, http.StatusForbidden)
+			return
+		}
+
+		valid := false
+		if user.PasswordHash == "" {
+			// If password hash not yet set, allow master admin key or default 'admin' if user is admin
+			if h.authService.ValidateAdminKey(req.Password) || (user.Role == "admin" && req.Password == "admin") {
+				valid = true
+			}
+		} else {
+			valid = h.authService.VerifyPassword(req.Password, user.PasswordHash)
+		}
+
+		if !valid {
+			http.Error(w, `{"error": "Invalid email or password"}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	token, err := h.authService.CreateSessionToken(user, 24*time.Hour)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to create session token"}`, http.StatusInternalServerError)
+		return
+	}
+
+	groups, _ := h.pg.GetUserGroups(user.ID)
+	groupNames := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupNames = append(groupNames, g.Name)
+	}
+
+	h.logAudit(r, "user", "auth.login", "user", user.ID.String(), map[string]interface{}{
+		"email": user.Email,
+		"role":  user.Role,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token": token,
+		"user": map[string]interface{}{
+			"id":      user.ID,
+			"email":   user.Email,
+			"name":    user.Name,
+			"role":    user.Role,
+			"is_root": user.IsRoot,
+			"groups":  groupNames,
+		},
+	})
+}
+
+// GET /admin/auth/me
+func (h *AdminHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+	ac := h.getAuthContext(r)
+	groups, _ := h.pg.GetUserGroups(ac.UserID)
+	groupNames := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupNames = append(groupNames, g.Name)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":      ac.UserID,
+		"email":   ac.Email,
+		"name":    ac.Name,
+		"role":    ac.Role,
+		"is_root": ac.IsRoot,
+		"groups":  groupNames,
+	})
+}
+
+// POST /admin/auth/password
+func (h *AdminHandler) SetPassword(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	var req struct {
+		UserID   string `json:"user_id"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Password) < 6 {
+		http.Error(w, `{"error": "Password must be at least 6 characters"}`, http.StatusBadRequest)
+		return
+	}
+
+	ac := h.getAuthContext(r)
+	targetID := ac.UserID
+	if req.UserID != "" {
+		parsed, err := uuid.Parse(req.UserID)
+		if err != nil {
+			http.Error(w, `{"error": "Invalid user_id"}`, http.StatusBadRequest)
+			return
+		}
+		// Non-root or non-admin can only change their own password
+		if parsed != ac.UserID && !ac.IsRoot && ac.Role != "admin" {
+			http.Error(w, `{"error": "Permission denied: cannot change another user's password"}`, http.StatusForbidden)
+			return
+		}
+		targetID = parsed
+	}
+
+	hash, err := h.authService.HashPassword(req.Password)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to hash password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.pg.SetUserPassword(targetID, hash); err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.logAudit(r, "user", "auth.password_update", "user", targetID.String(), nil)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Password updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Member & Team Usage Analytics ("ai dùng gì, dùng bao nhiêu")
+// ---------------------------------------------------------------------------
+
+// GET /admin/analytics/members
+func (h *AdminHandler) GetMemberUsageAnalytics(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	query := r.URL.Query()
+	now := time.Now()
+	from := now.Add(-7 * 24 * time.Hour)
+	to := now
+	if fromStr := query.Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = t
+		}
+	}
+	if toStr := query.Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = t
+		}
+	}
+
+	groupID := query.Get("group_id")
+	search := query.Get("search")
+
+	analyticsResp, err := h.pg.GetMemberUsageAnalytics(from, to, groupID, search)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analyticsResp)
+}
+
+// GET /admin/analytics/members/{id}
+func (h *AdminHandler) GetMemberDetail(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.URL.Query().Get("id")
+	}
+	uid, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid member id"}`, http.StatusBadRequest)
+		return
+	}
+
+	query := r.URL.Query()
+	now := time.Now()
+	from := now.Add(-7 * 24 * time.Hour)
+	to := now
+	if fromStr := query.Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = t
+		}
+	}
+	if toStr := query.Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = t
+		}
+	}
+
+	detail, err := h.pg.GetMemberDetail(uid, from, to)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(detail)
+}
+

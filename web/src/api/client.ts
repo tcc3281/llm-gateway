@@ -1,4 +1,5 @@
 import type {
+  AnalyticsMembersResponse,
   APIKey,
   AuditLog,
   AuditLogsPage,
@@ -6,6 +7,8 @@ import type {
   Group,
   GroupPolicy,
   KeyModelPolicy,
+  LoginResponse,
+  MemberDetailResponse,
   ModelPricing,
   ProviderKey,
   SystemInfo,
@@ -15,6 +18,7 @@ import type {
 } from "./types";
 
 const KEY_STORAGE = "llmgw_admin_key";
+const USER_STORAGE = "llmgw_user_info";
 
 export function getAdminKey(): string | null {
   return localStorage.getItem(KEY_STORAGE);
@@ -24,6 +28,21 @@ export function setAdminKey(key: string) {
 }
 export function clearAdminKey() {
   localStorage.removeItem(KEY_STORAGE);
+  localStorage.removeItem(USER_STORAGE);
+}
+
+export function getStoredUser(): LoginResponse["user"] | null {
+  const str = localStorage.getItem(USER_STORAGE);
+  if (!str) return null;
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUser(u: LoginResponse["user"]) {
+  localStorage.setItem(USER_STORAGE, JSON.stringify(u));
 }
 
 export class ApiError extends Error {
@@ -39,7 +58,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> | undefined),
   };
-  headers["X-Admin-API-Key"] = key ?? "";
+  if (key) {
+    headers["X-Admin-API-Key"] = key;
+    headers["Authorization"] = `Bearer ${key}`;
+  }
   if (typeof options.body === "string") {
     headers["Content-Type"] = "application/json";
   }
@@ -282,6 +304,34 @@ export const api = {
       `/admin/audit-logs${qs(params as Record<string, string | number | undefined>)}`,
     ),
 
+  // Auth & Profile
+  login: (email: string, password: string) =>
+    request<LoginResponse>("/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  getCurrentUser: () => request<User>("/admin/auth/me"),
+  setPassword: (userId: string, password: string) =>
+    request<{ message: string }>("/admin/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, password }),
+    }),
+
+  // Member & Team Analytics ("ai dùng gì, dùng bao nhiêu")
+  getMemberAnalytics: (params?: {
+    from?: string;
+    to?: string;
+    group_id?: string;
+    search?: string;
+  }) =>
+    request<AnalyticsMembersResponse>(
+      `/admin/analytics/members${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+  getMemberDetail: (userId: string, params?: { from?: string; to?: string }) =>
+    request<MemberDetailResponse>(
+      `/admin/analytics/members/${userId}${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+
   // System
   systemInfo: () => request<SystemInfo>("/admin/system/info"),
   health: () =>
@@ -289,3 +339,4 @@ export const api = {
       .then((r) => r.json())
       .catch(() => ({ status: "down" })),
 };
+

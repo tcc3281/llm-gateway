@@ -3,6 +3,7 @@ import { useAuth } from "../auth";
 
 const NAV = [
   { to: "/dashboard", label: "Overview", icon: "dashboard" },
+  { to: "/analytics/members", label: "Member Analytics", icon: "insights" },
   { to: "/users", label: "Users", icon: "group" },
   { to: "/groups", label: "Groups & IAM", icon: "badge" },
   { to: "/keys", label: "API Keys", icon: "key" },
@@ -14,7 +15,7 @@ const NAV = [
 ];
 
 export default function Layout() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const current = NAV.find((n) => pathname.startsWith(n.to));
@@ -49,11 +50,23 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="sidebar__foot">
-          <span>v0.1.0</span>
-          <button className="btn btn--ghost btn--sm" onClick={handleLogout}>
-            Logout
-          </button>
+        <div className="sidebar__foot" style={{ flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+          {user && (
+            <div style={{ fontSize: "11px", fontFamily: "JetBrains Mono, monospace", color: "#859397", borderTop: "1px solid #2d3139", paddingTop: "8px" }}>
+              <div style={{ color: user.is_root ? "#22d3ee" : "#10b981", fontWeight: 700 }}>
+                {user.name || user.email}
+              </div>
+              <div style={{ fontSize: "10px", color: "#64748b" }}>
+                {user.is_root ? "[ROOT ADMIN]" : `[${user.role.toUpperCase()}]`}
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>v1.0.0</span>
+            <button className="btn btn--ghost btn--sm" onClick={handleLogout}>
+              Logout
+            </button>
+          </div>
         </div>
       </aside>
       <div className="app__body">
@@ -62,6 +75,11 @@ export default function Layout() {
             {current?.label ?? "Overview"}
           </span>
           <div className="topbar__spacer" />
+          {user && (
+            <span style={{ fontSize: "11px", fontFamily: "JetBrains Mono, monospace", color: "#22d3ee", marginRight: "12px" }}>
+              Logged in as: <strong>{user.email}</strong>
+            </span>
+          )}
           <span className="mono muted" style={{ fontSize: 11 }}>
             [ADMIN :8081]
           </span>

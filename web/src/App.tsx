@@ -10,6 +10,7 @@ import Providers from "./pages/Providers";
 import Models from "./pages/Models";
 import UsageLogs from "./pages/UsageLogs";
 import AuditLogs from "./pages/AuditLogs";
+import MemberAnalytics from "./pages/MemberAnalytics";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="analytics/members" element={<MemberAnalytics />} />
             <Route path="users" element={<Users />} />
             <Route path="groups" element={<Groups />} />
             <Route path="keys" element={<ApiKeys />} />

@@ -113,7 +113,15 @@ func main() {
 	adminMux := http.NewServeMux()
 	// Only the /admin/* paths are registered as API routes: the bare paths
 	// (/users, /keys, /providers, /models, /analytics/*) are owned by the React
-	// SPA for client-side routing, so no alias is registered for them.
+	// Auth & Profile
+	adminMux.HandleFunc("POST /admin/auth/login", adminHandler.Login)
+	adminMux.HandleFunc("GET /admin/auth/me", adminHandler.GetCurrentUser)
+	adminMux.HandleFunc("POST /admin/auth/password", adminHandler.SetPassword)
+
+	// Member & Team Analytics ("ai dùng gì, dùng bao nhiêu")
+	adminMux.HandleFunc("GET /admin/analytics/members", adminHandler.GetMemberUsageAnalytics)
+	adminMux.HandleFunc("GET /admin/analytics/members/{id}", adminHandler.GetMemberDetail)
+
 	adminMux.HandleFunc("GET /admin/users", adminHandler.ListUsers)
 	adminMux.HandleFunc("POST /admin/users", adminHandler.CreateUser)
 	adminMux.HandleFunc("PATCH /admin/users", adminHandler.UpdateUser)
