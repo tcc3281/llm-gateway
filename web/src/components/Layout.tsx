@@ -2,13 +2,13 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 
 const NAV = [
-  { to: "/dashboard", label: "Overview", icon: "◉" },
-  { to: "/users", label: "Users", icon: "◈" },
-  { to: "/keys", label: "API Keys", icon: "⌗" },
-  { to: "/providers", label: "Providers", icon: "⬡" },
-  { to: "/models", label: "Models & Pricing", icon: "§" },
-  { to: "/logs", label: "Usage Logs", icon: "≡" },
-  { to: "/settings", label: "Settings", icon: "⚙" },
+  { to: "/dashboard", label: "Overview", icon: "dashboard" },
+  { to: "/users", label: "Users", icon: "group" },
+  { to: "/keys", label: "API Keys", icon: "key" },
+  { to: "/providers", label: "Providers", icon: "hub" },
+  { to: "/models", label: "Models & Pricing", icon: "payments" },
+  { to: "/logs", label: "Usage Logs", icon: "list_alt" },
+  { to: "/settings", label: "Settings", icon: "settings" },
 ];
 
 export default function Layout() {
@@ -27,7 +27,7 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar__brand">
           <div className="sidebar__logo">GW</div>
-          <div>
+          <div className="sidebar__brand-text">
             <div className="sidebar__title">LLM Gateway</div>
             <div className="sidebar__subtitle">Admin Ops</div>
           </div>
@@ -42,8 +42,8 @@ export default function Layout() {
                 `nav-item${isActive ? " active" : ""}`
               }
             >
-              <span className="nav-item__icon">{n.icon}</span>
-              {n.label}
+              <span className="material-symbols-outlined nav-item__icon">{n.icon}</span>
+              <span className="nav-item__text">{n.label}</span>
             </NavLink>
           ))}
         </nav>

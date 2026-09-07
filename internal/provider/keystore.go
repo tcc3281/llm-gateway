@@ -64,16 +64,37 @@ func (s *KeyStore) GetKey(ctx context.Context, provider string) (string, error) 
 // SetKey stores (and encrypts) a provider key, then invalidates the cache.
 // baseURL is the custom endpoint for OpenAI/Anthropic-compatible providers ("" =
 // built-in with a hardcoded upstream URL); protocol is the wire format
-// ("openai" | "anthropic") spoken to that base URL.
-func (s *KeyStore) SetKey(ctx context.Context, provider, apiKey, baseURL, protocol string) error {
+// ("openai" | "anthropic") spoken to that base URL; fallbackPriority sets order
+// in the fallback ladder (nil = excluded).
+func (s *KeyStore) SetKey(ctx context.Context, provider, apiKey, baseURL, protocol string, fallbackPriority *int) error {
 	if s.pg == nil {
 		return errors.New("database unavailable")
 	}
-	enc, err := secure.Encrypt(apiKey, s.masterKey)
-	if err != nil {
-		return err
+	var enc string
+	var err error
+	if apiKey == "" {
+		existing, err := s.pg.GetProviderKey(provider)
+		if err != nil {
+			return fmt.Errorf("api_key is required for new provider: %w", err)
+		}
+		enc = existing.APIKey
+		if fallbackPriority == nil {
+			fallbackPriority = existing.FallbackPriority
+		}
+	} else {
+		enc, err = secure.Encrypt(apiKey, s.masterKey)
+		if err != nil {
+			return err
+		}
 	}
-	pk := &model.ProviderKey{Provider: provider, APIKey: enc, BaseURL: baseURL, Protocol: protocol, IsActive: true}
+	pk := &model.ProviderKey{
+		Provider:         provider,
+		APIKey:           enc,
+		BaseURL:          baseURL,
+		Protocol:         protocol,
+		FallbackPriority: fallbackPriority,
+		IsActive:         true,
+	}
 	if err := s.pg.UpsertProviderKey(pk); err != nil {
 		return err
 	}

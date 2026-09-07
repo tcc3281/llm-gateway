@@ -21,6 +21,9 @@ type Config struct {
 	AdminAPIKey       string
 	ProviderMasterKey string // encrypts provider keys at rest; empty = plaintext (dev only)
 	AdminAllowedIPs   string // comma-separated allowed IPs or CIDR blocks
+	ResponseCacheTTL  int    // CACHE_RESPONSE_TTL_SECONDS, default 3600
+	OTelExporter      string // OTEL_EXPORTER: "otlp" | "stdout" | "none"
+	OTelEndpoint      string // OTEL_EXPORTER_OTLP_ENDPOINT: default "localhost:4317"
 }
 
 func LoadConfig() (*Config, error) {
@@ -39,6 +42,9 @@ func LoadConfig() (*Config, error) {
 		AdminAPIKey:       getEnv("ADMIN_API_KEY", "sk-admin-secret-key-change-me"),
 		ProviderMasterKey: getEnv("PROVIDER_MASTER_KEY", ""),
 		AdminAllowedIPs:   getEnv("ADMIN_ALLOWED_IPS", ""),
+		ResponseCacheTTL:  getEnvAsInt("CACHE_RESPONSE_TTL_SECONDS", 3600),
+		OTelExporter:      getEnv("OTEL_EXPORTER", "otlp"),
+		OTelEndpoint:      getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317"),
 	}
 
 	return cfg, nil

@@ -100,18 +100,18 @@ func (p *PostgresDB) GetUserByID(id uuid.UUID) (*model.User, error) {
 func (p *PostgresDB) CreateAPIKey(key *model.APIKey) error {
 	key.ID = uuid.New()
 	query := `
-		INSERT INTO api_keys (id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, is_active, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO api_keys (id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING created_at`
-	return p.QueryRow(query, key.ID, key.UserID, key.KeyPrefix, key.KeyHash, key.Name, key.BudgetLimit, key.RateLimitRPM, key.IsActive, key.ExpiresAt).Scan(&key.CreatedAt)
+	return p.QueryRow(query, key.ID, key.UserID, key.KeyPrefix, key.KeyHash, key.Name, key.BudgetLimit, key.RateLimitRPM, key.CacheTTLSeconds, key.IsActive, key.ExpiresAt).Scan(&key.CreatedAt)
 }
 
 func (p *PostgresDB) GetAPIKeyByHash(keyHash string) (*model.APIKey, error) {
 	k := &model.APIKey{}
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
 		FROM api_keys WHERE key_hash = $1 AND is_active = TRUE`
-	err := p.QueryRow(query, keyHash).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
+	err := p.QueryRow(query, keyHash).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -257,9 +257,9 @@ func (p *PostgresDB) ListUsers() ([]model.User, error) {
 func (p *PostgresDB) GetAPIKeyByID(id uuid.UUID) (*model.APIKey, error) {
 	k := &model.APIKey{}
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
 		FROM api_keys WHERE id = $1`
-	err := p.QueryRow(query, id).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
+	err := p.QueryRow(query, id).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (p *PostgresDB) GetAPIKeyByID(id uuid.UUID) (*model.APIKey, error) {
 
 func (p *PostgresDB) ListAPIKeys() ([]model.APIKey, error) {
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
 		FROM api_keys ORDER BY created_at DESC`
 	rows, err := p.Query(query)
 	if err != nil {
@@ -279,7 +279,7 @@ func (p *PostgresDB) ListAPIKeys() ([]model.APIKey, error) {
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -304,10 +304,10 @@ func (p *PostgresDB) DeleteUser(id uuid.UUID) error {
 	return err
 }
 
-// UpdateAPIKey edits a key's name, budget, rate limit and optional expiry.
-func (p *PostgresDB) UpdateAPIKey(id uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, expiresAt *time.Time) error {
-	_, err := p.Exec(`UPDATE api_keys SET name = $2, budget_limit = $3, rate_limit_rpm = $4, expires_at = $5 WHERE id = $1`,
-		id, name, budgetLimit, rateLimitRPM, expiresAt)
+// UpdateAPIKey edits a key's name, budget, rate limit, cache TTL and optional expiry.
+func (p *PostgresDB) UpdateAPIKey(id uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, cacheTTLSeconds int, expiresAt *time.Time) error {
+	_, err := p.Exec(`UPDATE api_keys SET name = $2, budget_limit = $3, rate_limit_rpm = $4, cache_ttl_seconds = $5, expires_at = $6 WHERE id = $1`,
+		id, name, budgetLimit, rateLimitRPM, cacheTTLSeconds, expiresAt)
 	return err
 }
 
@@ -318,7 +318,7 @@ func (p *PostgresDB) ReactivateAPIKey(id uuid.UUID) error {
 
 func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error) {
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
 		FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`
 	rows, err := p.Query(query, userID)
 	if err != nil {
@@ -329,7 +329,7 @@ func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error)
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -341,9 +341,9 @@ func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error)
 func (p *PostgresDB) GetProviderKey(provider string) (*model.ProviderKey, error) {
 	k := &model.ProviderKey{}
 	query := `
-		SELECT id, provider, api_key, base_url, protocol, is_active, created_at, updated_at
+		SELECT id, provider, api_key, base_url, protocol, fallback_priority, is_active, created_at, updated_at
 		FROM provider_keys WHERE provider = $1 AND is_active = TRUE`
-	err := p.QueryRow(query, provider).Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.IsActive, &k.CreatedAt, &k.UpdatedAt)
+	err := p.QueryRow(query, provider).Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.FallbackPriority, &k.IsActive, &k.CreatedAt, &k.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -355,20 +355,21 @@ func (p *PostgresDB) UpsertProviderKey(pk *model.ProviderKey) error {
 		pk.ID = uuid.New()
 	}
 	query := `
-		INSERT INTO provider_keys (id, provider, api_key, base_url, protocol, is_active, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		INSERT INTO provider_keys (id, provider, api_key, base_url, protocol, fallback_priority, is_active, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 		ON CONFLICT (provider) DO UPDATE SET
 			api_key = EXCLUDED.api_key,
 			base_url = EXCLUDED.base_url,
 			protocol = EXCLUDED.protocol,
+			fallback_priority = EXCLUDED.fallback_priority,
 			is_active = EXCLUDED.is_active,
 			updated_at = NOW()
 		RETURNING created_at, updated_at`
-	return p.QueryRow(query, pk.ID, pk.Provider, pk.APIKey, pk.BaseURL, pk.Protocol, pk.IsActive).Scan(&pk.CreatedAt, &pk.UpdatedAt)
+	return p.QueryRow(query, pk.ID, pk.Provider, pk.APIKey, pk.BaseURL, pk.Protocol, pk.FallbackPriority, pk.IsActive).Scan(&pk.CreatedAt, &pk.UpdatedAt)
 }
 
 func (p *PostgresDB) ListProviderKeys() ([]model.ProviderKey, error) {
-	query := `SELECT id, provider, api_key, base_url, protocol, is_active, created_at, updated_at FROM provider_keys ORDER BY provider`
+	query := `SELECT id, provider, api_key, base_url, protocol, fallback_priority, is_active, created_at, updated_at FROM provider_keys ORDER BY provider`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -378,7 +379,33 @@ func (p *PostgresDB) ListProviderKeys() ([]model.ProviderKey, error) {
 	var keys []model.ProviderKey
 	for rows.Next() {
 		var k model.ProviderKey
-		if err := rows.Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.FallbackPriority, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+// GetFallbackProviders returns active providers configured with a fallback_priority,
+// ordered by fallback_priority ASC (lower = tried first), excluding the primary provider.
+func (p *PostgresDB) GetFallbackProviders(primaryProvider string) ([]model.ProviderKey, error) {
+	query := `
+		SELECT id, provider, api_key, base_url, protocol, fallback_priority, is_active, created_at, updated_at
+		FROM provider_keys
+		WHERE is_active = TRUE AND provider != $1 AND fallback_priority IS NOT NULL
+		ORDER BY fallback_priority ASC
+		LIMIT 5`
+	rows, err := p.Query(query, primaryProvider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []model.ProviderKey
+	for rows.Next() {
+		var k model.ProviderKey
+		if err := rows.Scan(&k.ID, &k.Provider, &k.APIKey, &k.BaseURL, &k.Protocol, &k.FallbackPriority, &k.IsActive, &k.CreatedAt, &k.UpdatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -495,6 +522,9 @@ func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (mode
 			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
 			COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
 			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms,
+			COALESCE(ROUND(CAST(percentile_cont(0.50) WITHIN GROUP (ORDER BY total_latency_ms) AS numeric), 2), 0) AS p50_latency_ms,
+			COALESCE(ROUND(CAST(percentile_cont(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS numeric), 2), 0) AS p95_latency_ms,
+			COALESCE(ROUND(CAST(percentile_cont(0.99) WITHIN GROUP (ORDER BY total_latency_ms) AS numeric), 2), 0) AS p99_latency_ms,
 			COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at <= $2`
@@ -508,7 +538,7 @@ func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (mode
 	var t model.UsageTotal
 	if err := p.QueryRow(query, args...).Scan(
 		&t.TotalRequests, &t.TotalCost, &t.SumPromptTokens, &t.SumCompletionTokens,
-		&t.AvgTTFTMs, &t.AvgLatencyMs, &t.ErrorCount,
+		&t.AvgTTFTMs, &t.AvgLatencyMs, &t.P50LatencyMs, &t.P95LatencyMs, &t.P99LatencyMs, &t.ErrorCount,
 	); err != nil {
 		return t, err
 	}
@@ -524,25 +554,50 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 		truncUnit = "day"
 	}
 
+	var userFilter string
+	if userID != nil {
+		userFilter = "AND user_id = $3"
+	}
+
 	query := fmt.Sprintf(`
+		WITH time_series AS (
+			SELECT generate_series(
+				date_trunc('%[1]s', $1::timestamp with time zone),
+				date_trunc('%[1]s', $2::timestamp with time zone),
+				'1 %[1]s'::interval
+			) AS time_bucket
+		),
+		logged_data AS (
+			SELECT
+				date_trunc('%[1]s', created_at) AS bucket,
+				COUNT(*) AS total_requests,
+				COALESCE(SUM(cost), 0) AS total_cost,
+				COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
+				COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
+				COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count,
+				COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
+				COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
+			FROM usage_logs
+			WHERE created_at >= $1 AND created_at <= $2 %[2]s
+			GROUP BY bucket
+		)
 		SELECT
-			to_char(date_trunc('%s', created_at), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS time_bucket,
-			COUNT(*) AS total_requests,
-			COALESCE(SUM(cost), 0) AS total_cost,
-			COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
-			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
-			COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count,
-			COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
-			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
-		FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2`, truncUnit)
+			to_char(time_series.time_bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS time_bucket,
+			COALESCE(logged_data.total_requests, 0) AS total_requests,
+			COALESCE(logged_data.total_cost, 0) AS total_cost,
+			COALESCE(logged_data.sum_prompt_tokens, 0) AS sum_prompt_tokens,
+			COALESCE(logged_data.sum_completion_tokens, 0) AS sum_completion_tokens,
+			COALESCE(logged_data.error_count, 0) AS error_count,
+			COALESCE(logged_data.avg_ttft_ms, 0) AS avg_ttft_ms,
+			COALESCE(logged_data.avg_latency_ms, 0) AS avg_latency_ms
+		FROM time_series
+		LEFT JOIN logged_data ON time_series.time_bucket = logged_data.bucket
+		ORDER BY time_series.time_bucket ASC`, truncUnit, userFilter)
 
 	args := []interface{}{from, to}
 	if userID != nil {
-		query += " AND user_id = $3"
 		args = append(args, *userID)
 	}
-	query += " GROUP BY time_bucket ORDER BY time_bucket ASC"
 
 	rows, err := p.Query(query, args...)
 	if err != nil {

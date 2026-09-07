@@ -12,11 +12,13 @@ import (
 
 	"llm-gateway/internal/analytics"
 	"llm-gateway/internal/auth"
+	"llm-gateway/internal/cache"
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/service"
+	"llm-gateway/internal/telemetry"
 	"llm-gateway/internal/web"
 )
 
@@ -27,6 +29,20 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+
+	// 1b. Initialize OpenTelemetry Tracing
+	otelShutdown, err := telemetry.Setup(context.Background(), "llm-gateway", cfg.OTelExporter, cfg.OTelEndpoint)
+	if err != nil {
+		log.Printf("Warning: OTel initialization error (tracing disabled): %v", err)
+	} else {
+		defer func() {
+			sCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelShutdown(sCtx); err != nil {
+				log.Printf("Error shutting down OTel: %v", err)
+			}
+		}()
 	}
 
 	// 2. Initialize PostgreSQL (retry until the container dependency is ready)
@@ -50,7 +66,9 @@ func main() {
 	telemetryLogger := analytics.NewTelemetryLogger(pg, 10000)
 	defer telemetryLogger.Close()
 
-	gwService := service.NewGatewayService(providerClient, keyStore, costCalc, telemetryLogger, redisClient, pg)
+	globalCacheTTL := time.Duration(cfg.ResponseCacheTTL) * time.Second
+	responseCache := cache.NewResponseCache(redisClient, globalCacheTTL)
+	gwService := service.NewGatewayService(providerClient, keyStore, costCalc, telemetryLogger, redisClient, pg, responseCache)
 
 	// Refresh each provider's discovered model catalog hourly in the background
 	// so new upstream models resolve without an admin touching the UI.

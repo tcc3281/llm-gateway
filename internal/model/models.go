@@ -16,27 +16,29 @@ type User struct {
 }
 
 type APIKey struct {
-	ID            uuid.UUID  `json:"id"`
-	UserID        uuid.UUID  `json:"user_id"`
-	KeyPrefix     string     `json:"key_prefix"`
-	KeyHash       string     `json:"-"`
-	Name          string     `json:"name"`
-	BudgetLimit   float64    `json:"budget_limit"`   // USD, 0 = unlimited
-	RateLimitRPM  int        `json:"rate_limit_rpm"` // Requests per minute
-	IsActive      bool       `json:"is_active"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	UserID          uuid.UUID  `json:"user_id"`
+	KeyPrefix       string     `json:"key_prefix"`
+	KeyHash         string     `json:"-"`
+	Name            string     `json:"name"`
+	BudgetLimit     float64    `json:"budget_limit"`     // USD, 0 = unlimited
+	RateLimitRPM    int        `json:"rate_limit_rpm"`   // Requests per minute
+	CacheTTLSeconds int        `json:"cache_ttl_seconds"` // -1 = disabled, 0 = global default, >0 = custom TTL in seconds
+	IsActive        bool       `json:"is_active"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type ProviderKey struct {
-	ID        uuid.UUID `json:"id"`
-	Provider  string    `json:"provider"`
-	APIKey    string    `json:"-"` // secret, never serialized
-	BaseURL   string    `json:"base_url,omitempty"` // "" = built-in (hardcoded upstream)
-	Protocol  string    `json:"protocol,omitempty"` // "openai" | "anthropic" for custom providers
-	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID               uuid.UUID `json:"id"`
+	Provider         string    `json:"provider"`
+	APIKey           string    `json:"-"` // secret, never serialized
+	BaseURL          string    `json:"base_url,omitempty"`          // "" = built-in (hardcoded upstream)
+	Protocol         string    `json:"protocol,omitempty"`          // "openai" | "anthropic" for custom providers
+	FallbackPriority *int      `json:"fallback_priority,omitempty"` // lower = higher priority, nil = excluded from fallback
+	IsActive         bool      `json:"is_active"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // ProviderModel is a normalized entry for the public GET /v1/models endpoint.
@@ -115,6 +117,9 @@ type UsageTotal struct {
 	SumCompletionTokens int64   `json:"completion_tokens"`
 	AvgTTFTMs           float64 `json:"avg_ttft_ms"`
 	AvgLatencyMs        float64 `json:"avg_latency_ms"`
+	P50LatencyMs        float64 `json:"p50_latency_ms"`
+	P95LatencyMs        float64 `json:"p95_latency_ms"`
+	P99LatencyMs        float64 `json:"p99_latency_ms"`
 	ErrorCount          int64   `json:"errors"`
 	ErrorRate           float64 `json:"error_rate"`
 }

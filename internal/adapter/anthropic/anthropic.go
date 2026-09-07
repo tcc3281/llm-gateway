@@ -357,48 +357,104 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 	req.ToolChoice = encodeAnthropicToolChoice(canReq.ToolChoice)
 
 	for _, msg := range canReq.Messages {
-		am := AnthropicMessage{Role: msg.Role}
+		role := msg.Role
+		if role == "tool" {
+			role = "user"
+		}
+
+		var currentBlocks []AnthropicContent
+		var currentString string
+		hasBlocks := false
+
 		switch msg.Role {
 		case "assistant":
 			// Assistant tool-call turns render as content blocks: any text first,
 			// then one tool_use block per call.
 			if msg.Content != "" {
-				am.Content.Blocks = append(am.Content.Blocks, AnthropicContent{
+				currentBlocks = append(currentBlocks, AnthropicContent{
 					Type: "text",
 					Text: msg.Content,
 				})
+				hasBlocks = true
 			}
 			for _, tc := range msg.ToolCalls {
 				var input json.RawMessage
 				if len(tc.Arguments) > 0 {
 					input = json.RawMessage(tc.Arguments)
 				}
-				am.Content.Blocks = append(am.Content.Blocks, AnthropicContent{
+				currentBlocks = append(currentBlocks, AnthropicContent{
 					Type:  "tool_use",
 					ID:    tc.ID,
 					Name:  tc.Name,
 					Input: input,
 				})
+				hasBlocks = true
 			}
-			// No blocks at all → plain empty string so the "content" field stays
-			// present.
-			if len(am.Content.Blocks) == 0 {
-				am.Content.String = ""
+			// If there are no blocks, keep it as empty string
+			if !hasBlocks {
+				currentString = ""
 			}
 		case "tool":
 			// Canonical "tool" role → Anthropic user message carrying a
 			// tool_result block.
-			am.Role = "user"
 			contentJSON, _ := json.Marshal(msg.Content)
-			am.Content.Blocks = append(am.Content.Blocks, AnthropicContent{
+			currentBlocks = append(currentBlocks, AnthropicContent{
 				Type:      "tool_result",
 				ToolUseID: msg.ToolCallID,
 				Content:   contentJSON,
 			})
+			hasBlocks = true
 		default:
-			am.Content.String = msg.Content
+			currentString = msg.Content
 		}
-		req.Messages = append(req.Messages, am)
+
+		// Merge consecutive turns of the same role (common for multiple tool results / user messages)
+		if len(req.Messages) > 0 && req.Messages[len(req.Messages)-1].Role == role {
+			lastIdx := len(req.Messages) - 1
+			lastMsg := &req.Messages[lastIdx]
+
+			if lastMsg.Content.HasBlocks() || hasBlocks {
+				// Convert last message to use blocks if it is currently using string
+				if !lastMsg.Content.HasBlocks() {
+					if lastMsg.Content.String != "" {
+						lastMsg.Content.Blocks = []AnthropicContent{
+							{
+								Type: "text",
+								Text: lastMsg.Content.String,
+							},
+						}
+					} else {
+						lastMsg.Content.Blocks = []AnthropicContent{}
+					}
+					lastMsg.Content.String = ""
+				}
+
+				// Append content
+				if hasBlocks {
+					lastMsg.Content.Blocks = append(lastMsg.Content.Blocks, currentBlocks...)
+				} else if currentString != "" {
+					lastMsg.Content.Blocks = append(lastMsg.Content.Blocks, AnthropicContent{
+						Type: "text",
+						Text: currentString,
+					})
+				}
+			} else {
+				// Both are plain strings, just concatenate
+				if lastMsg.Content.String != "" && currentString != "" {
+					lastMsg.Content.String += "\n\n" + currentString
+				} else if currentString != "" {
+					lastMsg.Content.String = currentString
+				}
+			}
+		} else {
+			am := AnthropicMessage{Role: role}
+			if hasBlocks {
+				am.Content.Blocks = currentBlocks
+			} else {
+				am.Content.String = currentString
+			}
+			req.Messages = append(req.Messages, am)
+		}
 	}
 
 	return json.Marshal(req)
