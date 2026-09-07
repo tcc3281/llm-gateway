@@ -6,6 +6,20 @@ import { StatusBadge } from "./Dashboard";
 
 const PAGE_SIZE = 50;
 
+function formatLocalDatetime(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = date.getFullYear();
+  const MM = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mm = pad(date.getMinutes());
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
+}
+
+const getInitialFromTime = () => {
+  return formatLocalDatetime(new Date(Date.now() - 24 * 3600 * 1000));
+};
+
 interface Filters {
   provider: string;
   model: string;
@@ -26,8 +40,15 @@ const empty: Filters = {
   to: "",
 };
 
+const initialFilters: Filters = {
+  ...empty,
+  from: getInitialFromTime(),
+};
+
 export default function UsageLogs() {
-  const [filters, setFilters] = useState<Filters>(empty);
+  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const [preset, setPreset] = useState<"24h" | "7d" | "30d" | "all" | "custom">("24h");
+  const [modelInput, setModelInput] = useState(filters.model);
   const [page, setPage] = useState(0);
   const [data, setData] = useState<UsageLogsPage>({
     data: [],
@@ -70,6 +91,18 @@ export default function UsageLogs() {
     [],
   );
 
+  // Debounce search input to avoid API request storm
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(0);
+      setFilters((prev) => {
+        if (prev.model === modelInput) return prev;
+        return { ...prev, model: modelInput };
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [modelInput]);
+
   useEffect(() => {
     load(filters, page * PAGE_SIZE);
   }, [load, filters, page]);
@@ -99,100 +132,216 @@ export default function UsageLogs() {
     setFilters((prev) => ({ ...prev, [k]: v }));
   };
 
+  const handlePresetChange = (newPreset: "24h" | "7d" | "30d" | "all" | "custom") => {
+    setPreset(newPreset);
+    setPage(0);
+    if (newPreset === "24h") {
+      setFilters((prev) => ({
+        ...prev,
+        from: formatLocalDatetime(new Date(Date.now() - 24 * 3600 * 1000)),
+        to: "",
+      }));
+    } else if (newPreset === "7d") {
+      setFilters((prev) => ({
+        ...prev,
+        from: formatLocalDatetime(new Date(Date.now() - 7 * 24 * 3600 * 1000)),
+        to: "",
+      }));
+    } else if (newPreset === "30d") {
+      setFilters((prev) => ({
+        ...prev,
+        from: formatLocalDatetime(new Date(Date.now() - 30 * 24 * 3600 * 1000)),
+        to: "",
+      }));
+    } else if (newPreset === "all") {
+      setFilters((prev) => ({
+        ...prev,
+        from: "",
+        to: "",
+      }));
+    }
+  };
+
+  const handleCustomDateChange = (k: "from" | "to", val: string) => {
+    setPreset("custom");
+    setPage(0);
+    setFilters((prev) => ({ ...prev, [k]: val }));
+  };
+
+  const clearFilters = () => {
+    setModelInput("");
+    setPreset("24h");
+    setFilters({
+      ...empty,
+      from: formatLocalDatetime(new Date(Date.now() - 24 * 3600 * 1000)),
+    });
+    setPage(0);
+  };
+
+  const isDirty =
+    filters.provider !== "" ||
+    modelInput !== "" ||
+    filters.user_id !== "" ||
+    filters.status !== "" ||
+    filters.inbound !== "" ||
+    preset !== "24h";
+
   return (
     <div>
-      <div className="page__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="page__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
         <div>
           <h1 className="page__title">Usage Logs</h1>
           <p className="page__sub">
             {fmtNum(data.total)} request(s) match the current filters.
           </p>
         </div>
-        <button
-          className="btn btn--sm"
-          disabled={loading}
-          onClick={() => load(filters, page * PAGE_SIZE)}
-        >
-          {loading ? "Refreshing..." : "🔄 Refresh"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* Time presets button group */}
+          <div className="time-presets" style={{ display: "flex", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 4, height: 32, padding: 2 }}>
+            {(["24h", "7d", "30d", "all", "custom"] as const).map((p) => {
+              const active = preset === p;
+              return (
+                <button
+                  key={p}
+                  className={`btn btn--sm ${active ? "btn--primary" : "btn--ghost"}`}
+                  style={{
+                    border: "none",
+                    background: active ? "var(--primary-dim)" : "transparent",
+                    color: active ? "var(--primary)" : "var(--text-muted)",
+                    fontWeight: active ? 600 : 400,
+                    height: "100%",
+                    padding: "0 10px",
+                    borderRadius: 3,
+                    minHeight: "auto",
+                    boxShadow: "none",
+                  }}
+                  onClick={() => handlePresetChange(p)}
+                >
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            className="btn btn--primary"
+            style={{ height: 32, display: "flex", alignItems: "center", gap: 6 }}
+            disabled={loading}
+            onClick={() => load(filters, page * PAGE_SIZE)}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>refresh</span>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
-      <div className="card">
-        <div className="filter-bar">
-          <select
-            className="select"
-            style={{ width: 130 }}
-            value={filters.provider}
-            onChange={(e) => set("provider")(e.target.value)}
+      <div className="filter-bar">
+        <select
+          className="select"
+          style={{ width: 130 }}
+          value={filters.provider}
+          onChange={(e) => set("provider")(e.target.value)}
+        >
+          <option value="">Any provider</option>
+          {providerOptions.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <input
+          className="input"
+          style={{ width: 180 }}
+          placeholder="Model…"
+          value={modelInput}
+          onChange={(e) => setModelInput(e.target.value)}
+        />
+        <select
+          className="select"
+          style={{ width: 170 }}
+          value={filters.user_id}
+          onChange={(e) => set("user_id")(e.target.value)}
+        >
+          <option value="">Any user</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.email}
+            </option>
+          ))}
+        </select>
+        <select
+          className="select"
+          style={{ width: 110 }}
+          value={filters.status}
+          onChange={(e) => set("status")(e.target.value)}
+        >
+          <option value="">Any status</option>
+          <option value="2xx">2xx</option>
+          <option value="3xx">3xx</option>
+          <option value="4xx">4xx</option>
+          <option value="5xx">5xx</option>
+          <option value="429">429</option>
+        </select>
+        <select
+          className="select"
+          style={{ width: 120 }}
+          value={filters.inbound}
+          onChange={(e) => set("inbound")(e.target.value)}
+        >
+          <option value="">Any format</option>
+          <option value="openai">openai</option>
+          <option value="anthropic">anthropic</option>
+        </select>
+        {preset === "custom" && (
+          <>
+            <input
+              className="input"
+              style={{ width: 170 }}
+              type="datetime-local"
+              value={filters.from}
+              onChange={(e) => handleCustomDateChange("from", e.target.value)}
+              onClick={(e) => {
+                try {
+                  e.currentTarget.showPicker();
+                } catch {}
+              }}
+              aria-label="From"
+            />
+            <span className="muted">→</span>
+            <input
+              className="input"
+              style={{ width: 170 }}
+              type="datetime-local"
+              value={filters.to}
+              onChange={(e) => handleCustomDateChange("to", e.target.value)}
+              onClick={(e) => {
+                try {
+                  e.currentTarget.showPicker();
+                } catch {}
+              }}
+              aria-label="To"
+            />
+          </>
+        )}
+        {isDirty && (
+          <button
+            className="btn btn--ghost btn--sm"
+            style={{
+              textDecoration: "underline",
+              border: "none",
+              background: "transparent",
+              color: "var(--text-muted)",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              cursor: "pointer",
+              padding: "0 4px",
+              minHeight: "auto",
+              boxShadow: "none",
+            }}
+            onClick={clearFilters}
           >
-            <option value="">Any provider</option>
-            {providerOptions.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <input
-            className="input"
-            style={{ width: 180 }}
-            placeholder="Model…"
-            value={filters.model}
-            onChange={(e) => set("model")(e.target.value)}
-          />
-          <select
-            className="select"
-            style={{ width: 170 }}
-            value={filters.user_id}
-            onChange={(e) => set("user_id")(e.target.value)}
-          >
-            <option value="">Any user</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.email}
-              </option>
-            ))}
-          </select>
-          <select
-            className="select"
-            style={{ width: 110 }}
-            value={filters.status}
-            onChange={(e) => set("status")(e.target.value)}
-          >
-            <option value="">Any status</option>
-            <option value="2xx">2xx</option>
-            <option value="3xx">3xx</option>
-            <option value="4xx">4xx</option>
-            <option value="5xx">5xx</option>
-            <option value="429">429</option>
-          </select>
-          <select
-            className="select"
-            style={{ width: 120 }}
-            value={filters.inbound}
-            onChange={(e) => set("inbound")(e.target.value)}
-          >
-            <option value="">Any format</option>
-            <option value="openai">openai</option>
-            <option value="anthropic">anthropic</option>
-          </select>
-          <input
-            className="input"
-            style={{ width: 170 }}
-            type="datetime-local"
-            value={filters.from}
-            onChange={(e) => set("from")(e.target.value)}
-            aria-label="From"
-          />
-          <span className="muted">→</span>
-          <input
-            className="input"
-            style={{ width: 170 }}
-            type="datetime-local"
-            value={filters.to}
-            onChange={(e) => set("to")(e.target.value)}
-            aria-label="To"
-          />
-        </div>
+            Clear filters
+          </button>
+        )}
       </div>
 
       {error && <div className="error-banner">{error}</div>}

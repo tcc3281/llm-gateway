@@ -88,6 +88,7 @@ export const api = {
     name: string;
     budget_limit?: number;
     rate_limit_rpm?: number;
+    cache_ttl_seconds?: number;
   }) =>
     request<CreateKeyResult>("/admin/keys", {
       method: "POST",
@@ -99,6 +100,7 @@ export const api = {
       name?: string;
       budget_limit?: number;
       rate_limit_rpm?: number;
+      cache_ttl_seconds?: number;
       expires_at?: string | null;
     },
   ) =>
@@ -120,6 +122,7 @@ export const api = {
     api_key: string;
     base_url?: string;
     protocol?: string;
+    fallback_priority?: number | null;
   }) =>
     request<{ message: string }>("/admin/providers", {
       method: "POST",

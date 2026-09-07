@@ -13,12 +13,14 @@ export default function Providers() {
   const [busy, setBusy] = useState(false);
 
   const [setOpen, setSetOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   // "__custom__" selects a custom (compatible) provider; otherwise a built-in.
   const [providerSel, setProviderSel] = useState<string>(KNOWN[0]);
   const [customName, setCustomName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [protocol, setProtocol] = useState<"openai" | "anthropic">("openai");
   const [apiKey, setApiKey] = useState("");
+  const [fallbackPriority, setFallbackPriority] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -38,26 +40,42 @@ export default function Providers() {
   }, [load]);
 
   const openSet = (p?: ProviderKey) => {
-    if (p && p.base_url) {
-      // Custom (compatible) provider: prefill name + base_url + protocol.
-      setProviderSel(CUSTOM);
-      setCustomName(p.provider);
-      setBaseUrl(p.base_url);
-      setProtocol(p.protocol === "anthropic" ? "anthropic" : "openai");
+    if (p) {
+      setIsEditing(true);
+      if (p.base_url) {
+        setProviderSel(CUSTOM);
+        setCustomName(p.provider);
+        setBaseUrl(p.base_url);
+        setProtocol(p.protocol === "anthropic" ? "anthropic" : "openai");
+      } else {
+        setProviderSel(p.provider);
+        setCustomName("");
+        setBaseUrl("");
+        setProtocol("openai");
+      }
       setApiKey("");
+      setFallbackPriority(
+        p.fallback_priority !== undefined && p.fallback_priority !== null
+          ? String(p.fallback_priority)
+          : "",
+      );
     } else {
-      setProviderSel(p ? p.provider : KNOWN[0]);
+      setIsEditing(false);
+      setProviderSel(KNOWN[0]);
       setCustomName("");
       setBaseUrl("");
       setProtocol("openai");
       setApiKey("");
+      setFallbackPriority("");
     }
     setSetOpen(true);
   };
 
-  const canSubmit = isCustom
-    ? customName.trim() !== "" && baseUrl.trim() !== "" && apiKey.trim() !== ""
-    : apiKey.trim() !== "";
+  const canSubmit = isEditing
+    ? (isCustom ? baseUrl.trim() !== "" : true)
+    : (isCustom
+        ? customName.trim() !== "" && baseUrl.trim() !== "" && apiKey.trim() !== ""
+        : apiKey.trim() !== "");
 
   const submitSet = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,18 +83,26 @@ export default function Providers() {
     setBusy(true);
     setError(null);
     try {
+      const fbPri =
+        fallbackPriority.trim() !== "" ? parseInt(fallbackPriority, 10) : null;
       if (isCustom) {
         await api.setProvider({
           provider: customName.trim(),
           api_key: apiKey.trim(),
           base_url: baseUrl.trim(),
           protocol,
+          fallback_priority: fbPri,
         });
       } else {
-        await api.setProvider({ provider: providerSel, api_key: apiKey.trim() });
+        await api.setProvider({
+          provider: providerSel,
+          api_key: apiKey.trim(),
+          fallback_priority: fbPri,
+        });
       }
       setSetOpen(false);
       setApiKey("");
+      setFallbackPriority("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -164,6 +190,11 @@ export default function Providers() {
                     builtin
                   </span>
                 )}
+                {p.fallback_priority !== undefined && p.fallback_priority !== null && (
+                  <span className="badge badge--warning" style={{ fontSize: 10 }}>
+                    fallback #{p.fallback_priority}
+                  </span>
+                )}
                 {p.is_active ? (
                   <span className="badge badge--success">active</span>
                 ) : (
@@ -176,7 +207,7 @@ export default function Providers() {
               style={{ justifyContent: "flex-end", marginTop: 14 }}
             >
               <button className="btn btn--sm" onClick={() => openSet(p)}>
-                Rotate key
+                Edit / Rotate
               </button>
               <button
                 className="btn btn--sm btn--danger"
@@ -191,7 +222,7 @@ export default function Providers() {
 
       {setOpen && (
         <Modal
-          title="Set provider key"
+          title={isEditing ? "Edit Provider" : "Set Provider Key"}
           onClose={() => setSetOpen(false)}
           footer={
             <>
@@ -203,7 +234,7 @@ export default function Providers() {
                 onClick={submitSet}
                 disabled={busy || !canSubmit}
               >
-                {busy ? "Saving…" : "Save key"}
+                {busy ? "Saving…" : isEditing ? "Save changes" : "Save key"}
               </button>
             </>
           }
@@ -214,6 +245,7 @@ export default function Providers() {
               className="select"
               value={providerSel}
               onChange={(e) => setProviderSel(e.target.value)}
+              disabled={isEditing}
             >
               {KNOWN.map((k) => (
                 <option key={k} value={k}>
@@ -236,6 +268,7 @@ export default function Providers() {
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
                   placeholder="e.g. openrouter, groq, vllm"
+                  disabled={isEditing}
                 />
                 <p className="muted" style={{ fontSize: 11, margin: "4px 0 0" }}>
                   Client calls this provider as <code>{"name/model"}</code> — e.g.{" "}
@@ -276,15 +309,29 @@ export default function Providers() {
           ) : null}
 
           <div className="field">
-            <label className="field__label">API key</label>
+            <label className="field__label">API key {isEditing && <span className="muted">(leave blank to keep current)</span>}</label>
             <input
               className="input"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
+              placeholder={isEditing ? "••••••••••••••••" : "sk-..."}
               autoFocus
             />
+          </div>
+          <div className="field">
+            <label className="field__label">Fallback priority (optional)</label>
+            <input
+              className="input"
+              type="number"
+              min="1"
+              value={fallbackPriority}
+              onChange={(e) => setFallbackPriority(e.target.value)}
+              placeholder="e.g. 1, 2 (empty = not in fallback pool)"
+            />
+            <p className="muted" style={{ fontSize: 11, margin: "4px 0 0" }}>
+              Lower numbers are tried first when a primary provider fails with 429 or 5xx.
+            </p>
           </div>
           <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
             Overwrites any existing key for{" "}

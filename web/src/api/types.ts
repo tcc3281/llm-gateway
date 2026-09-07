@@ -18,6 +18,7 @@ export interface APIKey {
   name: string;
   budget_limit: number;
   rate_limit_rpm: number;
+  cache_ttl_seconds: number;
   is_active: boolean;
   expires_at: string | null;
   created_at: string;
@@ -28,6 +29,7 @@ export interface ProviderKey {
   key_preview: string;
   base_url?: string; // "" = built-in (hardcoded upstream URL)
   protocol?: string; // "openai" | "anthropic" for custom compatible providers
+  fallback_priority?: number | null; // lower = tried first in fallback ladder
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -47,8 +49,16 @@ export interface UsageTotal {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  cache_savings_usd: number;
+  cache_hit_rate: number;
+  streaming_requests: number;
   avg_ttft_ms: number;
   avg_latency_ms: number;
+  p50_latency_ms: number;
+  p95_latency_ms: number;
+  p99_latency_ms: number;
   errors: number;
   error_rate: number;
 }
@@ -59,6 +69,8 @@ export interface UsageSeriesPoint {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
   errors: number;
   avg_ttft_ms: number;
   avg_latency_ms: number;
@@ -71,7 +83,10 @@ export interface UsageByModel {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
   avg_latency_ms: number;
+  avg_ttft_ms: number;
 }
 
 export interface UsageByUser {

@@ -158,10 +158,11 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		UserID       string  `json:"user_id"`
-		Name         string  `json:"name"`
-		BudgetLimit  float64 `json:"budget_limit"`
-		RateLimitRPM int     `json:"rate_limit_rpm"`
+		UserID          string  `json:"user_id"`
+		Name            string  `json:"name"`
+		BudgetLimit     float64 `json:"budget_limit"`
+		RateLimitRPM    int     `json:"rate_limit_rpm"`
+		CacheTTLSeconds *int    `json:"cache_ttl_seconds"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -179,7 +180,12 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		req.RateLimitRPM = 60
 	}
 
-	plainKey, apiKey, err := h.authService.CreateAPIKey(r.Context(), userID, req.Name, req.BudgetLimit, req.RateLimitRPM)
+	cacheTTL := 0
+	if req.CacheTTLSeconds != nil {
+		cacheTTL = *req.CacheTTLSeconds
+	}
+
+	plainKey, apiKey, err := h.authService.CreateAPIKey(r.Context(), userID, req.Name, req.BudgetLimit, req.RateLimitRPM, cacheTTL)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -358,10 +364,11 @@ func (h *AdminHandler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         *string  `json:"name"`
-		BudgetLimit  *float64 `json:"budget_limit"`
-		RateLimitRPM *int     `json:"rate_limit_rpm"`
-		ExpiresAt    *string  `json:"expires_at"`
+		Name            *string  `json:"name"`
+		BudgetLimit     *float64 `json:"budget_limit"`
+		RateLimitRPM    *int     `json:"rate_limit_rpm"`
+		CacheTTLSeconds *int     `json:"cache_ttl_seconds"`
+		ExpiresAt       *string  `json:"expires_at"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
@@ -376,6 +383,7 @@ func (h *AdminHandler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	name := current.Name
 	budget := current.BudgetLimit
 	rpm := current.RateLimitRPM
+	cacheTTL := current.CacheTTLSeconds
 	expiresAt := current.ExpiresAt
 	if req.Name != nil {
 		name = *req.Name
@@ -385,6 +393,9 @@ func (h *AdminHandler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RateLimitRPM != nil {
 		rpm = *req.RateLimitRPM
+	}
+	if req.CacheTTLSeconds != nil {
+		cacheTTL = *req.CacheTTLSeconds
 	}
 	if req.ExpiresAt != nil {
 		if *req.ExpiresAt == "" {
@@ -399,7 +410,7 @@ func (h *AdminHandler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.authService.UpdateAPIKey(r.Context(), id, name, budget, rpm, expiresAt); err != nil {
+	if err := h.authService.UpdateAPIKey(r.Context(), id, name, budget, rpm, cacheTTL, expiresAt); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
@@ -974,17 +985,18 @@ func (h *AdminHandler) SetProviderKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Provider string `json:"provider"`
-		APIKey   string `json:"api_key"`
-		BaseURL  string `json:"base_url"`
-		Protocol string `json:"protocol"`
+		Provider         string `json:"provider"`
+		APIKey           string `json:"api_key"`
+		BaseURL          string `json:"base_url"`
+		Protocol         string `json:"protocol"`
+		FallbackPriority *int   `json:"fallback_priority"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
 		return
 	}
-	if req.Provider == "" || req.APIKey == "" {
-		http.Error(w, `{"error": "provider and api_key are required"}`, http.StatusBadRequest)
+	if req.Provider == "" {
+		http.Error(w, `{"error": "provider is required"}`, http.StatusBadRequest)
 		return
 	}
 	if len(req.Provider) > 50 || !providerNameRe.MatchString(req.Provider) {
@@ -1014,7 +1026,7 @@ func (h *AdminHandler) SetProviderKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.keyStore.SetKey(r.Context(), req.Provider, req.APIKey, baseURL, protocol); err != nil {
+	if err := h.keyStore.SetKey(r.Context(), req.Provider, req.APIKey, baseURL, protocol, req.FallbackPriority); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}

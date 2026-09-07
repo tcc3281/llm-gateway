@@ -62,6 +62,19 @@ func (r *RedisClient) DeleteCachedKey(ctx context.Context, keyHash string) error
 	return r.client.Del(ctx, fmt.Sprintf("apikey:%s", keyHash)).Err()
 }
 
+// Budget Spent Caching (prevents synchronous PostgreSQL aggregation queries on hot path)
+func (r *RedisClient) GetCachedBudgetSpent(ctx context.Context, keyID string) (float64, error) {
+	return r.client.Get(ctx, fmt.Sprintf("budget:%s", keyID)).Float64()
+}
+
+func (r *RedisClient) SetCachedBudgetSpent(ctx context.Context, keyID string, spent float64, ttl time.Duration) error {
+	return r.client.Set(ctx, fmt.Sprintf("budget:%s", keyID), spent, ttl).Err()
+}
+
+func (r *RedisClient) DeleteCachedBudgetSpent(ctx context.Context, keyID string) error {
+	return r.client.Del(ctx, fmt.Sprintf("budget:%s", keyID)).Err()
+}
+
 // Provider API Key Caching (stateful keys read from DB, cached for speed)
 func (r *RedisClient) GetCachedProviderKey(ctx context.Context, provider string) (string, error) {
 	return r.client.Get(ctx, fmt.Sprintf("provkey:%s", provider)).Result()
@@ -123,4 +136,13 @@ func (r *RedisClient) AllowRequest(ctx context.Context, keyID string, limitRPM i
 	}
 
 	return incr.Val() <= int64(limitRPM), nil
+}
+
+// Low-level raw caching methods (used for response caching, etc.)
+func (r *RedisClient) GetRaw(ctx context.Context, key string) ([]byte, error) {
+	return r.client.Get(ctx, key).Bytes()
+}
+
+func (r *RedisClient) SetRaw(ctx context.Context, key string, val []byte, ttl time.Duration) error {
+	return r.client.Set(ctx, key, val, ttl).Err()
 }

@@ -247,54 +247,66 @@ export default function Models() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 15 }}>
-        <div className="filter-bar">
-          <input
-            className="input"
-            style={{ width: 220 }}
-            placeholder="Search model name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            className="select"
-            style={{ width: 200 }}
-            value={providerFilter}
-            onChange={(e) => setProviderFilter(e.target.value)}
+      <div className="filter-bar" style={{ marginBottom: 15 }}>
+        <input
+          className="input"
+          style={{ width: 220 }}
+          placeholder="Search model name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="select"
+          style={{ width: 200 }}
+          value={providerFilter}
+          onChange={(e) => setProviderFilter(e.target.value)}
+        >
+          <option value="">All Providers</option>
+          <option value="configured">Only Configured Keys</option>
+          {providerOptions.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <select
+          className="select"
+          style={{ width: 150 }}
+          value={priceFilter}
+          onChange={(e) => setPriceFilter(e.target.value)}
+        >
+          <option value="all">Any Price</option>
+          <option value="priced">Priced (&gt; $0)</option>
+          <option value="free">No Price ($0)</option>
+        </select>
+        <select
+          className="select"
+          style={{ width: 180 }}
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+        >
+          <option value="model_asc">Sort by Name (A-Z)</option>
+          <option value="model_desc">Sort by Name (Z-A)</option>
+          <option value="provider_asc">Sort by Provider (A-Z)</option>
+          <option value="provider_desc">Sort by Provider (Z-A)</option>
+          <option value="prompt_asc">Prompt Price (Low-High)</option>
+          <option value="prompt_desc">Prompt Price (High-Low)</option>
+          <option value="updated_desc">Recently Updated</option>
+        </select>
+        {(search !== "" || providerFilter !== "configured" || priceFilter !== "all" || sortBy !== "model_asc") && (
+          <button
+            className="btn btn--ghost btn--sm"
+            style={{ padding: "0 8px", minHeight: 28 }}
+            onClick={() => {
+              setSearch("");
+              setProviderFilter("configured");
+              setPriceFilter("all");
+              setSortBy("model_asc");
+            }}
           >
-            <option value="">All Providers</option>
-            <option value="configured">Only Configured Keys</option>
-            {providerOptions.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <select
-            className="select"
-            style={{ width: 150 }}
-            value={priceFilter}
-            onChange={(e) => setPriceFilter(e.target.value)}
-          >
-            <option value="all">Any Price</option>
-            <option value="priced">Priced (&gt; $0)</option>
-            <option value="free">No Price ($0)</option>
-          </select>
-          <select
-            className="select"
-            style={{ width: 180 }}
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <option value="model_asc">Sort by Name (A-Z)</option>
-            <option value="model_desc">Sort by Name (Z-A)</option>
-            <option value="provider_asc">Sort by Provider (A-Z)</option>
-            <option value="provider_desc">Sort by Provider (Z-A)</option>
-            <option value="prompt_asc">Prompt Price (Low-High)</option>
-            <option value="prompt_desc">Prompt Price (High-Low)</option>
-            <option value="updated_desc">Recently Updated</option>
-          </select>
-        </div>
+            Clear filters
+          </button>
+        )}
       </div>
 
       {syncMsg && <div className="error-banner">{syncMsg}</div>}

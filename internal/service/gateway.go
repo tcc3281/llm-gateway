@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"llm-gateway/internal/adapter/anthropic"
@@ -17,12 +18,15 @@ import (
 	"llm-gateway/internal/adapter/gemini"
 	"llm-gateway/internal/adapter/openai"
 	"llm-gateway/internal/analytics"
+	"llm-gateway/internal/cache"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
 	"llm-gateway/internal/provider"
+	"llm-gateway/internal/telemetry"
 	"llm-gateway/pkg/sse"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrProviderKey is returned when the upstream provider has no API key
@@ -36,22 +40,44 @@ func (e *ErrProviderKey) Error() string {
 }
 
 type GatewayService struct {
-	providerClient *provider.ProviderClient
-	keyStore       *provider.KeyStore
-	costCalc       *analytics.CostCalculator
-	telemetry      *analytics.TelemetryLogger
-	redis          *db.RedisClient
-	pg             *db.PostgresDB
+	providerClient       *provider.ProviderClient
+	keyStore             *provider.KeyStore
+	costCalc             *analytics.CostCalculator
+	telemetry            *analytics.TelemetryLogger
+	redis                *db.RedisClient
+	pg                   *db.PostgresDB
+	responseCache        *cache.ResponseCache
+	contentCapturePolicy string
+	sloMaxTTFTMs         int
+	sloMaxTBTMs          int
+	agentMaxToolCalls    int
 }
 
-func NewGatewayService(p *provider.ProviderClient, k *provider.KeyStore, c *analytics.CostCalculator, t *analytics.TelemetryLogger, redis *db.RedisClient, pg *db.PostgresDB) *GatewayService {
+func NewGatewayService(
+	p *provider.ProviderClient,
+	k *provider.KeyStore,
+	c *analytics.CostCalculator,
+	t *analytics.TelemetryLogger,
+	redis *db.RedisClient,
+	pg *db.PostgresDB,
+	rc *cache.ResponseCache,
+	contentCapturePolicy string,
+	sloMaxTTFTMs int,
+	sloMaxTBTMs int,
+	agentMaxToolCalls int,
+) *GatewayService {
 	return &GatewayService{
-		providerClient: p,
-		keyStore:       k,
-		costCalc:       c,
-		telemetry:      t,
-		redis:          redis,
-		pg:             pg,
+		providerClient:       p,
+		keyStore:             k,
+		costCalc:             c,
+		telemetry:            t,
+		redis:                redis,
+		pg:                   pg,
+		responseCache:        rc,
+		contentCapturePolicy: contentCapturePolicy,
+		sloMaxTTFTMs:         sloMaxTTFTMs,
+		sloMaxTBTMs:          sloMaxTBTMs,
+		agentMaxToolCalls:    agentMaxToolCalls,
 	}
 }
 
@@ -103,21 +129,43 @@ func (g *GatewayService) ListAvailableModels(ctx context.Context) ([]model.Provi
 		}
 	}
 
-	// 2. Live model lists from each provider that has a key configured.
-	for _, p := range []provider.ProviderType{
+	// 2. Live model lists from each provider that has a key configured (concurrent fetch).
+	providers := []provider.ProviderType{
 		provider.ProviderOpenAI,
 		provider.ProviderAnthropic,
 		provider.ProviderGemini,
-	} {
-		key, err := g.keyStore.GetKey(ctx, string(p))
-		if err != nil {
-			continue // no key configured — nothing to fetch
-		}
-		ids, err := g.providerClient.ListModels(ctx, p, key)
-		if err != nil {
-			continue // upstream list API failed — keep the configured set
-		}
-		for _, id := range ids {
+	}
+
+	type providerModelsResult struct {
+		provider provider.ProviderType
+		ids      []string
+	}
+
+	resChan := make(chan providerModelsResult, len(providers))
+	var wg sync.WaitGroup
+
+	for _, p := range providers {
+		wg.Add(1)
+		go func(pt provider.ProviderType) {
+			defer wg.Done()
+			key, err := g.keyStore.GetKey(ctx, string(pt))
+			if err != nil {
+				return // no key configured — nothing to fetch
+			}
+			ids, err := g.providerClient.ListModels(ctx, pt, key)
+			if err != nil {
+				return // upstream list API failed — keep the configured set
+			}
+			resChan <- providerModelsResult{provider: pt, ids: ids}
+		}(p)
+	}
+
+	wg.Wait()
+	close(resChan)
+
+	nowUnix := time.Now().Unix()
+	for res := range resChan {
+		for _, id := range res.ids {
 			if seen[id] {
 				continue
 			}
@@ -125,9 +173,9 @@ func (g *GatewayService) ListAvailableModels(ctx context.Context) ([]model.Provi
 			models = append(models, model.ProviderModel{
 				ID:       id,
 				Object:   "model",
-				Created:  time.Now().Unix(),
-				OwnedBy:  string(p),
-				Provider: string(p),
+				Created:  nowUnix,
+				OwnedBy:  string(res.provider),
+				Provider: string(res.provider),
 			})
 		}
 	}
@@ -328,6 +376,17 @@ func (g *GatewayService) StartModelDiscoveryLoop(ctx context.Context, interval t
 	}
 }
 
+func countMessagesToolCalls(messages []canonical.ChatMessage) int {
+	count := 0
+	for _, msg := range messages {
+		count += len(msg.ToolCalls)
+		if len(msg.ToolCalls) == 0 && msg.Role == "tool" {
+			count++
+		}
+	}
+	return count
+}
+
 func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
 	startTime := time.Now()
 
@@ -347,71 +406,97 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		return fmt.Errorf("failed to decode request: %w", err)
 	}
 
-	// 2. Resolve target Upstream Provider (custom compatible prefix routing first)
-	target, err := g.resolveTarget(ctx, canReq.Model)
+	// Capture prompt event if policy allows
+	span := trace.SpanFromContext(ctx)
+	if span != nil && span.IsRecording() {
+		telemetry.RecordPromptEvent(span, g.contentCapturePolicy, canReq.Messages)
+	}
+
+	inputToolCalls := countMessagesToolCalls(canReq.Messages)
+
+	// 2. Exact-Match Response Cache Check (non-streaming only, per API key)
+	var cacheKey string
+	var cacheTTL time.Duration
+	cacheEnabled := false
+	if !canReq.Stream && g.responseCache != nil && params.ApiKey != nil {
+		if ttl, ok := g.responseCache.EffectiveTTL(params.ApiKey); ok {
+			cacheKey = cache.CacheKey(canReq)
+			cacheTTL = ttl
+			cacheEnabled = true
+			if cached, hit := g.responseCache.Get(ctx, cacheKey); hit {
+				params.ResponseWriter.Header().Set("Content-Type", "application/json")
+				params.ResponseWriter.Header().Set("X-Cache", "HIT")
+				params.ResponseWriter.WriteHeader(http.StatusOK)
+				params.ResponseWriter.Write(cached)
+
+				// Record Telemetry for cache hit
+				g.recordTelemetry(params, "cache", canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusOK, "", startTime)
+
+				// Metrics
+				telemetry.RecordCacheMetric(ctx, "hit", canReq.Model)
+				durationSec := time.Since(startTime).Seconds()
+				telemetry.RecordDurationMetric(ctx, "cache", canReq.Model, "chat", durationSec, http.StatusOK)
+
+				// Set OTel span attributes
+				if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+					telemetry.SetGenAIAttributes(span, "cache", canReq.Model, "chat")
+					telemetry.SetLLMGWAttributes(span, "cache", true, false, 0)
+				}
+				return nil
+			}
+			telemetry.RecordCacheMetric(ctx, "miss", canReq.Model)
+		}
+	}
+
+	// 3. Resolve target Upstream Provider & Fallback Ladder
+	primaryTarget, err := g.resolveTarget(ctx, canReq.Model)
 	if err != nil {
 		return err
 	}
 
-	// 3. Encode Canonical Request to Upstream Format Payload
-	var upstreamPayload []byte
-	switch target.Provider {
-	case provider.ProviderOpenAI:
-		upstreamPayload, err = openai.EncodeCanonicalRequest(canReq)
-	case provider.ProviderAnthropic:
-		upstreamPayload, err = anthropic.EncodeCanonicalRequest(canReq)
-	case provider.ProviderGemini:
-		upstreamPayload, err = gemini.EncodeCanonicalRequest(canReq)
-	}
+	targets := g.resolveFallbackChain(ctx, primaryTarget)
 
+	// 4. Dispatch with Fallback Ladder
+	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey)
 	if err != nil {
-		return fmt.Errorf("failed to encode payload for provider %s: %w", target.Name, err)
-	}
-
-	// 4. Resolve upstream credentials: per-request override > stateful DB key
-	upstreamKey := params.UpstreamAPIKey
-	if upstreamKey == "" {
-		upstreamKey, err = g.keyStore.GetKey(ctx, target.Name)
-		if err != nil {
-			g.recordTelemetry(params, target.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
-			return &ErrProviderKey{Provider: target.Name}
+		durationSec := time.Since(startTime).Seconds()
+		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, canReq.Model, "chat", durationSec, http.StatusServiceUnavailable)
+		g.recordTelemetry(params, primaryTarget.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
+		if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+			span.RecordError(err)
 		}
-	}
-
-	// 5. Dispatch Upstream Request
-	upReq := provider.UpstreamRequest{
-		Provider: target.Provider,
-		Name:     target.Name,
-		BaseURL:  target.BaseURL,
-		Model:    canReq.Model,
-		Stream:   canReq.Stream,
-		Payload:  upstreamPayload,
-	}
-
-	upResp, err := g.providerClient.SendRequest(ctx, upReq, upstreamKey)
-	if err != nil {
-		g.recordTelemetry(params, target.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusInternalServerError, err.Error(), startTime)
 		return err
 	}
 	defer upResp.Body.Close()
 
+	fallbackUsed := len(attempts) > 1
+	if fallbackUsed {
+		telemetry.RecordFallbackMetric(ctx, primaryTarget.Name, usedTarget.Name, canReq.Model)
+	}
+
 	if upResp.StatusCode != http.StatusOK {
+		durationSec := time.Since(startTime).Seconds()
+		telemetry.RecordDurationMetric(ctx, usedTarget.Name, usedModel, "chat", durationSec, upResp.StatusCode)
 		bodyBytes, _ := io.ReadAll(upResp.Body)
 		params.ResponseWriter.WriteHeader(upResp.StatusCode)
 		params.ResponseWriter.Write(bodyBytes)
-		g.recordTelemetry(params, target.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, upResp.StatusCode, string(bodyBytes), startTime)
+		g.recordTelemetry(params, usedTarget.Name, usedModel, 0, 0, 0, 0, analytics.CostResult{}, 0, upResp.StatusCode, string(bodyBytes), startTime)
+		if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+			telemetry.SetGenAIAttributes(span, usedTarget.Name, usedModel, "chat")
+			telemetry.SetLLMGWAttributes(span, usedTarget.Name, false, fallbackUsed, 0)
+		}
 		return nil
 	}
 
-	// 6. Handle Streaming vs Non-Streaming Response
+	// 5. Handle Streaming vs Non-Streaming Response
 	if canReq.Stream {
-		return g.handleStreamResponse(ctx, params, target, canReq, upResp, startTime)
+		return g.handleStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, fallbackUsed, inputToolCalls)
 	}
 
-	return g.handleNonStreamResponse(params, target, canReq, upResp, startTime)
+	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed, inputToolCalls)
 }
 
-func (g *GatewayService) handleNonStreamResponse(params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time) error {
+func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool, inputToolCalls int) error {
 	bodyBytes, err := io.ReadAll(upResp.Body)
 	if err != nil {
 		return err
@@ -448,17 +533,55 @@ func (g *GatewayService) handleNonStreamResponse(params ProxyParams, target Reso
 
 	// Send Response to Client
 	params.ResponseWriter.Header().Set("Content-Type", "application/json")
+	if cacheEnabled {
+		params.ResponseWriter.Header().Set("X-Cache", "MISS")
+	}
 	params.ResponseWriter.WriteHeader(http.StatusOK)
 	params.ResponseWriter.Write(clientResponseBytes)
+
+	// Cache the response if caching is enabled
+	if cacheEnabled && g.responseCache != nil && len(clientResponseBytes) > 0 {
+		g.responseCache.Set(ctx, cacheKey, clientResponseBytes, cacheTTL)
+	}
+
+	var keyID, userID string
+	if params.ApiKey != nil {
+		keyID = params.ApiKey.ID.String()
+		userID = params.ApiKey.UserID.String()
+	}
 
 	// Record Telemetry
 	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens, canResp.ReasoningTokens)
 	g.recordTelemetry(params, target.Name, canReq.Model, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens, canResp.ReasoningTokens, costResult, 0, http.StatusOK, "", startTime)
 
+	// Set OTel attributes and completion event
+	span := trace.SpanFromContext(ctx)
+	if span != nil && span.IsRecording() {
+		telemetry.SetGenAIAttributes(span, target.Name, canReq.Model, "chat")
+		telemetry.SetGenAIUsage(span, canResp.PromptTokens, canResp.CompletionTokens)
+		telemetry.SetLLMGWAttributes(span, target.Name, false, fallbackUsed, 0)
+		telemetry.RecordCompletionEvent(span, g.contentCapturePolicy, canResp.Content)
+	}
+
+	// Agent runaway loop detection
+	totalToolCalls := inputToolCalls + len(canResp.ToolCalls)
+	if g.agentMaxToolCalls > 0 && totalToolCalls > g.agentMaxToolCalls {
+		telemetry.RecordRunawayLoop(ctx, target.Name, canReq.Model, keyID, totalToolCalls)
+		if span != nil && span.IsRecording() {
+			telemetry.RecordRunawayLoopEvent(span, totalToolCalls, g.agentMaxToolCalls)
+		}
+	}
+
+	// Metrics recording
+	durationSec := time.Since(startTime).Seconds()
+	telemetry.RecordDurationMetric(ctx, target.Name, canReq.Model, "chat", durationSec, http.StatusOK)
+	telemetry.RecordTokenMetrics(ctx, target.Name, canReq.Model, keyID, userID, canResp.PromptTokens, canResp.CompletionTokens, canResp.CachedInputTokens)
+	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
+
 	return nil
 }
 
-func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time) error {
+func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, fallbackUsed bool, inputToolCalls int) error {
 	flusher, ok := params.ResponseWriter.(http.Flusher)
 	if !ok {
 		return fmt.Errorf("streaming unsupported by response writer")
@@ -467,7 +590,9 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	params.ResponseWriter.Header().Set("Content-Type", "text/event-stream")
 	params.ResponseWriter.Header().Set("Cache-Control", "no-cache")
 	params.ResponseWriter.Header().Set("Connection", "keep-alive")
+	params.ResponseWriter.Header().Set("X-Accel-Buffering", "no")
 	params.ResponseWriter.WriteHeader(http.StatusOK)
+	flusher.Flush()
 
 	// Anthropic clients require the full message lifecycle (message_start →
 	// content_block_start/delta/stop → message_delta → message_stop). That is
@@ -485,6 +610,7 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	var totalCachedInputTokens, totalReasoningTokens int
 	var lastFinishReason string
 	isFirstChunk := true
+	var streamContent strings.Builder
 
 	// emitAnthropicMessageStart lazily writes the message_start opener once,
 	// using the real input/cache counts accumulated so far from the upstream.
@@ -503,7 +629,6 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		}
 		if data, err := json.Marshal(map[string]interface{}{"type": "message_start", "message": msg}); err == nil {
 			params.ResponseWriter.Write([]byte("event: message_start\ndata: " + string(data) + "\n\n"))
-			flusher.Flush()
 		}
 	}
 
@@ -529,7 +654,6 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 			params.ResponseWriter.Write([]byte("event: content_block_start\ndata: " + string(data) + "\n\n"))
 		}
 		anthroOpenBlock = blockType
-		flusher.Flush()
 	}
 
 	// Tool-call fragments accumulate over the stream (OpenAI delta.tool_calls,
@@ -574,13 +698,63 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		anthroOpenBlock = ""
 	}
 
-	for {
-		event, err := sseReader.ReadEvent()
-		if err == io.EOF {
-			break
+	// The upstream body read (sseReader.ReadEvent) blocks until a full SSE event
+	// arrives; reasoning models can sit silent for tens of seconds, so a plain
+	// blocking loop would leave the downstream connection idle long enough for a
+	// proxy/load-balancer to reap it mid-thought. Drive the read from a goroutine
+	// so the relay loop stays selectable: it emits flushed keep-alive comment
+	// lines during those gaps and aborts promptly when the client disconnects
+	// instead of draining (and paying for) the rest of the upstream stream. The
+	// channel buffer caps the read-ahead at one event.
+	eventC := make(chan *sse.Event, 1)
+	readDoneC := make(chan error, 1)
+	go func() {
+		for {
+			ev, rErr := sseReader.ReadEvent()
+			if rErr != nil {
+				readDoneC <- rErr
+				return
+			}
+			select {
+			case eventC <- ev:
+			case <-ctx.Done():
+				return
+			}
 		}
-		if err != nil {
-			break
+	}()
+
+	// Comment frames are ignored by SSE clients but reset idle timers on
+	// intermediaries. 15s stays well under the common 60s LB/proxy idle timeout
+	// (nginx, AWS ALB), so an upstream that is thinking — not dead — is not
+	// mistaken for a hung connection.
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
+
+	// streamErr records an abnormal end (mid-stream read failure or client
+	// cancellation); the terminal block below then emits an explicit error marker
+	// instead of a clean [DONE]/message_stop.
+	var streamErr error
+
+relayLoop:
+	for {
+		var event *sse.Event
+		var err error
+		select {
+		case event = <-eventC:
+			// a full SSE event from the upstream to relay
+		case err = <-readDoneC:
+			if err == io.EOF {
+				break relayLoop
+			}
+			streamErr = err
+			break relayLoop
+		case <-keepAlive.C:
+			params.ResponseWriter.Write([]byte(": keep-alive\n\n"))
+			flusher.Flush()
+			continue relayLoop
+		case <-ctx.Done():
+			streamErr = ctx.Err()
+			break relayLoop
 		}
 
 		if isFirstChunk {
@@ -654,6 +828,9 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		}
 		if chunk.FinishReason != "" {
 			lastFinishReason = chunk.FinishReason
+		}
+		if chunk.DeltaContent != "" && strings.EqualFold(g.contentCapturePolicy, "event_only") {
+			streamContent.WriteString(chunk.DeltaContent)
 		}
 
 		// Feed tool-call fragments into the accumulator (never streamed
@@ -743,8 +920,43 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	}
 	hasToolCalls := len(toolCalls) > 0
 
-	// Final stream completion signal
-	if params.InboundFormat == "openai" {
+	// Final stream completion signal. A mid-stream failure must not be masked as
+	// a clean end: emit an explicit error event instead of [DONE]/message_stop so
+	// clients surface the interruption rather than treating the response as
+	// complete (and, for Anthropic, so they do not hang waiting for message_stop).
+	if streamErr != nil {
+		if params.InboundFormat == "openai" {
+			// OpenAI SSE has no spec'd terminal error event; the de-facto
+			// convention (also used by OpenAI itself) is a final data frame
+			// carrying an "error" object, which official SDKs translate into a
+			// raised error. No [DONE] is sent, so truncation is unambiguous.
+			errObj, _ := json.Marshal(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": truncateStreamError(streamErr.Error()),
+					"type":    "upstream_stream_error",
+				},
+			})
+			params.ResponseWriter.Write([]byte("data: " + string(errObj) + "\n\n"))
+		} else {
+			// Anthropic streams a first-class error event. Close any open content
+			// block first so the lifecycle stays balanced for strict clients.
+			if anthroOpenBlock != "" {
+				if data, err := json.Marshal(map[string]interface{}{"type": "content_block_stop", "index": anthroBlockIndex}); err == nil {
+					params.ResponseWriter.Write([]byte("event: content_block_stop\ndata: " + string(data) + "\n\n"))
+				}
+				anthroOpenBlock = ""
+			}
+			errObj, _ := json.Marshal(map[string]interface{}{
+				"type": "error",
+				"error": map[string]interface{}{
+					"type":    "api_error",
+					"message": truncateStreamError(streamErr.Error()),
+				},
+			})
+			params.ResponseWriter.Write([]byte("event: error\ndata: " + string(errObj) + "\n\n"))
+		}
+		flusher.Flush()
+	} else if params.InboundFormat == "openai" {
 		if hasToolCalls {
 			// Emit the reconstructed tool calls, then the standard [DONE] marker.
 			if sse, fErr := openai.FormatOpenAIToolCallSSE(toolCalls, canReq.Model, anthroMsgID, time.Now().Unix()); fErr == nil && sse != "" {
@@ -795,10 +1007,84 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		flusher.Flush()
 	}
 
+	var keyID, userID string
+	if params.ApiKey != nil {
+		keyID = params.ApiKey.ID.String()
+		userID = params.ApiKey.UserID.String()
+	}
+
+	totalDurationMs := time.Since(startTime).Milliseconds()
+	totalDurationSec := float64(totalDurationMs) / 1000.0
+	ttftSec := float64(ttftMs) / 1000.0
+
+	var tbtMs float64
+	var tbtSec float64
+	if totalCompletionTokens > 1 {
+		tbtMs = float64(totalDurationMs-ttftMs) / float64(totalCompletionTokens-1)
+		tbtSec = tbtMs / 1000.0
+	}
+
+	isGoodput := true
+	var violationType string
+	if g.sloMaxTTFTMs > 0 && int(ttftMs) > g.sloMaxTTFTMs {
+		isGoodput = false
+		violationType = "ttft"
+	}
+	if totalCompletionTokens > 1 && g.sloMaxTBTMs > 0 && int(tbtMs) > g.sloMaxTBTMs {
+		isGoodput = false
+		if violationType == "" {
+			violationType = "tbt"
+		} else {
+			violationType = "both"
+		}
+	}
+
 	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens)
-	g.recordTelemetry(params, target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens, costResult, ttftMs, http.StatusOK, "", startTime)
+
+	// Record mid-stream truncation in the usage log so it is distinguishable
+	// from a healthy completion.
+	errMsg := ""
+	if streamErr != nil {
+		errMsg = streamErr.Error()
+	}
+	g.recordTelemetry(params, target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens, costResult, ttftMs, http.StatusOK, errMsg, startTime)
+
+	span := trace.SpanFromContext(ctx)
+	if span != nil && span.IsRecording() {
+		telemetry.SetGenAIAttributes(span, target.Name, canReq.Model, "chat")
+		telemetry.SetGenAIUsage(span, totalPromptTokens, totalCompletionTokens)
+		telemetry.SetLLMGWAttributes(span, target.Name, false, fallbackUsed, ttftMs)
+		if streamContent.Len() > 0 {
+			telemetry.RecordCompletionEvent(span, g.contentCapturePolicy, streamContent.String())
+		}
+	}
+
+	// Agent runaway loop detection
+	totalToolCalls := inputToolCalls + len(toolCalls)
+	if g.agentMaxToolCalls > 0 && totalToolCalls > g.agentMaxToolCalls {
+		telemetry.RecordRunawayLoop(ctx, target.Name, canReq.Model, keyID, totalToolCalls)
+		if span != nil && span.IsRecording() {
+			telemetry.RecordRunawayLoopEvent(span, totalToolCalls, g.agentMaxToolCalls)
+		}
+	}
+
+	// Metrics recording
+	telemetry.RecordStreamSLOMetrics(ctx, target.Name, canReq.Model, keyID, ttftSec, tbtSec, isGoodput, violationType)
+	telemetry.RecordDurationMetric(ctx, target.Name, canReq.Model, "chat", totalDurationSec, http.StatusOK)
+	telemetry.RecordTokenMetrics(ctx, target.Name, canReq.Model, keyID, userID, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens)
+	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
 
 	return nil
+}
+
+// truncateStreamError bounds an upstream error string before it is echoed into a
+// terminal SSE error frame, so a huge raw error body cannot bloat the frame.
+func truncateStreamError(s string) string {
+	const maxLen = 400
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }
 
 func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName string, promptTokens, completionTokens, cachedInputTokens, reasoningTokens int, costResult analytics.CostResult, ttftMs int64, statusCode int, errMsg string, startTime time.Time) {
@@ -944,8 +1230,7 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Do(httpReq)
+		resp, err := g.providerClient.Do(httpReq)
 		if err != nil {
 			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusInternalServerError, err.Error(), startTime)
 			return fmt.Errorf("failed sending request to Gemini: %w", err)
@@ -1026,6 +1311,20 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 
 		costResult := g.costCalc.CalculateCost(target.Name, embedReq.Model, promptTokens, 0, 0, 0)
 		g.recordTelemetry(params, target.Name, embedReq.Model, promptTokens, 0, 0, 0, costResult, 0, http.StatusOK, "", startTime)
+		if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+			telemetry.SetGenAIAttributes(span, target.Name, embedReq.Model, "embeddings")
+			telemetry.SetGenAIUsage(span, promptTokens, 0)
+			telemetry.SetLLMGWAttributes(span, target.Name, false, false, 0)
+		}
+
+		var keyID, userID string
+		if params.ApiKey != nil {
+			keyID = params.ApiKey.ID.String()
+			userID = params.ApiKey.UserID.String()
+		}
+		telemetry.RecordDurationMetric(ctx, target.Name, embedReq.Model, "embeddings", time.Since(startTime).Seconds(), http.StatusOK)
+		telemetry.RecordTokenMetrics(ctx, target.Name, embedReq.Model, keyID, userID, promptTokens, 0, 0)
+		telemetry.RecordCostMetric(ctx, target.Name, embedReq.Model, keyID, userID, costResult.Cost)
 
 	} else {
 		// For OpenAI & OpenAI-compatible: transparent proxying
@@ -1064,8 +1363,7 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 			httpReq.Header.Set(k, v)
 		}
 
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Do(httpReq)
+		resp, err := g.providerClient.Do(httpReq)
 		if err != nil {
 			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusInternalServerError, err.Error(), startTime)
 			return fmt.Errorf("failed sending request to upstream: %w", err)
@@ -1080,6 +1378,13 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 		params.ResponseWriter.Header().Set("Content-Type", "application/json")
 		params.ResponseWriter.WriteHeader(resp.StatusCode)
 		params.ResponseWriter.Write(bodyBytes)
+
+		var keyID, userID string
+		if params.ApiKey != nil {
+			keyID = params.ApiKey.ID.String()
+			userID = params.ApiKey.UserID.String()
+		}
+		telemetry.RecordDurationMetric(ctx, target.Name, embedReq.Model, "embeddings", time.Since(startTime).Seconds(), resp.StatusCode)
 
 		if resp.StatusCode == http.StatusOK {
 			var respData struct {
@@ -1096,6 +1401,13 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 			}
 			costResult := g.costCalc.CalculateCost(target.Name, embedReq.Model, tokens, 0, 0, 0)
 			g.recordTelemetry(params, target.Name, embedReq.Model, tokens, 0, 0, 0, costResult, 0, resp.StatusCode, "", startTime)
+			if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
+				telemetry.SetGenAIAttributes(span, target.Name, embedReq.Model, "embeddings")
+				telemetry.SetGenAIUsage(span, tokens, 0)
+				telemetry.SetLLMGWAttributes(span, target.Name, false, false, 0)
+			}
+			telemetry.RecordTokenMetrics(ctx, target.Name, embedReq.Model, keyID, userID, tokens, 0, 0)
+			telemetry.RecordCostMetric(ctx, target.Name, embedReq.Model, keyID, userID, costResult.Cost)
 		} else {
 			g.recordTelemetry(params, target.Name, embedReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, resp.StatusCode, string(bodyBytes), startTime)
 		}

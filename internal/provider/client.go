@@ -25,11 +25,30 @@ type ProviderClient struct {
 }
 
 func NewProviderClient() *ProviderClient {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 300
+	transport.MaxIdleConnsPerHost = 100
+	transport.IdleConnTimeout = 90 * time.Second
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	// A streaming response can legitimately outlast any fixed client timeout
+	// (long thinking + generation), so the overall request must be unbounded.
+	// ResponseHeaderTimeout only covers the gap up to the upstream's first byte;
+	// once headers arrive the stream is read at its own pace. A provider that
+	// hangs before responding (dead LB, stalled key validation) still fails fast
+	// here instead of tying up the goroutine forever.
+	transport.ResponseHeaderTimeout = 60 * time.Second
+	transport.ForceAttemptHTTP2 = true
+
 	return &ProviderClient{
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second, // Support long LLM generation
+			Transport: transport,
 		},
 	}
+}
+
+// Do forwards an arbitrary HTTP request using the shared pooled client.
+func (c *ProviderClient) Do(req *http.Request) (*http.Response, error) {
+	return c.httpClient.Do(req)
 }
 
 // ErrNoModelsEndpoint is returned for providers that do not expose a public

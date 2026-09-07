@@ -3,6 +3,7 @@ package anthropic
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"llm-gateway/internal/adapter/canonical"
@@ -144,7 +145,7 @@ type AnthropicResponse struct {
 }
 
 type AnthropicContent struct {
-	Type      string `json:"type"` // "text" | "thinking" | "redacted_thinking" | "tool_use" | "tool_result"
+	Type      string `json:"type"` // "text" | "thinking" | "redacted_thinking" | "tool_use" | "tool_result" | "image"
 	Text      string `json:"text,omitempty"`
 	Thinking  string `json:"thinking,omitempty"`
 	Signature string `json:"signature,omitempty"`
@@ -156,6 +157,13 @@ type AnthropicContent struct {
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"` // string or text blocks
 	IsError   bool            `json:"is_error,omitempty"`
+	Source    *AnthropicSource `json:"source,omitempty"`
+}
+
+type AnthropicSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type AnthropicUsage struct {
@@ -357,48 +365,124 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 	req.ToolChoice = encodeAnthropicToolChoice(canReq.ToolChoice)
 
 	for _, msg := range canReq.Messages {
-		am := AnthropicMessage{Role: msg.Role}
+		role := msg.Role
+		if role == "tool" {
+			role = "user"
+		}
+
+		var currentBlocks []AnthropicContent
+		var currentString string
+		hasBlocks := false
+
 		switch msg.Role {
 		case "assistant":
 			// Assistant tool-call turns render as content blocks: any text first,
 			// then one tool_use block per call.
 			if msg.Content != "" {
-				am.Content.Blocks = append(am.Content.Blocks, AnthropicContent{
+				currentBlocks = append(currentBlocks, AnthropicContent{
 					Type: "text",
 					Text: msg.Content,
 				})
+				hasBlocks = true
 			}
 			for _, tc := range msg.ToolCalls {
 				var input json.RawMessage
 				if len(tc.Arguments) > 0 {
 					input = json.RawMessage(tc.Arguments)
 				}
-				am.Content.Blocks = append(am.Content.Blocks, AnthropicContent{
+				currentBlocks = append(currentBlocks, AnthropicContent{
 					Type:  "tool_use",
 					ID:    tc.ID,
 					Name:  tc.Name,
 					Input: input,
 				})
+				hasBlocks = true
 			}
-			// No blocks at all → plain empty string so the "content" field stays
-			// present.
-			if len(am.Content.Blocks) == 0 {
-				am.Content.String = ""
+			// If there are no blocks, keep it as empty string
+			if !hasBlocks {
+				currentString = ""
 			}
 		case "tool":
 			// Canonical "tool" role → Anthropic user message carrying a
 			// tool_result block.
-			am.Role = "user"
 			contentJSON, _ := json.Marshal(msg.Content)
-			am.Content.Blocks = append(am.Content.Blocks, AnthropicContent{
+			currentBlocks = append(currentBlocks, AnthropicContent{
 				Type:      "tool_result",
 				ToolUseID: msg.ToolCallID,
 				Content:   contentJSON,
 			})
+			hasBlocks = true
 		default:
-			am.Content.String = msg.Content
+			if len(msg.ContentParts) > 0 {
+				for _, cp := range msg.ContentParts {
+					if cp.Type == "text" && cp.Text != "" {
+						currentBlocks = append(currentBlocks, AnthropicContent{
+							Type: "text",
+							Text: cp.Text,
+						})
+						hasBlocks = true
+					} else if cp.Type == "image_url" && cp.ImageURL != nil {
+						if src := parseAnthropicImageSource(cp.ImageURL.URL); src != nil {
+							currentBlocks = append(currentBlocks, AnthropicContent{
+								Type:   "image",
+								Source: src,
+							})
+							hasBlocks = true
+						}
+					}
+				}
+			} else {
+				currentString = msg.Content
+			}
 		}
-		req.Messages = append(req.Messages, am)
+
+		// Merge consecutive turns of the same role (common for multiple tool results / user messages)
+		if len(req.Messages) > 0 && req.Messages[len(req.Messages)-1].Role == role {
+			lastIdx := len(req.Messages) - 1
+			lastMsg := &req.Messages[lastIdx]
+
+			if lastMsg.Content.HasBlocks() || hasBlocks {
+				// Convert last message to use blocks if it is currently using string
+				if !lastMsg.Content.HasBlocks() {
+					if lastMsg.Content.String != "" {
+						lastMsg.Content.Blocks = []AnthropicContent{
+							{
+								Type: "text",
+								Text: lastMsg.Content.String,
+							},
+						}
+					} else {
+						lastMsg.Content.Blocks = []AnthropicContent{}
+					}
+					lastMsg.Content.String = ""
+				}
+
+				// Append content
+				if hasBlocks {
+					lastMsg.Content.Blocks = append(lastMsg.Content.Blocks, currentBlocks...)
+				} else if currentString != "" {
+					lastMsg.Content.Blocks = append(lastMsg.Content.Blocks, AnthropicContent{
+						Type: "text",
+						Text: currentString,
+					})
+				}
+			} else {
+				// Both are plain strings, just concatenate
+				if lastMsg.Content.String != "" && currentString != "" {
+					lastMsg.Content.String += "\n\n" + currentString
+				} else if currentString != "" {
+					lastMsg.Content.String = currentString
+				}
+			}
+		} else {
+			am := AnthropicMessage{Role: role}
+			if hasBlocks {
+				am.Content.Blocks = currentBlocks
+			} else {
+				am.Content.String = currentString
+			}
+			req.Messages = append(req.Messages, am)
+		}
 	}
 
 	return json.Marshal(req)
@@ -543,32 +627,41 @@ func FormatCanonicalToAnthropicResponse(canResp *canonical.CanonicalResponse) ([
 // The message_start / content_block_start / message_delta / message_stop
 // lifecycle events are emitted by the gateway service so the full Anthropic
 // streaming protocol is honored.
+// FormatCanonicalToAnthropicSSE renders one content_block_delta event.
+// Optimized zero-reflection fast JSON encoding to minimize streaming hot-path allocations.
 func FormatCanonicalToAnthropicSSE(chunk *canonical.CanonicalStreamChunk, index int, blockType string) (string, error) {
-	var delta map[string]string
+	var deltaType string
+	var content string
 	if blockType == "thinking" && chunk.DeltaReasoning != "" {
-		delta = map[string]string{
-			"type":     "thinking_delta",
-			"thinking": chunk.DeltaReasoning,
-		}
+		deltaType = "thinking_delta"
+		content = chunk.DeltaReasoning
 	} else if blockType == "text" && chunk.DeltaContent != "" {
-		delta = map[string]string{
-			"type": "text_delta",
-			"text": chunk.DeltaContent,
-		}
+		deltaType = "text_delta"
+		content = chunk.DeltaContent
 	} else {
 		return "", nil
 	}
 
-	deltaPayload := map[string]interface{}{
-		"type":  "content_block_delta",
-		"index": index,
-		"delta": delta,
-	}
-	data, err := json.Marshal(deltaPayload)
+	escaped, err := json.Marshal(content)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("event: content_block_delta\ndata: %s\n\n", string(data)), nil
+
+	var sb strings.Builder
+	sb.Grow(64 + len(escaped))
+	sb.WriteString("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":")
+	sb.WriteString(strconv.Itoa(index))
+	sb.WriteString(",\"delta\":{\"type\":\"")
+	sb.WriteString(deltaType)
+	if deltaType == "thinking_delta" {
+		sb.WriteString("\",\"thinking\":")
+	} else {
+		sb.WriteString("\",\"text\":")
+	}
+	sb.Write(escaped)
+	sb.WriteString("}}\n\n")
+
+	return sb.String(), nil
 }
 
 // DecodeStreamChunk decodes Anthropic SSE stream event to CanonicalStreamChunk
@@ -666,4 +759,28 @@ func DecodeStreamChunk(eventName string, eventData []byte, model string) (*canon
 	}
 
 	return nil, nil
+}
+
+// parseAnthropicImageSource extracts media_type and base64 data from a data: URI.
+func parseAnthropicImageSource(rawURL string) *AnthropicSource {
+	if !strings.HasPrefix(rawURL, "data:") {
+		return nil
+	}
+	parts := strings.SplitN(rawURL[5:], ",", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+	meta := parts[0]
+	data := parts[1]
+	mediaType := "image/jpeg"
+	if strings.Contains(meta, ";") {
+		mediaType = strings.Split(meta, ";")[0]
+	} else if meta != "" {
+		mediaType = meta
+	}
+	return &AnthropicSource{
+		Type:      "base64",
+		MediaType: mediaType,
+		Data:      data,
+	}
 }

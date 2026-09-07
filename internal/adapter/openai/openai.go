@@ -58,18 +58,83 @@ type OpenAIFunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
-// OpenAIMessage.Content is a *string because OpenAI serializes assistant
-// tool-call messages with content:null (and content can legitimately be null in
-// tool results). A nil pointer marshals to null; a set pointer to its value.
+// OpenAIMsgContent supports:
+// 1. Plain string ("content": "Hello")
+// 2. Array of content blocks ("content": [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {...}}])
+// 3. Null ("content": null) for assistant tool calls.
+type OpenAIMsgContent struct {
+	String *string
+	Parts  []OpenAIContentPart
+}
+
+type OpenAIContentPart struct {
+	Type     string          `json:"type"`
+	Text     string          `json:"text,omitempty"`
+	ImageURL *OpenAIImageURL `json:"image_url,omitempty"`
+}
+
+type OpenAIImageURL struct {
+	URL    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
+}
+
+func (c *OpenAIMsgContent) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		c.String = nil
+		c.Parts = nil
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		c.String = &str
+		c.Parts = nil
+		return nil
+	}
+	var parts []OpenAIContentPart
+	if err := json.Unmarshal(data, &parts); err == nil {
+		c.String = nil
+		c.Parts = parts
+		return nil
+	}
+	return fmt.Errorf("openai content must be a string or array of content parts")
+}
+
+func (c OpenAIMsgContent) MarshalJSON() ([]byte, error) {
+	if c.Parts != nil {
+		return json.Marshal(c.Parts)
+	}
+	if c.String != nil {
+		return json.Marshal(c.String)
+	}
+	return []byte("null"), nil
+}
+
+func (c OpenAIMsgContent) TextValue() string {
+	if c.String != nil {
+		return *c.String
+	}
+	var sb strings.Builder
+	for _, p := range c.Parts {
+		if p.Type == "text" && p.Text != "" {
+			if sb.Len() > 0 {
+				sb.WriteString(" ")
+			}
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String()
+}
+
 type OpenAIMessage struct {
 	Role             string           `json:"role"`
-	Content          *string          `json:"content"`
+	Content          OpenAIMsgContent `json:"content"`
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
 	ToolCalls        []OpenAIToolCall `json:"tool_calls,omitempty"`
+	Images           []string         `json:"images,omitempty"` // Ollama / Go vision compatibility
 }
 
-// strPtr / strVal bridge the *string Content field to plain strings.
+// strPtr / strVal bridge plain strings to *string pointers.
 func strPtr(s string) *string { return &s }
 
 func strVal(p *string) string {
@@ -168,13 +233,38 @@ func DecodeInboundRequest(body []byte) (*canonical.CanonicalRequest, error) {
 
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
-			canReq.SystemPrompt = strVal(msg.Content)
+			canReq.SystemPrompt = msg.Content.TextValue()
 			continue
 		}
 		cm := canonical.ChatMessage{
 			Role:       msg.Role,
-			Content:    strVal(msg.Content),
+			Content:    msg.Content.TextValue(),
 			ToolCallID: msg.ToolCallID,
+		}
+		for _, p := range msg.Content.Parts {
+			cp := canonical.ContentPart{
+				Type: p.Type,
+				Text: p.Text,
+			}
+			if p.ImageURL != nil {
+				cp.ImageURL = &canonical.ImageURL{
+					URL:    p.ImageURL.URL,
+					Detail: p.ImageURL.Detail,
+				}
+			}
+			cm.ContentParts = append(cm.ContentParts, cp)
+		}
+		for _, img := range msg.Images {
+			url := img
+			if !strings.HasPrefix(url, "data:") && !strings.HasPrefix(url, "http") {
+				url = "data:image/jpeg;base64," + img
+			}
+			cm.ContentParts = append(cm.ContentParts, canonical.ContentPart{
+				Type: "image_url",
+				ImageURL: &canonical.ImageURL{
+					URL: url,
+				},
+			})
 		}
 		for _, tc := range msg.ToolCalls {
 			cm.ToolCalls = append(cm.ToolCalls, canonical.ToolCall{
@@ -256,11 +346,38 @@ func encodeOpenAIToolChoice(tc *canonical.ToolChoice) json.RawMessage {
 	return nil
 }
 
+// clampMaxTokens ensures requested max_tokens does not exceed provider limits
+func clampMaxTokens(model string, maxTokens int) int {
+	if maxTokens <= 0 {
+		return maxTokens
+	}
+	m := strings.ToLower(model)
+	if strings.Contains(m, "o1") || strings.Contains(m, "o3") {
+		if maxTokens > 100000 {
+			return 100000
+		}
+		return maxTokens
+	}
+	if strings.Contains(m, "gpt-4o") {
+		if maxTokens > 16384 {
+			return 16384
+		}
+		return maxTokens
+	}
+	if strings.Contains(m, "gpt-4") || strings.Contains(m, "gpt-3.5") {
+		if maxTokens > 4096 {
+			return 4096
+		}
+		return maxTokens
+	}
+	return maxTokens
+}
+
 // EncodeCanonicalRequest converts CanonicalRequest to OpenAI Request payload
 func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) {
 	req := OpenAIRequest{
 		Model:           canReq.Model,
-		MaxTokens:       canReq.MaxTokens,
+		MaxTokens:       clampMaxTokens(canReq.Model, canReq.MaxTokens),
 		Temperature:     canReq.Temperature,
 		TopP:            canReq.TopP,
 		Stream:          canReq.Stream,
@@ -288,7 +405,7 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 	if canReq.SystemPrompt != "" {
 		req.Messages = append(req.Messages, OpenAIMessage{
 			Role:    "system",
-			Content: strPtr(canReq.SystemPrompt),
+			Content: OpenAIMsgContent{String: strPtr(canReq.SystemPrompt)},
 		})
 	}
 
@@ -297,10 +414,24 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 			Role:       msg.Role,
 			ToolCallID: msg.ToolCallID,
 		}
-		// Assistant tool-call messages have content:null on the wire; set the
-		// pointer only when there is actual text to emit.
-		if msg.Content != "" || len(msg.ToolCalls) == 0 {
-			om.Content = strPtr(msg.Content)
+		if len(msg.ContentParts) > 0 {
+			var parts []OpenAIContentPart
+			for _, cp := range msg.ContentParts {
+				part := OpenAIContentPart{
+					Type: cp.Type,
+					Text: cp.Text,
+				}
+				if cp.ImageURL != nil {
+					part.ImageURL = &OpenAIImageURL{
+						URL:    cp.ImageURL.URL,
+						Detail: cp.ImageURL.Detail,
+					}
+				}
+				parts = append(parts, part)
+			}
+			om.Content = OpenAIMsgContent{Parts: parts}
+		} else if msg.Content != "" || len(msg.ToolCalls) == 0 {
+			om.Content = OpenAIMsgContent{String: strPtr(msg.Content)}
 		}
 		for _, tc := range msg.ToolCalls {
 			om.ToolCalls = append(om.ToolCalls, OpenAIToolCall{
@@ -342,7 +473,7 @@ func DecodeUpstreamResponse(body []byte) (*canonical.CanonicalResponse, error) {
 
 	if len(resp.Choices) > 0 {
 		canResp.Role = resp.Choices[0].Message.Role
-		canResp.Content = strVal(resp.Choices[0].Message.Content)
+		canResp.Content = resp.Choices[0].Message.Content.TextValue()
 		canResp.ReasoningContent = resp.Choices[0].Message.ReasoningContent
 		canResp.FinishReason = resp.Choices[0].FinishReason
 		for _, tc := range resp.Choices[0].Message.ToolCalls {
@@ -366,7 +497,7 @@ func FormatCanonicalToOpenAIResponse(canResp *canonical.CanonicalResponse) ([]by
 	// Tool-call-only assistant messages use content:null; otherwise carry the
 	// text (even when empty).
 	if canResp.Content != "" || len(canResp.ToolCalls) == 0 {
-		msg.Content = strPtr(canResp.Content)
+		msg.Content = OpenAIMsgContent{String: strPtr(canResp.Content)}
 	}
 	for _, tc := range canResp.ToolCalls {
 		msg.ToolCalls = append(msg.ToolCalls, OpenAIToolCall{
@@ -480,7 +611,7 @@ func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, 
 		return "", err
 	}
 
-	return fmt.Sprintf("data: %s\n\n", string(data)), nil
+	return "data: " + string(data) + "\n\n", nil
 }
 
 // FormatOpenAIToolCallSSE renders reconstructed assistant tool calls as two
