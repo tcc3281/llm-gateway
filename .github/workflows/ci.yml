@@ -6,11 +6,15 @@ on:
       - main
       - master
       - develop
+      - 'feat/**'
+      - 'fix/**'
   pull_request:
     branches:
       - main
       - master
       - develop
+      - 'feat/**'
+      - 'fix/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

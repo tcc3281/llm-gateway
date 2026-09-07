@@ -14,7 +14,7 @@ import (
 var (
 	emailRegex  = regexp.MustCompile(`(?i)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	cardRegex   = regexp.MustCompile(`\b(?:\d[ -]*?){13,19}\b`)
-	apiKeyRegex = regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9_\-]{16,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})`)
+	apiKeyRegex = regexp.MustCompile(`(?i)(sk-[a-zA-Z0-9_\-]{16,}|Bearer\s+[a-zA-Z0-9_\-\.]{19,}[a-zA-Z0-9_\-])`)
 	phoneRegex  = regexp.MustCompile(`(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}`)
 )
 
