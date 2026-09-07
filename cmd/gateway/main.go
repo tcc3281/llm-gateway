@@ -130,6 +130,7 @@ func main() {
 	adminMux.HandleFunc("POST /admin/models/discover", adminHandler.DiscoverModels)
 	adminMux.HandleFunc("DELETE /admin/models", adminHandler.DeleteModel)
 	adminMux.HandleFunc("GET /admin/logs", adminHandler.GetUsageLogs)
+	adminMux.HandleFunc("GET /admin/logs/{id}", adminHandler.GetUsageLogDetail)
 	adminMux.HandleFunc("GET /admin/system/info", adminHandler.GetSystemInfo)
 	adminMux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

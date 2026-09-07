@@ -4,6 +4,7 @@ import type {
   ModelPricing,
   ProviderKey,
   SystemInfo,
+  UsageLogDetail,
   UsageLogsPage,
   User,
 } from "./types";
@@ -164,6 +165,9 @@ export const api = {
     to?: string;
     interval?: string;
     user_id?: string;
+    key_id?: string;
+    provider?: string;
+    model?: string;
     limit?: number;
   }) =>
     request<DashboardStats>(
@@ -175,6 +179,7 @@ export const api = {
     from?: string;
     to?: string;
     user_id?: string;
+    key_id?: string;
     provider?: string;
     model?: string;
     status?: string;
@@ -185,6 +190,7 @@ export const api = {
     request<UsageLogsPage>(
       `/admin/logs${qs(params as Record<string, string | number | undefined>)}`,
     ),
+  getLog: (id: number | string) => request<UsageLogDetail>(`/admin/logs/${id}`),
 
   // System
   systemInfo: () => request<SystemInfo>("/admin/system/info"),

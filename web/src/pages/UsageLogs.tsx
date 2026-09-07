@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { UsageLogsPage, User } from "../api/types";
+import type { APIKey, UsageLog, UsageLogsPage, User } from "../api/types";
 import { fmtDate, fmtMoney, fmtNum, localToRFC3339 } from "../lib/format";
 import { StatusBadge } from "./Dashboard";
+import LogDetailDrawer from "../components/LogDetailDrawer";
 
 const PAGE_SIZE = 50;
 
@@ -24,6 +25,7 @@ interface Filters {
   provider: string;
   model: string;
   user_id: string;
+  key_id: string;
   status: string;
   inbound: string;
   from: string;
@@ -34,6 +36,7 @@ const empty: Filters = {
   provider: "",
   model: "",
   user_id: "",
+  key_id: "",
   status: "",
   inbound: "",
   from: "",
@@ -57,6 +60,8 @@ export default function UsageLogs() {
     offset: 0,
   });
   const [users, setUsers] = useState<User[]>([]);
+  const [keys, setKeys] = useState<APIKey[]>([]);
+  const [selectedLog, setSelectedLog] = useState<UsageLog | null>(null);
   const [providerOptions, setProviderOptions] = useState<string[]>([
     "openai",
     "anthropic",
@@ -74,6 +79,7 @@ export default function UsageLogs() {
           from: localToRFC3339(f.from) || undefined,
           to: localToRFC3339(f.to) || undefined,
           user_id: f.user_id || undefined,
+          key_id: f.key_id || undefined,
           provider: f.provider || undefined,
           model: f.model || undefined,
           status: f.status || undefined,
@@ -110,6 +116,11 @@ export default function UsageLogs() {
   useEffect(() => {
     api.listUsers().then(setUsers).catch(() => {});
   }, []);
+
+  // Load API keys for the selected user (or all keys if no user selected)
+  useEffect(() => {
+    api.listKeys(filters.user_id || undefined).then(setKeys).catch(() => {});
+  }, [filters.user_id]);
 
   // Include custom compatible providers in the filter (logs store their name).
   useEffect(() => {
@@ -182,6 +193,7 @@ export default function UsageLogs() {
     filters.provider !== "" ||
     modelInput !== "" ||
     filters.user_id !== "" ||
+    filters.key_id !== "" ||
     filters.status !== "" ||
     filters.inbound !== "" ||
     preset !== "24h";
@@ -270,16 +282,42 @@ export default function UsageLogs() {
         </select>
         <select
           className="select"
-          style={{ width: 110 }}
+          style={{ width: 160 }}
+          value={filters.key_id}
+          onChange={(e) => set("key_id")(e.target.value)}
+        >
+          <option value="">Any API key</option>
+          {keys.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.name} ({k.key_prefix}…)
+            </option>
+          ))}
+        </select>
+        <select
+          className="select"
+          style={{ width: 140 }}
           value={filters.status}
           onChange={(e) => set("status")(e.target.value)}
         >
           <option value="">Any status</option>
-          <option value="2xx">2xx</option>
-          <option value="3xx">3xx</option>
-          <option value="4xx">4xx</option>
-          <option value="5xx">5xx</option>
-          <option value="429">429</option>
+          <optgroup label="Classes">
+            <option value="2xx">2xx (Success)</option>
+            <option value="3xx">3xx (Redirect)</option>
+            <option value="4xx">4xx (Client Error)</option>
+            <option value="5xx">5xx (Server Error)</option>
+          </optgroup>
+          <optgroup label="Specific Codes">
+            <option value="200">200 OK</option>
+            <option value="400">400 Bad Request</option>
+            <option value="401">401 Unauthorized</option>
+            <option value="403">403 Forbidden</option>
+            <option value="404">404 Not Found</option>
+            <option value="429">429 Rate Limited</option>
+            <option value="500">500 Server Error</option>
+            <option value="502">502 Bad Gateway</option>
+            <option value="503">503 Unavailable</option>
+            <option value="504">504 Gateway Timeout</option>
+          </optgroup>
         </select>
         <select
           className="select"
@@ -361,11 +399,16 @@ export default function UsageLogs() {
               <th className="num">Latency</th>
               <th className="num">Cost</th>
               <th>Error</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {data.data.map((l) => (
-              <tr key={l.id}>
+              <tr
+                key={l.id}
+                style={{ cursor: "pointer" }}
+                onClick={() => setSelectedLog(l)}
+              >
                 <td className="mono" style={{ fontSize: 11 }}>
                   {fmtDate(l.created_at)}
                 </td>
@@ -387,11 +430,30 @@ export default function UsageLogs() {
                 <td className="truncate muted" style={{ maxWidth: 180 }}>
                   {l.error_message}
                 </td>
+                <td style={{ textAlign: "right", paddingRight: 6 }}>
+                  <button
+                    className="btn btn--ghost btn--sm"
+                    style={{
+                      padding: "2px 8px",
+                      height: "auto",
+                      minHeight: "auto",
+                      fontSize: 11,
+                      fontFamily: "var(--font-mono)",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedLog(l);
+                    }}
+                    title="Inspect full log details"
+                  >
+                    Inspect
+                  </button>
+                </td>
               </tr>
             ))}
             {!data.data.length && (
               <tr>
-                <td colSpan={11}>
+                <td colSpan={12}>
                   <div className="empty">No logs match the current filters</div>
                 </td>
               </tr>
@@ -421,6 +483,13 @@ export default function UsageLogs() {
           </button>
         </div>
       )}
+
+      {/* Slide-over Inspection Drawer */}
+      <LogDetailDrawer
+        logId={selectedLog?.id ?? null}
+        initialLog={selectedLog}
+        onClose={() => setSelectedLog(null)}
+      />
     </div>
   );
 }

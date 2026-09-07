@@ -513,7 +513,38 @@ func (p *PostgresDB) GetUsageStats(userID *uuid.UUID, interval string, from, to 
 // Dashboard analytics queries (backing GET /admin/analytics/dashboard)
 // ------------------------------------------------------------
 
-func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (model.UsageTotal, error) {
+func buildDashboardWhere(f model.DashboardFilter, from, to time.Time, tablePrefix string) (string, []interface{}) {
+	var prefix string
+	if tablePrefix != "" {
+		prefix = tablePrefix + "."
+	}
+	clauses := []string{
+		fmt.Sprintf("%screated_at >= $1", prefix),
+		fmt.Sprintf("%screated_at <= $2", prefix),
+	}
+	args := []interface{}{from, to}
+
+	if f.UserID != nil {
+		args = append(args, *f.UserID)
+		clauses = append(clauses, fmt.Sprintf("%suser_id = $%d", prefix, len(args)))
+	}
+	if f.KeyID != nil {
+		args = append(args, *f.KeyID)
+		clauses = append(clauses, fmt.Sprintf("%skey_id = $%d", prefix, len(args)))
+	}
+	if f.Provider != "" {
+		args = append(args, f.Provider)
+		clauses = append(clauses, fmt.Sprintf("%sprovider = $%d", prefix, len(args)))
+	}
+	if f.Model != "" {
+		args = append(args, f.Model)
+		clauses = append(clauses, fmt.Sprintf("%smodel = $%d", prefix, len(args)))
+	}
+	return strings.Join(clauses, " AND "), args
+}
+
+func (p *PostgresDB) GetUsageTotals(f model.DashboardFilter, from, to time.Time) (model.UsageTotal, error) {
+	where, args := buildDashboardWhere(f, from, to, "")
 	query := `
 		SELECT
 			COUNT(*) AS total_requests,
@@ -531,13 +562,7 @@ func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (mode
 			COALESCE(ROUND(CAST(percentile_cont(0.99) WITHIN GROUP (ORDER BY total_latency_ms) AS numeric), 2), 0) AS p99_latency_ms,
 			COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2`
-
-	args := []interface{}{from, to}
-	if userID != nil {
-		query += " AND user_id = $3"
-		args = append(args, *userID)
-	}
+		WHERE ` + where
 
 	var t model.UsageTotal
 	if err := p.QueryRow(query, args...).Scan(
@@ -556,16 +581,13 @@ func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (mode
 	return t, nil
 }
 
-func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from, to time.Time) ([]model.UsageSeriesPoint, error) {
+func (p *PostgresDB) GetUsageTimeSeries(f model.DashboardFilter, interval string, from, to time.Time) ([]model.UsageSeriesPoint, error) {
 	truncUnit := "hour"
 	if interval == "day" {
 		truncUnit = "day"
 	}
 
-	var userFilter string
-	if userID != nil {
-		userFilter = "AND user_id = $3"
-	}
+	where, args := buildDashboardWhere(f, from, to, "")
 
 	query := fmt.Sprintf(`
 		WITH time_series AS (
@@ -588,7 +610,7 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 				COALESCE(ROUND(AVG(ttft_ms) FILTER (WHERE ttft_ms > 0), 2), 0) AS avg_ttft_ms,
 				COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
 			FROM usage_logs
-			WHERE created_at >= $1 AND created_at <= $2 %[2]s
+			WHERE %[2]s
 			GROUP BY bucket
 		)
 		SELECT
@@ -604,12 +626,7 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 			COALESCE(logged_data.avg_latency_ms, 0) AS avg_latency_ms
 		FROM time_series
 		LEFT JOIN logged_data ON time_series.time_bucket = logged_data.bucket
-		ORDER BY time_series.time_bucket ASC`, truncUnit, userFilter)
-
-	args := []interface{}{from, to}
-	if userID != nil {
-		args = append(args, *userID)
-	}
+		ORDER BY time_series.time_bucket ASC`, truncUnit, where)
 
 	rows, err := p.Query(query, args...)
 	if err != nil {
@@ -628,7 +645,8 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 	return series, nil
 }
 
-func (p *PostgresDB) GetUsageByModel(userID *uuid.UUID, from, to time.Time) ([]model.UsageByModel, error) {
+func (p *PostgresDB) GetUsageByModel(f model.DashboardFilter, from, to time.Time) ([]model.UsageByModel, error) {
+	where, args := buildDashboardWhere(f, from, to, "")
 	query := `
 		SELECT
 			provider, model,
@@ -641,14 +659,8 @@ func (p *PostgresDB) GetUsageByModel(userID *uuid.UUID, from, to time.Time) ([]m
 			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms,
 			COALESCE(ROUND(AVG(ttft_ms) FILTER (WHERE ttft_ms > 0), 2), 0) AS avg_ttft_ms
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2`
-
-	args := []interface{}{from, to}
-	if userID != nil {
-		query += " AND user_id = $3"
-		args = append(args, *userID)
-	}
-	query += " GROUP BY provider, model ORDER BY total_cost DESC"
+		WHERE ` + where + `
+		GROUP BY provider, model ORDER BY total_cost DESC`
 
 	rows, err := p.Query(query, args...)
 	if err != nil {
@@ -667,7 +679,8 @@ func (p *PostgresDB) GetUsageByModel(userID *uuid.UUID, from, to time.Time) ([]m
 	return models, nil
 }
 
-func (p *PostgresDB) GetUsageByUser(from, to time.Time) ([]model.UsageByUser, error) {
+func (p *PostgresDB) GetUsageByUser(f model.DashboardFilter, from, to time.Time) ([]model.UsageByUser, error) {
+	where, args := buildDashboardWhere(f, from, to, "l")
 	query := `
 		SELECT
 			u.id::text AS user_id,
@@ -678,11 +691,11 @@ func (p *PostgresDB) GetUsageByUser(from, to time.Time) ([]model.UsageByUser, er
 			COALESCE(SUM(l.completion_tokens), 0) AS sum_completion_tokens
 		FROM usage_logs l
 		JOIN users u ON u.id = l.user_id
-		WHERE l.created_at >= $1 AND l.created_at <= $2
+		WHERE ` + where + `
 		GROUP BY u.id, u.email
 		ORDER BY total_cost DESC`
 
-	rows, err := p.Query(query, from, to)
+	rows, err := p.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -699,20 +712,23 @@ func (p *PostgresDB) GetUsageByUser(from, to time.Time) ([]model.UsageByUser, er
 	return users, nil
 }
 
-func (p *PostgresDB) GetRecentUsageLogs(limit int, from, to time.Time) ([]model.UsageRecent, error) {
+func (p *PostgresDB) GetRecentUsageLogs(f model.DashboardFilter, limit int, from, to time.Time) ([]model.UsageRecent, error) {
+	where, args := buildDashboardWhere(f, from, to, "")
 	query := `
 		SELECT
-			created_at, user_id, provider, model, status_code,
+			id, created_at, user_id, provider, model, status_code,
 			COALESCE(error_message, '') AS error_message,
 			COALESCE(cost, 0) AS cost,
 			COALESCE(ttft_ms, 0) AS ttft_ms,
 			COALESCE(total_latency_ms, 0) AS total_latency_ms
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at <= $2
+		WHERE ` + where + `
 		ORDER BY created_at DESC
-		LIMIT $3`
+		LIMIT $` + strconv.Itoa(len(args)+1)
 
-	rows, err := p.Query(query, from, to, limit)
+	args = append(args, limit)
+
+	rows, err := p.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -721,12 +737,39 @@ func (p *PostgresDB) GetRecentUsageLogs(limit int, from, to time.Time) ([]model.
 	var recents []model.UsageRecent
 	for rows.Next() {
 		var r model.UsageRecent
-		if err := rows.Scan(&r.CreatedAt, &r.UserID, &r.Provider, &r.Model, &r.StatusCode, &r.ErrorMessage, &r.Cost, &r.TTFTMs, &r.TotalLatencyMs); err != nil {
+		if err := rows.Scan(&r.ID, &r.CreatedAt, &r.UserID, &r.Provider, &r.Model, &r.StatusCode, &r.ErrorMessage, &r.Cost, &r.TTFTMs, &r.TotalLatencyMs); err != nil {
 			return nil, err
 		}
 		recents = append(recents, r)
 	}
 	return recents, nil
+}
+
+func (p *PostgresDB) GetStatusCodeBreakdown(f model.DashboardFilter, from, to time.Time) (map[int]int64, error) {
+	where, args := buildDashboardWhere(f, from, to, "")
+	query := `
+		SELECT status_code, COUNT(*) AS cnt
+		FROM usage_logs
+		WHERE ` + where + `
+		GROUP BY status_code
+		ORDER BY cnt DESC`
+
+	rows, err := p.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	breakdown := make(map[int]int64)
+	for rows.Next() {
+		var code int
+		var count int64
+		if err := rows.Scan(&code, &count); err != nil {
+			return nil, err
+		}
+		breakdown[code] = count
+	}
+	return breakdown, nil
 }
 
 // ------------------------------------------------------------
@@ -807,6 +850,9 @@ func buildUsageLogWhere(f model.UsageLogFilter) (string, []interface{}) {
 	if f.UserID != nil {
 		add("user_id", *f.UserID)
 	}
+	if f.KeyID != nil {
+		add("key_id", *f.KeyID)
+	}
 	if f.Provider != "" {
 		add("provider", f.Provider)
 	}
@@ -826,6 +872,37 @@ func buildUsageLogWhere(f model.UsageLogFilter) (string, []interface{}) {
 	}
 
 	return strings.Join(clauses, " AND "), args
+}
+
+// GetUsageLogByID returns a single usage log record enriched with user email
+// and API key name for in-depth telemetry inspection.
+func (p *PostgresDB) GetUsageLogByID(id int64) (*model.UsageLogDetail, error) {
+	query := `
+		SELECT l.id, l.created_at, l.user_id, l.key_id, l.inbound_format, l.provider, l.model,
+		       l.prompt_tokens, l.completion_tokens, l.total_tokens,
+		       l.cached_input_tokens, l.reasoning_tokens,
+		       l.prompt_price_used, l.completion_price_used, l.pricing_source, l.pricing_fallback,
+		       l.cost, l.ttft_ms, l.total_latency_ms, l.status_code,
+		       COALESCE(l.error_message, '') AS error_message,
+		       COALESCE(u.email, '') AS user_email,
+		       COALESCE(k.name, '') AS key_name
+		FROM usage_logs l
+		LEFT JOIN users u ON u.id = l.user_id
+		LEFT JOIN api_keys k ON k.id = l.key_id
+		WHERE l.id = $1`
+
+	var d model.UsageLogDetail
+	if err := p.QueryRow(query, id).Scan(
+		&d.ID, &d.CreatedAt, &d.UserID, &d.KeyID, &d.InboundFormat, &d.Provider, &d.Model,
+		&d.PromptTokens, &d.CompletionTokens, &d.TotalTokens,
+		&d.CachedInputTokens, &d.ReasoningTokens,
+		&d.PromptPriceUsed, &d.CompletionPriceUsed, &d.PricingSource, &d.PricingFallback,
+		&d.Cost, &d.TTFTMs, &d.TotalLatencyMs, &d.StatusCode,
+		&d.ErrorMessage, &d.UserEmail, &d.KeyName,
+	); err != nil {
+		return nil, err
+	}
+	return &d, nil
 }
 
 // parseStatusClass interprets a status filter. "200" → (200, 201, true);

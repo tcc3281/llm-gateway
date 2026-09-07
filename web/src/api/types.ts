@@ -99,6 +99,7 @@ export interface UsageByUser {
 }
 
 export interface UsageRecent {
+  id?: number;
   created_at: string;
   user_id: string;
   provider: string;
@@ -119,6 +120,7 @@ export interface DashboardStats {
   by_model: UsageByModel[];
   by_user: UsageByUser[];
   recent: UsageRecent[];
+  status_breakdown?: Record<number, number>;
 }
 
 export interface UsageLog {
@@ -143,6 +145,11 @@ export interface UsageLog {
   total_latency_ms: number;
   status_code: number;
   error_message?: string;
+}
+
+export interface UsageLogDetail extends UsageLog {
+  user_email?: string;
+  key_name?: string;
 }
 
 export interface UsageLogsPage {
