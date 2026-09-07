@@ -629,7 +629,6 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		}
 		if data, err := json.Marshal(map[string]interface{}{"type": "message_start", "message": msg}); err == nil {
 			params.ResponseWriter.Write([]byte("event: message_start\ndata: " + string(data) + "\n\n"))
-			flusher.Flush()
 		}
 	}
 
@@ -655,7 +654,6 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 			params.ResponseWriter.Write([]byte("event: content_block_start\ndata: " + string(data) + "\n\n"))
 		}
 		anthroOpenBlock = blockType
-		flusher.Flush()
 	}
 
 	// Tool-call fragments accumulate over the stream (OpenAI delta.tool_calls,
@@ -700,13 +698,63 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 		anthroOpenBlock = ""
 	}
 
-	for {
-		event, err := sseReader.ReadEvent()
-		if err == io.EOF {
-			break
+	// The upstream body read (sseReader.ReadEvent) blocks until a full SSE event
+	// arrives; reasoning models can sit silent for tens of seconds, so a plain
+	// blocking loop would leave the downstream connection idle long enough for a
+	// proxy/load-balancer to reap it mid-thought. Drive the read from a goroutine
+	// so the relay loop stays selectable: it emits flushed keep-alive comment
+	// lines during those gaps and aborts promptly when the client disconnects
+	// instead of draining (and paying for) the rest of the upstream stream. The
+	// channel buffer caps the read-ahead at one event.
+	eventC := make(chan *sse.Event, 1)
+	readDoneC := make(chan error, 1)
+	go func() {
+		for {
+			ev, rErr := sseReader.ReadEvent()
+			if rErr != nil {
+				readDoneC <- rErr
+				return
+			}
+			select {
+			case eventC <- ev:
+			case <-ctx.Done():
+				return
+			}
 		}
-		if err != nil {
-			break
+	}()
+
+	// Comment frames are ignored by SSE clients but reset idle timers on
+	// intermediaries. 15s stays well under the common 60s LB/proxy idle timeout
+	// (nginx, AWS ALB), so an upstream that is thinking — not dead — is not
+	// mistaken for a hung connection.
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
+
+	// streamErr records an abnormal end (mid-stream read failure or client
+	// cancellation); the terminal block below then emits an explicit error marker
+	// instead of a clean [DONE]/message_stop.
+	var streamErr error
+
+relayLoop:
+	for {
+		var event *sse.Event
+		var err error
+		select {
+		case event = <-eventC:
+			// a full SSE event from the upstream to relay
+		case err = <-readDoneC:
+			if err == io.EOF {
+				break relayLoop
+			}
+			streamErr = err
+			break relayLoop
+		case <-keepAlive.C:
+			params.ResponseWriter.Write([]byte(": keep-alive\n\n"))
+			flusher.Flush()
+			continue relayLoop
+		case <-ctx.Done():
+			streamErr = ctx.Err()
+			break relayLoop
 		}
 
 		if isFirstChunk {
@@ -872,8 +920,43 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	}
 	hasToolCalls := len(toolCalls) > 0
 
-	// Final stream completion signal
-	if params.InboundFormat == "openai" {
+	// Final stream completion signal. A mid-stream failure must not be masked as
+	// a clean end: emit an explicit error event instead of [DONE]/message_stop so
+	// clients surface the interruption rather than treating the response as
+	// complete (and, for Anthropic, so they do not hang waiting for message_stop).
+	if streamErr != nil {
+		if params.InboundFormat == "openai" {
+			// OpenAI SSE has no spec'd terminal error event; the de-facto
+			// convention (also used by OpenAI itself) is a final data frame
+			// carrying an "error" object, which official SDKs translate into a
+			// raised error. No [DONE] is sent, so truncation is unambiguous.
+			errObj, _ := json.Marshal(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": truncateStreamError(streamErr.Error()),
+					"type":    "upstream_stream_error",
+				},
+			})
+			params.ResponseWriter.Write([]byte("data: " + string(errObj) + "\n\n"))
+		} else {
+			// Anthropic streams a first-class error event. Close any open content
+			// block first so the lifecycle stays balanced for strict clients.
+			if anthroOpenBlock != "" {
+				if data, err := json.Marshal(map[string]interface{}{"type": "content_block_stop", "index": anthroBlockIndex}); err == nil {
+					params.ResponseWriter.Write([]byte("event: content_block_stop\ndata: " + string(data) + "\n\n"))
+				}
+				anthroOpenBlock = ""
+			}
+			errObj, _ := json.Marshal(map[string]interface{}{
+				"type": "error",
+				"error": map[string]interface{}{
+					"type":    "api_error",
+					"message": truncateStreamError(streamErr.Error()),
+				},
+			})
+			params.ResponseWriter.Write([]byte("event: error\ndata: " + string(errObj) + "\n\n"))
+		}
+		flusher.Flush()
+	} else if params.InboundFormat == "openai" {
 		if hasToolCalls {
 			// Emit the reconstructed tool calls, then the standard [DONE] marker.
 			if sse, fErr := openai.FormatOpenAIToolCallSSE(toolCalls, canReq.Model, anthroMsgID, time.Now().Unix()); fErr == nil && sse != "" {
@@ -957,7 +1040,14 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	}
 
 	costResult := g.costCalc.CalculateCost(target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens)
-	g.recordTelemetry(params, target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens, costResult, ttftMs, http.StatusOK, "", startTime)
+
+	// Record mid-stream truncation in the usage log so it is distinguishable
+	// from a healthy completion.
+	errMsg := ""
+	if streamErr != nil {
+		errMsg = streamErr.Error()
+	}
+	g.recordTelemetry(params, target.Name, canReq.Model, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens, totalReasoningTokens, costResult, ttftMs, http.StatusOK, errMsg, startTime)
 
 	span := trace.SpanFromContext(ctx)
 	if span != nil && span.IsRecording() {
@@ -985,6 +1075,16 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
 
 	return nil
+}
+
+// truncateStreamError bounds an upstream error string before it is echoed into a
+// terminal SSE error frame, so a huge raw error body cannot bloat the frame.
+func truncateStreamError(s string) string {
+	const maxLen = 400
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
 }
 
 func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName string, promptTokens, completionTokens, cachedInputTokens, reasoningTokens int, costResult analytics.CostResult, ttftMs int64, statusCode int, errMsg string, startTime time.Time) {

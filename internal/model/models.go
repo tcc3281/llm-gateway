@@ -115,6 +115,11 @@ type UsageTotal struct {
 	TotalCost           float64 `json:"cost_usd"`
 	SumPromptTokens     int64   `json:"prompt_tokens"`
 	SumCompletionTokens int64   `json:"completion_tokens"`
+	SumCachedTokens     int64   `json:"cached_tokens"`
+	SumReasoningTokens  int64   `json:"reasoning_tokens"`
+	CacheSavingsUSD     float64 `json:"cache_savings_usd"`
+	CacheHitRate        float64 `json:"cache_hit_rate"`
+	StreamingRequests   int64   `json:"streaming_requests"`
 	AvgTTFTMs           float64 `json:"avg_ttft_ms"`
 	AvgLatencyMs        float64 `json:"avg_latency_ms"`
 	P50LatencyMs        float64 `json:"p50_latency_ms"`
@@ -130,6 +135,8 @@ type UsageSeriesPoint struct {
 	TotalCost           float64 `json:"cost_usd"`
 	SumPromptTokens     int64   `json:"prompt_tokens"`
 	SumCompletionTokens int64   `json:"completion_tokens"`
+	SumCachedTokens     int64   `json:"cached_tokens"`
+	SumReasoningTokens  int64   `json:"reasoning_tokens"`
 	ErrorCount          int64   `json:"errors"`
 	AvgTTFTMs           float64 `json:"avg_ttft_ms"`
 	AvgLatencyMs        float64 `json:"avg_latency_ms"`
@@ -142,7 +149,10 @@ type UsageByModel struct {
 	TotalCost           float64 `json:"cost_usd"`
 	SumPromptTokens     int64   `json:"prompt_tokens"`
 	SumCompletionTokens int64   `json:"completion_tokens"`
+	SumCachedTokens     int64   `json:"cached_tokens"`
+	SumReasoningTokens  int64   `json:"reasoning_tokens"`
 	AvgLatencyMs        float64 `json:"avg_latency_ms"`
+	AvgTTFTMs           float64 `json:"avg_ttft_ms"`
 }
 
 type UsageByUser struct {

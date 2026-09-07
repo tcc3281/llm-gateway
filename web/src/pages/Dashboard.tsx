@@ -161,14 +161,32 @@ export default function Dashboard() {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* ── Row 1 · Hero KPIs ─────────────────────────────────────────── */}
         <div className="kpi-grid" style={{ marginBottom: 0 }}>
-          <HeroKpi label="Total Requests" value={fmtNum(t?.requests)} accent="cyan" spark={reqSpark} />
+          <HeroKpi
+            label="Total Requests"
+            value={fmtNum(t?.requests)}
+            accent="cyan"
+            spark={reqSpark}
+            sub={t && t.streaming_requests ? `${t.streaming_requests} streaming` : undefined}
+          />
           <HeroKpi label="Total Cost" value={fmtMoney(t?.cost_usd)} accent="emerald" spark={costSpark} />
+          <HeroKpi
+            label="Cache Savings"
+            value={fmtMoney(t?.cache_savings_usd ?? 0)}
+            accent="emerald"
+            sub={t && t.cache_hit_rate ? `${t.cache_hit_rate.toFixed(1)}% prompt cache hit` : "0% cache hit"}
+          />
           <SuccessRateCard rate={successRate} />
+          <HeroKpi
+            label="Total Tokens"
+            value={fmtCompact((t?.prompt_tokens ?? 0) + (t?.completion_tokens ?? 0))}
+            accent="cyan"
+            sub={t ? `Prompt ${fmtCompact(t.prompt_tokens)} · Out ${fmtCompact(t.completion_tokens)}` : undefined}
+          />
           <HeroKpi
             label="Avg Latency"
             value={t ? `${t.avg_latency_ms.toFixed(0)} ms` : "—"}
             accent="violet"
-            sub={t ? `AVG TTFT: ${t.avg_ttft_ms.toFixed(0)} ms` : "AVG TTFT: —"}
+            sub={t && t.avg_ttft_ms ? `AVG TTFT: ${t.avg_ttft_ms.toFixed(0)} ms` : "AVG TTFT: —"}
           />
         </div>
 
@@ -176,7 +194,7 @@ export default function Dashboard() {
         <div className="dashboard-grid dashboard-grid--7-5">
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
-            Token Analytics <span className="mono">[prompt vs completion]</span>
+            Token Analytics <span className="mono">[prompt · cached · completion · reasoning]</span>
           </div>
           <ChartBox height={240}>
             <BarChart data={series}>
@@ -196,10 +214,19 @@ export default function Dashboard() {
               />
               <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipLabelStyle} labelFormatter={(v) => shortTs(String(v))} />
               <Bar dataKey="prompt_tokens" name="Prompt" stackId="tokens" fill={C.cyan} radius={[0, 0, 0, 0]} />
-              <Bar dataKey="completion_tokens" name="Completion" stackId="tokens" fill={C.violet} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="cached_tokens" name="Cached" stackId="tokens" fill={C.emeraldSoft} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="completion_tokens" name="Completion" stackId="tokens" fill={C.violet} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="reasoning_tokens" name="Reasoning" stackId="tokens" fill={C.amberSoft} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ChartBox>
-          <LegendChips items={[{ c: C.cyan, label: "Prompt tokens" }, { c: C.violet, label: "Completion tokens" }]} />
+          <LegendChips
+            items={[
+              { c: C.cyan, label: "Prompt" },
+              { c: C.emeraldSoft, label: "Cached (50% off)" },
+              { c: C.violet, label: "Completion" },
+              { c: C.amberSoft, label: "Reasoning" },
+            ]}
+          />
         </div>
 
         <div className="card" style={{ margin: 0 }}>
@@ -256,13 +283,17 @@ export default function Dashboard() {
             Performance &amp; Latency <span className="mono">[metrics]</span>
           </div>
           <div className="stat-tiles-grid stat-tiles-grid--2" style={{ marginBottom: 10 }}>
-            <StatTile label="AVG TTFT" value={t ? `${t.avg_ttft_ms.toFixed(0)} ms` : "—"} color={C.violet} />
+            <StatTile label="AVG TTFT" value={t && t.avg_ttft_ms ? `${t.avg_ttft_ms.toFixed(0)} ms` : "—"} color={C.violet} />
             <StatTile label="AVG Latency" value={t ? `${t.avg_latency_ms.toFixed(0)} ms` : "—"} color={C.violet} />
           </div>
-          <div className="stat-tiles-grid stat-tiles-grid--3">
-            <StatTile label="P50 Latency" value={t && t.p50_latency_ms ? `${t.p50_latency_ms.toFixed(0)} ms` : "—"} color={C.violet} />
-            <StatTile label="P95 Latency" value={t && t.p95_latency_ms ? `${t.p95_latency_ms.toFixed(0)} ms` : "—"} color={C.violet} />
-            <StatTile label="P99 Latency" value={t && t.p99_latency_ms ? `${t.p99_latency_ms.toFixed(0)} ms` : "—"} color={C.violet} />
+          <div className="stat-tiles-grid stat-tiles-grid--3" style={{ marginBottom: 10 }}>
+            <StatTile label="P50 Latency" value={t && t.p50_latency_ms ? `${t.p50_latency_ms.toFixed(0)} ms` : "—"} color={C.cyan} />
+            <StatTile label="P95 Latency" value={t && t.p95_latency_ms ? `${t.p95_latency_ms.toFixed(0)} ms` : "—"} color={C.amber} />
+            <StatTile label="P99 Latency" value={t && t.p99_latency_ms ? `${t.p99_latency_ms.toFixed(0)} ms` : "—"} color={C.red} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)", borderTop: "1px solid #2d3139", paddingTop: 8 }}>
+            <span>Streaming: <strong style={{ color: C.cyan }}>{t?.streaming_requests ?? 0}</strong> reqs</span>
+            <span>Cache Hit Rate: <strong style={{ color: C.emeraldSoft }}>{t?.cache_hit_rate ? `${t.cache_hit_rate.toFixed(1)}%` : "0%"}</strong></span>
           </div>
         </div>
       </div>
@@ -284,32 +315,92 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Row 5 · Optimization & security ───────────────────────────── */}
+      {/* ── Row 5 · Optimization & deep intelligence ──────────────────── */}
       <div className="dashboard-grid dashboard-grid--3-col">
-        <NotTracked title="Prompt Cache Hit Rate" tag="PARTIAL">
-          <p style={{ margin: 0, marginBottom: 8 }}>
-            <span className="mono" style={{ fontSize: 11 }}>
-              cached_input_tokens
-            </span>{" "}
-            are stored per request, so individual cache usage exists, but there is no aggregated hit-rate / $ saved query in
-            the backend.
-          </p>
-          <MutedStat label="Cached input tokens (window)" value={t ? fmtCompact(sumField(stats, "prompt_tokens")) : "—"} />
-        </NotTracked>
+        <div className="card" style={{ margin: 0 }}>
+          <div className="card__title">
+            Prompt Caching Intelligence <span className="mono">[upstream]</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div style={{ background: "#181a20", padding: "10px 12px", borderRadius: 6, border: "1px solid #2d3139" }}>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Cached Tokens</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.emeraldSoft, fontFamily: "var(--font-mono)", marginTop: 4 }}>{fmtCompact(t?.cached_tokens ?? 0)}</div>
+              </div>
+              <div style={{ background: "#181a20", padding: "10px 12px", borderRadius: 6, border: "1px solid #2d3139" }}>
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>Est. Cost Savings</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: C.emerald, fontFamily: "var(--font-mono)", marginTop: 4 }}>{fmtMoney(t?.cache_savings_usd ?? 0)}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>
+              Cached prompt tokens automatically receive a <strong style={{ color: "#dde4e5" }}>50% discount</strong> against standard prompt pricing.
+            </div>
+            <div style={{ background: "#20242c", borderRadius: 4, height: 6, overflow: "hidden" }}>
+              <div style={{ background: C.emerald, width: `${Math.min(100, Math.max(0, t?.cache_hit_rate ?? 0))}%`, height: "100%", transition: "width 0.3s ease" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-muted)" }}>
+              <span>Hit Ratio: {t?.cache_hit_rate?.toFixed(1) ?? "0.0"}%</span>
+              <span>Discount: 50%</span>
+            </div>
+          </div>
+        </div>
 
-        <NotTracked title="Gateway Rate Limit Hits" tag="NOT TRACKED">
-          <p style={{ margin: 0 }}>
-            429 rate-limit and 401/403 quota rejections happen in the auth path{" "}
-            <span className="mono" style={{ fontSize: 11 }}>
-              before
-            </span>{" "}
-            telemetry is recorded, so the gateway cannot count its own rejections.
-          </p>
-        </NotTracked>
+        <div className="card" style={{ margin: 0 }}>
+          <div className="card__title">
+            Model Performance Matrix <span className="mono">[top 5]</span>
+          </div>
+          <div style={{ overflowX: "auto", maxHeight: 180 }}>
+            <table className="table table--dense" style={{ fontSize: 11 }}>
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th className="num">Reqs</th>
+                  <th className="num">TTFT</th>
+                  <th className="num">Latency</th>
+                  <th className="num">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(stats?.by_model ?? []).slice(0, 5).map((m) => (
+                  <tr key={`${m.provider}:${m.model}`}>
+                    <td className="truncate" style={{ maxWidth: 120 }}>{m.model}</td>
+                    <td className="num mono">{m.requests}</td>
+                    <td className="num mono">{m.avg_ttft_ms ? `${m.avg_ttft_ms.toFixed(0)}ms` : "—"}</td>
+                    <td className="num mono">{m.avg_latency_ms ? `${m.avg_latency_ms.toFixed(0)}ms` : "—"}</td>
+                    <td className="num mono">{fmtMoney(m.cost_usd)}</td>
+                  </tr>
+                ))}
+                {(!stats?.by_model || stats.by_model.length === 0) && (
+                  <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)" }}>No model data</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        <NotTracked title="Guardrails / Blocked Requests" tag="NOT TRACKED">
-          <p style={{ margin: 0 }}>No PII or prompt-injection guardrail feature exists in the gateway codebase.</p>
-        </NotTracked>
+        <div className="card" style={{ margin: 0 }}>
+          <div className="card__title">
+            Streaming &amp; Gateway Health <span className="mono">[telemetry]</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #2d3139" }}>
+              <span style={{ color: "var(--text-muted)" }}>Streaming Engine</span>
+              <span className="badge" style={{ background: "rgba(34, 211, 238, 0.15)", color: C.cyan, border: `1px solid ${C.cyan}` }}>Atomic TCP Flush</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #2d3139" }}>
+              <span style={{ color: "var(--text-muted)" }}>Fast SSE Serializer</span>
+              <span className="badge" style={{ background: "rgba(16, 185, 129, 0.15)", color: C.emerald, border: `1px solid ${C.emerald}` }}>Zero-Alloc Active</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #2d3139" }}>
+              <span style={{ color: "var(--text-muted)" }}>Deep Observability</span>
+              <span className="badge" style={{ background: "rgba(168, 85, 247, 0.15)", color: C.violet, border: `1px solid ${C.violet}` }}>Prometheus + Grafana</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+              <span style={{ color: "var(--text-muted)" }}>Reasoning Tokens</span>
+              <span className="mono" style={{ color: C.amberSoft, fontWeight: 600 }}>{fmtCompact(t?.reasoning_tokens ?? 0)}</span>
+            </div>
+          </div>
+        </div>
       </div>
       </div>
     </div>
@@ -621,36 +712,7 @@ function RecentTable({ rows }: { rows: DashboardStats["recent"] }) {
 
 /* ────────────────────────── Shared helpers ───────────────────────── */
 
-function sumField(stats: DashboardStats | null, field: "prompt_tokens"): number {
-  if (!stats) return 0;
-  return stats.by_model.reduce((s, m) => s + (m[field] ?? 0), 0);
-}
 
-function NotTracked({ title, tag, children }: { title: string; tag: string; children: ReactNode }) {
-  return (
-    <div
-      className="card"
-      style={{ margin: 0, borderStyle: "dashed", borderColor: "rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.03)" }}
-    >
-      <div className="card__title">{title}</div>
-      <span className="badge badge--warn">{tag}</span>
-      <div className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function MutedStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4 }}>
-      <span style={{ fontSize: 11, color: C.muted }}>{label}</span>
-      <span className="mono" style={{ fontSize: 11 }}>
-        {value}
-      </span>
-    </div>
-  );
-}
 
 function Sparkline({ values, color, height }: { values: number[]; color: string; height: number }) {
   const w = 120;

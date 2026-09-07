@@ -520,7 +520,11 @@ func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (mode
 			COALESCE(SUM(cost), 0) AS total_cost,
 			COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
 			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
-			COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
+			COALESCE(SUM(cached_input_tokens), 0) AS sum_cached_tokens,
+			COALESCE(SUM(reasoning_tokens), 0) AS sum_reasoning_tokens,
+			COALESCE(SUM((cached_input_tokens::numeric / 1000000.0) * (prompt_price_used * 0.5)), 0) AS cache_savings_usd,
+			COALESCE(COUNT(*) FILTER (WHERE ttft_ms > 0), 0) AS streaming_requests,
+			COALESCE(ROUND(AVG(ttft_ms) FILTER (WHERE ttft_ms > 0), 2), 0) AS avg_ttft_ms,
 			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms,
 			COALESCE(ROUND(CAST(percentile_cont(0.50) WITHIN GROUP (ORDER BY total_latency_ms) AS numeric), 2), 0) AS p50_latency_ms,
 			COALESCE(ROUND(CAST(percentile_cont(0.95) WITHIN GROUP (ORDER BY total_latency_ms) AS numeric), 2), 0) AS p95_latency_ms,
@@ -538,9 +542,13 @@ func (p *PostgresDB) GetUsageTotals(userID *uuid.UUID, from, to time.Time) (mode
 	var t model.UsageTotal
 	if err := p.QueryRow(query, args...).Scan(
 		&t.TotalRequests, &t.TotalCost, &t.SumPromptTokens, &t.SumCompletionTokens,
+		&t.SumCachedTokens, &t.SumReasoningTokens, &t.CacheSavingsUSD, &t.StreamingRequests,
 		&t.AvgTTFTMs, &t.AvgLatencyMs, &t.P50LatencyMs, &t.P95LatencyMs, &t.P99LatencyMs, &t.ErrorCount,
 	); err != nil {
 		return t, err
+	}
+	if t.SumPromptTokens > 0 {
+		t.CacheHitRate = (float64(t.SumCachedTokens) / float64(t.SumPromptTokens)) * 100.0
 	}
 	if t.TotalRequests > 0 {
 		t.ErrorRate = float64(t.ErrorCount) / float64(t.TotalRequests)
@@ -574,8 +582,10 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 				COALESCE(SUM(cost), 0) AS total_cost,
 				COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
 				COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
+				COALESCE(SUM(cached_input_tokens), 0) AS sum_cached_tokens,
+				COALESCE(SUM(reasoning_tokens), 0) AS sum_reasoning_tokens,
 				COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count,
-				COALESCE(ROUND(AVG(ttft_ms), 2), 0) AS avg_ttft_ms,
+				COALESCE(ROUND(AVG(ttft_ms) FILTER (WHERE ttft_ms > 0), 2), 0) AS avg_ttft_ms,
 				COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at <= $2 %[2]s
@@ -587,6 +597,8 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 			COALESCE(logged_data.total_cost, 0) AS total_cost,
 			COALESCE(logged_data.sum_prompt_tokens, 0) AS sum_prompt_tokens,
 			COALESCE(logged_data.sum_completion_tokens, 0) AS sum_completion_tokens,
+			COALESCE(logged_data.sum_cached_tokens, 0) AS sum_cached_tokens,
+			COALESCE(logged_data.sum_reasoning_tokens, 0) AS sum_reasoning_tokens,
 			COALESCE(logged_data.error_count, 0) AS error_count,
 			COALESCE(logged_data.avg_ttft_ms, 0) AS avg_ttft_ms,
 			COALESCE(logged_data.avg_latency_ms, 0) AS avg_latency_ms
@@ -608,7 +620,7 @@ func (p *PostgresDB) GetUsageTimeSeries(userID *uuid.UUID, interval string, from
 	var series []model.UsageSeriesPoint
 	for rows.Next() {
 		var s model.UsageSeriesPoint
-		if err := rows.Scan(&s.TimeBucket, &s.TotalRequests, &s.TotalCost, &s.SumPromptTokens, &s.SumCompletionTokens, &s.ErrorCount, &s.AvgTTFTMs, &s.AvgLatencyMs); err != nil {
+		if err := rows.Scan(&s.TimeBucket, &s.TotalRequests, &s.TotalCost, &s.SumPromptTokens, &s.SumCompletionTokens, &s.SumCachedTokens, &s.SumReasoningTokens, &s.ErrorCount, &s.AvgTTFTMs, &s.AvgLatencyMs); err != nil {
 			return nil, err
 		}
 		series = append(series, s)
@@ -624,7 +636,10 @@ func (p *PostgresDB) GetUsageByModel(userID *uuid.UUID, from, to time.Time) ([]m
 			COALESCE(SUM(cost), 0) AS total_cost,
 			COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
 			COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
-			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
+			COALESCE(SUM(cached_input_tokens), 0) AS sum_cached_tokens,
+			COALESCE(SUM(reasoning_tokens), 0) AS sum_reasoning_tokens,
+			COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms,
+			COALESCE(ROUND(AVG(ttft_ms) FILTER (WHERE ttft_ms > 0), 2), 0) AS avg_ttft_ms
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at <= $2`
 
@@ -644,7 +659,7 @@ func (p *PostgresDB) GetUsageByModel(userID *uuid.UUID, from, to time.Time) ([]m
 	var models []model.UsageByModel
 	for rows.Next() {
 		var m model.UsageByModel
-		if err := rows.Scan(&m.Provider, &m.Model, &m.TotalRequests, &m.TotalCost, &m.SumPromptTokens, &m.SumCompletionTokens, &m.AvgLatencyMs); err != nil {
+		if err := rows.Scan(&m.Provider, &m.Model, &m.TotalRequests, &m.TotalCost, &m.SumPromptTokens, &m.SumCompletionTokens, &m.SumCachedTokens, &m.SumReasoningTokens, &m.AvgLatencyMs, &m.AvgTTFTMs); err != nil {
 			return nil, err
 		}
 		models = append(models, m)

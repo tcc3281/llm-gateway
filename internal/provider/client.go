@@ -30,12 +30,18 @@ func NewProviderClient() *ProviderClient {
 	transport.MaxIdleConnsPerHost = 100
 	transport.IdleConnTimeout = 90 * time.Second
 	transport.TLSHandshakeTimeout = 10 * time.Second
+	// A streaming response can legitimately outlast any fixed client timeout
+	// (long thinking + generation), so the overall request must be unbounded.
+	// ResponseHeaderTimeout only covers the gap up to the upstream's first byte;
+	// once headers arrive the stream is read at its own pace. A provider that
+	// hangs before responding (dead LB, stalled key validation) still fails fast
+	// here instead of tying up the goroutine forever.
+	transport.ResponseHeaderTimeout = 60 * time.Second
 	transport.ForceAttemptHTTP2 = true
 
 	return &ProviderClient{
 		httpClient: &http.Client{
 			Transport: transport,
-			Timeout:   120 * time.Second, // Support long LLM generation
 		},
 	}
 }

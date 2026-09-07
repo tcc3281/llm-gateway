@@ -49,6 +49,11 @@ export interface UsageTotal {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  cache_savings_usd: number;
+  cache_hit_rate: number;
+  streaming_requests: number;
   avg_ttft_ms: number;
   avg_latency_ms: number;
   p50_latency_ms: number;
@@ -64,6 +69,8 @@ export interface UsageSeriesPoint {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
   errors: number;
   avg_ttft_ms: number;
   avg_latency_ms: number;
@@ -76,7 +83,10 @@ export interface UsageByModel {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
   avg_latency_ms: number;
+  avg_ttft_ms: number;
 }
 
 export interface UsageByUser {
