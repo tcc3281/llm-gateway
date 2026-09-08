@@ -128,6 +128,18 @@ func main() {
 	mux.HandleFunc("POST /admin/models/sync", adminHandler.SyncModelsFromCatalog)
 	mux.HandleFunc("POST /admin/models/discover", adminHandler.DiscoverModels)
 	mux.HandleFunc("DELETE /admin/models", adminHandler.DeleteModel)
+	mux.HandleFunc("GET /admin/virtual-models", adminHandler.ListVirtualModels)
+	mux.HandleFunc("POST /admin/virtual-models", adminHandler.CreateVirtualModel)
+	mux.HandleFunc("GET /admin/virtual-models/{id}", adminHandler.GetVirtualModel)
+	mux.HandleFunc("PUT /admin/virtual-models/{id}", adminHandler.UpdateVirtualModel)
+	mux.HandleFunc("DELETE /admin/virtual-models/{id}", adminHandler.DeleteVirtualModel)
+	mux.HandleFunc("GET /admin/plugins", adminHandler.ListPlugins)
+	mux.HandleFunc("GET /admin/plugins/{name}", adminHandler.GetPlugin)
+	mux.HandleFunc("GET /admin/plugin-bindings", adminHandler.ListPluginBindings)
+	mux.HandleFunc("POST /admin/plugin-bindings", adminHandler.CreatePluginBinding)
+	mux.HandleFunc("GET /admin/plugin-bindings/{id}", adminHandler.GetPluginBinding)
+	mux.HandleFunc("PUT /admin/plugin-bindings/{id}", adminHandler.UpdatePluginBinding)
+	mux.HandleFunc("DELETE /admin/plugin-bindings/{id}", adminHandler.DeletePluginBinding)
 
 	// Observability & Auditing
 	mux.HandleFunc("GET /admin/analytics/stats", adminHandler.GetUsageStats)

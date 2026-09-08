@@ -46,3 +46,6 @@ __pycache__/
 cli/.venv/
 cli/dist/
 cli/*.egg-info/
+
+# opencode
+opencode.json

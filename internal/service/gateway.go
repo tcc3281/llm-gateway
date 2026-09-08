@@ -3,11 +3,15 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +27,8 @@ import (
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
 	"llm-gateway/internal/permission"
+	"llm-gateway/internal/plugin"
+	_ "llm-gateway/internal/plugin/builtin"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/telemetry"
 	"llm-gateway/pkg/sse"
@@ -83,6 +89,7 @@ type GatewayService struct {
 	sloMaxTBTMs          int
 	agentMaxToolCalls    int
 	alertEngine          *alert.Engine
+	pluginEngine         *plugin.PluginEngine
 }
 
 func (g *GatewayService) SetAlertEngine(e *alert.Engine) {
@@ -91,6 +98,14 @@ func (g *GatewayService) SetAlertEngine(e *alert.Engine) {
 
 func (g *GatewayService) AlertEngine() *alert.Engine {
 	return g.alertEngine
+}
+
+func (g *GatewayService) SetPluginEngine(pe *plugin.PluginEngine) {
+	g.pluginEngine = pe
+}
+
+func (g *GatewayService) PluginEngine() *plugin.PluginEngine {
+	return g.pluginEngine
 }
 
 func NewGatewayService(
@@ -107,6 +122,10 @@ func NewGatewayService(
 	sloMaxTBTMs int,
 	agentMaxToolCalls int,
 ) *GatewayService {
+	var pe *plugin.PluginEngine
+	if pg != nil {
+		pe = plugin.NewPluginEngine(pg, nil)
+	}
 	return &GatewayService{
 		providerClient:       p,
 		keyStore:             k,
@@ -120,6 +139,7 @@ func NewGatewayService(
 		sloMaxTTFTMs:         sloMaxTTFTMs,
 		sloMaxTBTMs:          sloMaxTBTMs,
 		agentMaxToolCalls:    agentMaxToolCalls,
+		pluginEngine:         pe,
 	}
 }
 
@@ -166,6 +186,27 @@ func (g *GatewayService) ListAvailableModels(ctx context.Context) ([]model.Provi
 					Created:  created,
 					OwnedBy:  m.Provider,
 					Provider: m.Provider,
+				})
+			}
+		}
+
+		// 1b. Active Virtual Models (v0.3.0)
+		if vms, err := g.pg.ListVirtualModels(nil); err == nil {
+			for _, vm := range vms {
+				if !vm.IsActive || seen[vm.Name] {
+					continue
+				}
+				seen[vm.Name] = true
+				created := vm.CreatedAt.Unix()
+				if created <= 0 {
+					created = 1700000000
+				}
+				models = append(models, model.ProviderModel{
+					ID:       vm.Name,
+					Object:   "model",
+					Created:  created,
+					OwnedBy:  "virtual",
+					Provider: "virtual",
 				})
 			}
 		}
@@ -248,9 +289,10 @@ type ProxyParams struct {
 // and telemetry; BaseURL is empty for built-in providers and the custom endpoint
 // for OpenAI/Anthropic-compatible providers.
 type ResolvedTarget struct {
-	Provider provider.ProviderType
-	Name     string
-	BaseURL  string
+	Provider    provider.ProviderType
+	Name        string
+	BaseURL     string
+	TargetModel string // explicit model name for virtual models or aliased targets
 }
 
 // resolveTarget decides the upstream provider for a model name.
@@ -331,6 +373,134 @@ func (g *GatewayService) targetForProvider(name, protocol, baseURL string) Resol
 		pt = provider.ProviderAnthropic
 	}
 	return ResolvedTarget{Provider: pt, Name: name, BaseURL: baseURL}
+}
+
+// resolveVirtualModel attempts to resolve modelName as a Virtual Model Alias.
+// If modelName matches an active Virtual Model in PostgreSQL, it executes dynamic routing
+// (e.g. weighted random traffic splitting / canary, followed by priority-based fallback chains),
+// and returns the resolved targets ladder with TargetModel set.
+// Returns (vm, targets, nil) if found; returns (nil, nil, nil) if modelName is not a virtual model.
+func (g *GatewayService) resolveVirtualModel(ctx context.Context, modelName string, tenantID *uuid.UUID) (*model.VirtualModel, []ResolvedTarget, error) {
+	if g.pg == nil {
+		return nil, nil, nil
+	}
+
+	vm, err := g.pg.GetVirtualModelByName(modelName, tenantID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	if vm == nil || !vm.IsActive || len(vm.Targets) == 0 {
+		return nil, nil, nil
+	}
+
+	// Filter active targets
+	var activeTargets []model.VirtualModelTarget
+	for _, t := range vm.Targets {
+		if t.IsActive {
+			activeTargets = append(activeTargets, t)
+		}
+	}
+	if len(activeTargets) == 0 {
+		return nil, nil, fmt.Errorf("virtual model %q has no active targets configured", modelName)
+	}
+
+	// Find the minimum priority among active targets (normally 1)
+	minPriority := activeTargets[0].Priority
+	for _, t := range activeTargets {
+		if t.Priority < minPriority {
+			minPriority = t.Priority
+		}
+	}
+
+	// Separate into Primary pool (all targets with priority == minPriority)
+	// and Fallback tiers (priority > minPriority)
+	var primaryPool []model.VirtualModelTarget
+	var fallbackPool []model.VirtualModelTarget
+	for _, t := range activeTargets {
+		if t.Priority == minPriority {
+			primaryPool = append(primaryPool, t)
+		} else {
+			fallbackPool = append(fallbackPool, t)
+		}
+	}
+
+	// Sort fallbackPool by priority ASC, then ID ASC
+	sort.SliceStable(fallbackPool, func(i, j int) bool {
+		if fallbackPool[i].Priority != fallbackPool[j].Priority {
+			return fallbackPool[i].Priority < fallbackPool[j].Priority
+		}
+		return fallbackPool[i].ID < fallbackPool[j].ID
+	})
+
+	var selectedPrimary model.VirtualModelTarget
+	var secondaryPrimaryTargets []model.VirtualModelTarget
+
+	if len(primaryPool) == 1 {
+		selectedPrimary = primaryPool[0]
+		secondaryPrimaryTargets = nil
+	} else {
+		switch vm.RoutingStrategy {
+		case "fallback":
+			selectedPrimary = primaryPool[0]
+			secondaryPrimaryTargets = primaryPool[1:]
+		case "round_robin":
+			fallthrough
+		default: // "weighted"
+			totalWeight := 0
+			for _, t := range primaryPool {
+				w := t.Weight
+				if w <= 0 {
+					w = 1
+				}
+				totalWeight += w
+			}
+			if totalWeight <= 0 {
+				totalWeight = 1
+			}
+			r := rand.Intn(totalWeight)
+			accum := 0
+			selectedIdx := 0
+			for i, t := range primaryPool {
+				w := t.Weight
+				if w <= 0 {
+					w = 1
+				}
+				accum += w
+				if r < accum {
+					selectedIdx = i
+					break
+				}
+			}
+			selectedPrimary = primaryPool[selectedIdx]
+			for i, t := range primaryPool {
+				if i != selectedIdx {
+					secondaryPrimaryTargets = append(secondaryPrimaryTargets, t)
+				}
+			}
+		}
+	}
+
+	orderedTargets := append([]model.VirtualModelTarget{selectedPrimary}, secondaryPrimaryTargets...)
+	orderedTargets = append(orderedTargets, fallbackPool...)
+
+	var resolvedTargets []ResolvedTarget
+	for _, t := range orderedTargets {
+		rt, err := g.targetForProviderName(ctx, t.Provider)
+		if err != nil {
+			continue
+		}
+		rt.TargetModel = t.ModelName
+		resolvedTargets = append(resolvedTargets, rt)
+	}
+
+	if len(resolvedTargets) == 0 {
+		return nil, nil, fmt.Errorf("could not resolve any active upstream targets for virtual model %q", modelName)
+	}
+
+	return vm, resolvedTargets, nil
 }
 
 // DiscoverProvider fetches one provider's /models API and persists the result
@@ -506,6 +676,52 @@ func (g *GatewayService) reserveTenantHold(ctx context.Context, apiKey *model.AP
 func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
 	startTime := time.Now()
 
+	// 0. Setup Plugin Context & Pre-Auth Lifecycle Hook
+	var pctx *plugin.PluginContext
+	var pluginBindings []model.PluginBinding
+
+	if g.pluginEngine != nil {
+		var user *model.User
+		var tenant *model.Tenant
+		var tenantID *uuid.UUID
+		if params.ApiKey != nil {
+			tenantID = params.ApiKey.TenantID
+			if g.pg != nil {
+				user, _ = g.pg.GetUserByID(params.ApiKey.UserID)
+				if tenantID != nil {
+					tenant, _ = g.pg.GetTenantByID(*tenantID)
+				}
+			}
+		}
+
+		pctx = &plugin.PluginContext{
+			Ctx:            ctx,
+			APIKey:         params.ApiKey,
+			User:           user,
+			Tenant:         tenant,
+			RequestBody:    params.RequestBody,
+			InboundFormat:  params.InboundFormat,
+			ResponseWriter: params.ResponseWriter,
+			Redis:          g.redis,
+			Postgres:       g.pg,
+			ExtraHeaders:   make(map[string]string),
+		}
+
+		pluginBindings, _ = g.pluginEngine.LoadBindings(ctx, params.ApiKey, user, tenantID, "", "")
+		if err := g.pluginEngine.RunPreAuth(pctx, pluginBindings); err != nil {
+			return err
+		}
+		if pctx.Stop {
+			if pctx.StopStatusCode > 0 {
+				params.ResponseWriter.WriteHeader(pctx.StopStatusCode)
+			}
+			if len(pctx.StopErrorBody) > 0 {
+				params.ResponseWriter.Write(pctx.StopErrorBody)
+			}
+			return nil
+		}
+	}
+
 	// 1. Decode Inbound Client Request to Canonical Request
 	var canReq *canonical.CanonicalRequest
 	var err error
@@ -520,6 +736,11 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 
 	if err != nil {
 		return fmt.Errorf("failed to decode request: %w", err)
+	}
+
+	if pctx != nil {
+		pctx.CanReq = canReq
+		pctx.Model = canReq.Model
 	}
 
 	// 1b. IAM & Key Model Permission Check
@@ -544,6 +765,40 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	// 1c. Multi-Tenant System Boundary Check (Layer 1 Contract)
 	if err := g.checkTenantBoundary(ctx, params.ApiKey, canReq.Model); err != nil {
 		return err
+	}
+
+	// 1d. Plugin Post-Auth & Pre-Routing Lifecycle Hooks
+	if g.pluginEngine != nil && pctx != nil {
+		var tenantID *uuid.UUID
+		if params.ApiKey != nil {
+			tenantID = params.ApiKey.TenantID
+		}
+		pluginBindings, _ = g.pluginEngine.LoadBindings(ctx, params.ApiKey, pctx.User, tenantID, "", canReq.Model)
+		if err := g.pluginEngine.RunPostAuth(pctx, pluginBindings); err != nil {
+			return err
+		}
+		if pctx.Stop {
+			if pctx.StopStatusCode > 0 {
+				params.ResponseWriter.WriteHeader(pctx.StopStatusCode)
+			}
+			if len(pctx.StopErrorBody) > 0 {
+				params.ResponseWriter.Write(pctx.StopErrorBody)
+			}
+			return nil
+		}
+
+		if err := g.pluginEngine.RunPreRouting(pctx, pluginBindings); err != nil {
+			return err
+		}
+		if pctx.Stop {
+			if pctx.StopStatusCode > 0 {
+				params.ResponseWriter.WriteHeader(pctx.StopStatusCode)
+			}
+			if len(pctx.StopErrorBody) > 0 {
+				params.ResponseWriter.Write(pctx.StopErrorBody)
+			}
+			return nil
+		}
 	}
 
 	// Content-Agnostic Structural Tracing on OTel span
@@ -593,13 +848,39 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	}
 
 	// 3. Resolve target Upstream Provider & Fallback Ladder
-	primaryTarget, err := g.resolveTarget(ctx, canReq.Model)
-	if err != nil {
-		return err
+	var primaryTarget ResolvedTarget
+	var targets []ResolvedTarget
+	targetModelName := canReq.Model
+
+	var tenantID *uuid.UUID
+	if params.ApiKey != nil {
+		tenantID = params.ApiKey.TenantID
+	}
+
+	vm, vmTargets, vmErr := g.resolveVirtualModel(ctx, canReq.Model, tenantID)
+	if vmErr != nil {
+		return vmErr
+	}
+	if vm != nil && len(vmTargets) > 0 {
+		primaryTarget = vmTargets[0]
+		targets = vmTargets
+		if primaryTarget.TargetModel != "" {
+			targetModelName = primaryTarget.TargetModel
+		}
+		log.Printf("[virtual-model] %q matched virtual model alias (strategy=%s) -> primary: %s/%s (pool size: %d)",
+			canReq.Model, vm.RoutingStrategy, primaryTarget.Name, targetModelName, len(targets))
+	} else {
+		resolved, err := g.resolveTarget(ctx, canReq.Model)
+		if err != nil {
+			return err
+		}
+		primaryTarget = resolved
+		targets = g.resolveFallbackChain(ctx, primaryTarget)
+		log.Printf("[routing] %q resolved from catalog -> %s (fallback targets: %d)", canReq.Model, primaryTarget.Name, len(targets))
 	}
 
 	// 3b. Multi-Tenant Hold & Settle: Reserve worst-case cost against prepaid credit balance
-	heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, primaryTarget.Name, canReq.Model, len(params.RequestBody)/4, canReq.MaxTokens)
+	heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, primaryTarget.Name, targetModelName, len(params.RequestBody)/4, canReq.MaxTokens)
 	if hErr != nil {
 		return hErr
 	}
@@ -611,14 +892,18 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		}()
 	}
 
-	targets := g.resolveFallbackChain(ctx, primaryTarget)
-
-	// 4. Dispatch with Fallback Ladder
-	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey)
+	// 4. Dispatch with Fallback Ladder (injecting plugin extra/removed headers)
+	var extraHeaders map[string]string
+	var removeHeaders []string
+	if pctx != nil {
+		extraHeaders = pctx.ExtraHeaders
+		removeHeaders = pctx.RemoveHeaders
+	}
+	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey, extraHeaders, removeHeaders)
 	if err != nil {
 		durationSec := time.Since(startTime).Seconds()
-		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, canReq.Model, "chat", durationSec, http.StatusServiceUnavailable)
-		g.recordTelemetry(params, primaryTarget.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
+		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, targetModelName, "chat", durationSec, http.StatusServiceUnavailable)
+		g.recordTelemetry(params, primaryTarget.Name, targetModelName, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
 		if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
 			span.RecordError(err)
 		}
@@ -650,10 +935,10 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		return g.handleStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, fallbackUsed, inputToolCalls)
 	}
 
-	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed, inputToolCalls)
+	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed, inputToolCalls, pctx, pluginBindings)
 }
 
-func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool, inputToolCalls int) error {
+func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool, inputToolCalls int, pctx *plugin.PluginContext, pluginBindings []model.PluginBinding) error {
 	bodyBytes, err := io.ReadAll(upResp.Body)
 	if err != nil {
 		return err
@@ -674,6 +959,11 @@ func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params Pro
 		params.ResponseWriter.WriteHeader(http.StatusInternalServerError)
 		params.ResponseWriter.Write([]byte(fmt.Sprintf(`{"error": "%s"}`, err.Error())))
 		return err
+	}
+
+	// Run Post-Upstream Plugins (v0.3.0)
+	if g.pluginEngine != nil && pctx != nil {
+		_ = g.pluginEngine.RunPostUpstream(pctx, canResp, pluginBindings)
 	}
 
 	// Format Canonical to Client Inbound Format
@@ -767,6 +1057,7 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	var totalCachedInputTokens, totalReasoningTokens int
 	var lastFinishReason string
 	isFirstChunk := true
+	var chunkCount int
 	var streamContent strings.Builder
 
 	// emitAnthropicMessageStart lazily writes the message_start opener once,
@@ -819,10 +1110,11 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	// streamed incrementally because fragments arrive split across chunks; the
 	// client receives the full calls in one terminal block.
 	type pendingToolCall struct {
-		key  string
-		id   string
-		name string
-		args strings.Builder
+		key              string
+		id               string
+		name             string
+		thoughtSignature string
+		args             strings.Builder
 	}
 	acc := map[string]*pendingToolCall{}
 	order := []string{} // insertion order → stable call ordering
@@ -918,6 +1210,7 @@ relayLoop:
 			ttftMs = time.Since(startTime).Milliseconds()
 			isFirstChunk = false
 		}
+		chunkCount++
 
 		// Convert SSE event to Canonical Stream Chunk
 		var chunk *canonical.CanonicalStreamChunk
@@ -1010,6 +1303,12 @@ relayLoop:
 			if p.name == "" {
 				p.name = dtc.Name
 			}
+			if p.thoughtSignature == "" && dtc.ThoughtSignature != "" {
+				p.thoughtSignature = dtc.ThoughtSignature
+				if !strings.Contains(p.id, "__thought__") {
+					p.id = p.id + "__thought__" + dtc.ThoughtSignature
+				}
+			}
 			if dtc.Arguments != "" {
 				p.args.WriteString(dtc.Arguments)
 			}
@@ -1025,10 +1324,15 @@ relayLoop:
 			if len(chunk.DeltaToolCalls) > 0 && chunk.DeltaContent == "" && chunk.DeltaReasoning == "" {
 				continue
 			}
-			// The upstream's own finish_reason:"tool_calls" chunk is replaced by
-			// the reconstructed terminal block (which carries its own finish).
-			if chunk.FinishReason == "tool_calls" && len(acc) > 0 {
-				continue
+			// Any upstream finish_reason chunk is suppressed while tool calls are
+			// being accumulated; the reconstructed terminal block carries the authoritative finish.
+			if chunk.FinishReason != "" && len(acc) > 0 {
+				if chunk.DeltaContent == "" {
+					continue
+				}
+				chunkCopy := *chunk
+				chunkCopy.FinishReason = ""
+				chunk = &chunkCopy
 			}
 			sseFormatted, fErr := openai.FormatCanonicalToOpenAISSE(chunk)
 			if fErr == nil && sseFormatted != "" {
@@ -1070,9 +1374,10 @@ relayLoop:
 			continue
 		}
 		toolCalls = append(toolCalls, canonical.ToolCall{
-			ID:        p.id,
-			Name:      p.name,
-			Arguments: p.args.String(),
+			ID:               p.id,
+			Name:             p.name,
+			Arguments:        p.args.String(),
+			ThoughtSignature: p.thoughtSignature,
 		})
 	}
 	hasToolCalls := len(toolCalls) > 0
@@ -1231,6 +1536,9 @@ relayLoop:
 	telemetry.RecordTokenMetrics(ctx, target.Name, canReq.Model, keyID, userID, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens)
 	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
 
+	log.Printf("[stream] finished %s/%s (%s): ttft=%dms chunks=%d prompt_tokens=%d completion_tokens=%d duration=%s",
+		target.Name, canReq.Model, params.InboundFormat, ttftMs, chunkCount, totalPromptTokens, totalCompletionTokens, time.Since(startTime).Round(time.Millisecond))
+
 	return nil
 }
 
@@ -1363,9 +1671,26 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 	}
 
 	// 2. Resolve target provider
-	target, err := g.resolveTarget(ctx, embedReq.Model)
-	if err != nil {
-		return err
+	var target ResolvedTarget
+	var err error
+	var tenantID *uuid.UUID
+	if params.ApiKey != nil {
+		tenantID = params.ApiKey.TenantID
+	}
+	vm, vmTargets, vmErr := g.resolveVirtualModel(ctx, embedReq.Model, tenantID)
+	if vmErr != nil {
+		return vmErr
+	}
+	if vm != nil && len(vmTargets) > 0 {
+		target = vmTargets[0]
+		if target.TargetModel != "" {
+			embedReq.Model = target.TargetModel
+		}
+	} else {
+		target, err = g.resolveTarget(ctx, embedReq.Model)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 3. Resolve upstream API key

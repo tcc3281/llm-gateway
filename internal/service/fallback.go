@@ -152,6 +152,8 @@ func (g *GatewayService) sendWithFallback(
 	targets []ResolvedTarget,
 	canReq *canonical.CanonicalRequest,
 	overrideKey string,
+	extraHeaders map[string]string,
+	removeHeaders []string,
 ) (*provider.UpstreamResponse, ResolvedTarget, string, []FallbackAttempt, error) {
 	var attempts []FallbackAttempt
 	delays := []time.Duration{0, 100 * time.Millisecond, 200 * time.Millisecond}
@@ -165,7 +167,10 @@ func (g *GatewayService) sendWithFallback(
 			}
 		}
 
-		targetModel := g.fallbackModelForTarget(canReq, target)
+		targetModel := target.TargetModel
+		if targetModel == "" {
+			targetModel = g.fallbackModelForTarget(canReq, target)
+		}
 		payload, err := encodeForTarget(canReq, target, targetModel)
 		if err != nil {
 			attempts = append(attempts, FallbackAttempt{
@@ -190,12 +195,14 @@ func (g *GatewayService) sendWithFallback(
 		}
 
 		upReq := provider.UpstreamRequest{
-			Provider: target.Provider,
-			Name:     target.Name,
-			BaseURL:  target.BaseURL,
-			Model:    targetModel,
-			Stream:   canReq.Stream,
-			Payload:  payload,
+			Provider:      target.Provider,
+			Name:          target.Name,
+			BaseURL:       target.BaseURL,
+			Model:         targetModel,
+			Stream:        canReq.Stream,
+			Payload:       payload,
+			ExtraHeaders:  extraHeaders,
+			RemoveHeaders: removeHeaders,
 		}
 
 		start := time.Now()

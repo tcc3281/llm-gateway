@@ -21,19 +21,21 @@ type ToolChoice struct {
 // ToolCall is an assistant turn's request to invoke one tool. Arguments is the
 // JSON-encoded argument object as a string (the OpenAI wire representation).
 type ToolCall struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Arguments        string `json:"arguments"`
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 // ToolCallDelta is one streaming fragment of a tool call (OpenAI
 // delta.tool_calls, Anthropic content_block_start/input_json_delta, Gemini
 // functionCall parts). Arguments holds the incremental partial JSON.
 type ToolCallDelta struct {
-	Index     int    `json:"index"`
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
+	Index            int    `json:"index"`
+	ID               string `json:"id,omitempty"`
+	Name             string `json:"name,omitempty"`
+	Arguments        string `json:"arguments,omitempty"`
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 // ContentPart represents a multimodal part in a chat message (text, image, etc.)
@@ -57,6 +59,7 @@ type ImageURL struct {
 type ChatMessage struct {
 	Role         string        `json:"role"` // "system" | "user" | "assistant" | "tool"
 	Content      string        `json:"content"`
+	Name         string        `json:"name,omitempty"`
 	ContentParts []ContentPart `json:"content_parts,omitempty"`
 	ToolCallID   string        `json:"tool_call_id,omitempty"`
 	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
