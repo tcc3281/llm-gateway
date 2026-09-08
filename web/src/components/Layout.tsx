@@ -69,17 +69,29 @@ export default function Layout() {
       </aside>
       <div className="app__body">
         <header className="topbar">
-          <span className="topbar__title">
-            {current?.label ?? "Overview"}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-muted)" }}>
+            <span>System</span>
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>chevron_right</span>
+            <span style={{ color: "var(--text)", fontWeight: 600 }}>
+              {current?.label ?? "Overview"}
+            </span>
+          </div>
           <div className="topbar__spacer" />
           {user && (
-            <span style={{ fontSize: "11px", fontFamily: "JetBrains Mono, monospace", color: "#22d3ee", marginRight: "12px" }}>
-              Logged in as: <strong>{user.email}</strong>
-            </span>
+            <div
+              className={`terminal-badge ${user.is_root ? "terminal-badge--root glow-amber" : user.role === "admin" ? "terminal-badge--admin" : "terminal-badge--user"}`}
+              style={{ fontSize: 12, padding: "3px 8px" }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                {user.is_root ? "admin_panel_settings" : "account_circle"}
+              </span>
+              <span>
+                {user.is_root ? "[ROOT ADMIN]" : `[${user.role.toUpperCase()}]`} {user.email}
+              </span>
+            </div>
           )}
-          <span className="mono muted" style={{ fontSize: 11 }}>
-            [ADMIN :8081]
+          <span className="mono muted" style={{ fontSize: 11, border: "1px solid var(--border)", padding: "2px 6px", borderRadius: 4 }}>
+            :8081
           </span>
         </header>
         <main className="page">

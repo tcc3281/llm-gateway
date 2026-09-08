@@ -4,6 +4,7 @@ import type { APIKey, MemberDetailResponse, Tenant, UsageLog, User } from "../ap
 import { fmtDate, fmtMoney, fmtNum, shortTs } from "../lib/format";
 import Modal from "./Modal";
 import LogDetailDrawer, { getStatusInfo } from "./LogDetailDrawer";
+import { useToast } from "./Toast";
 
 interface UserDetailModalProps {
   user: User;
@@ -21,6 +22,7 @@ export default function UserDetailModal({
   onClose,
   onUserUpdated,
 }: UserDetailModalProps) {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<SubTab>("dashboard");
   const [timeRange, setTimeRange] = useState<TimeRange>("7d");
 
@@ -51,6 +53,7 @@ export default function UserDetailModal({
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(label);
+    toast.info(`${label} copied to clipboard`, "[COPIED]");
     setTimeout(() => setCopiedText(null), 2000);
   };
 
@@ -131,6 +134,7 @@ export default function UserDetailModal({
         cache_ttl_seconds: parseInt(newKeyCacheTtl, 10) || 0,
       });
       setCreatedKeyResult(res);
+      toast.success(`Virtual key "${res.key_info?.name || newKeyName.trim()}" generated`, "[200 OK]");
       setNewKeyName("");
       setNewKeyBudget("");
       setNewKeyRate("");
@@ -138,7 +142,9 @@ export default function UserDetailModal({
       await loadKeys();
       if (onUserUpdated) onUserUpdated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create API key");
+      const msg = err instanceof Error ? err.message : "Failed to create API key";
+      setError(msg);
+      toast.error(msg, "[KEY GEN ERROR]");
     } finally {
       setSavingKey(false);
     }
@@ -148,9 +154,12 @@ export default function UserDetailModal({
     if (!window.confirm("Are you sure you want to revoke this API key?")) return;
     try {
       await api.revokeKey(keyId);
+      toast.info("Virtual API key revoked", "[200 OK]");
       await loadKeys();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to revoke key");
+      const msg = err instanceof Error ? err.message : "Failed to revoke key";
+      setError(msg);
+      toast.error(msg, "[REVOKE ERROR]");
     }
   };
 
@@ -180,41 +189,26 @@ export default function UserDetailModal({
               {(user.name || user.email).charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 700 }}>{user.name || "Unnamed User"}</span>
-                {user.role === "admin" ? (
-                  <span className="badge badge--violet">Admin</span>
+                {user.is_root ? (
+                  <span className="terminal-badge terminal-badge--root glow-amber">
+                    [ROOT ADMIN]
+                  </span>
+                ) : user.role === "admin" ? (
+                  <span className="terminal-badge terminal-badge--admin">
+                    [ADMIN]
+                  </span>
                 ) : (
-                  <span className="badge">User</span>
-                )}
-                {user.is_root && (
-                  <span
-                    className="mono"
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "1px 5px",
-                      borderRadius: 3,
-                      background: "rgba(245, 158, 11, 0.15)",
-                      color: "var(--amber)",
-                      border: "1px solid rgba(245, 158, 11, 0.3)",
-                    }}
-                  >
-                    ROOT
+                  <span className="terminal-badge terminal-badge--user">
+                    [USER]
                   </span>
                 )}
                 {tenant && (
                   <span
-                    style={{
-                      fontSize: 11,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background: tenant.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
-                      color: tenant.type === "internal" ? "#818cf8" : "#34d399",
-                      fontWeight: 600,
-                    }}
+                    className={`terminal-badge ${tenant.type === "internal" ? "terminal-badge--internal" : "terminal-badge--external"}`}
                   >
-                    {tenant.name} ({user.tenant_role || "member"})
+                    [{tenant.type.toUpperCase()}] {tenant.name} ({user.tenant_role || "member"})
                   </span>
                 )}
               </div>
@@ -258,12 +252,13 @@ export default function UserDetailModal({
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "dashboard" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "dashboard" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "dashboard" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "dashboard" ? 600 : 400,
+                  fontWeight: activeTab === "dashboard" ? 700 : 400,
+                  boxShadow: activeTab === "dashboard" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("dashboard")}
               >
@@ -277,12 +272,13 @@ export default function UserDetailModal({
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "keys" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "keys" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "keys" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "keys" ? 600 : 400,
+                  fontWeight: activeTab === "keys" ? 700 : 400,
+                  boxShadow: activeTab === "keys" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("keys")}
               >
@@ -296,12 +292,13 @@ export default function UserDetailModal({
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "logs" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "logs" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "logs" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "logs" ? 600 : 400,
+                  fontWeight: activeTab === "logs" ? 700 : 400,
+                  boxShadow: activeTab === "logs" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("logs")}
               >
@@ -315,12 +312,13 @@ export default function UserDetailModal({
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "profile" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "profile" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "profile" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "profile" ? 600 : 400,
+                  fontWeight: activeTab === "profile" ? 700 : 400,
+                  boxShadow: activeTab === "profile" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("profile")}
               >

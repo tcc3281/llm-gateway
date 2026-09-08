@@ -5,6 +5,7 @@ import type { Tenant, User } from "../api/types";
 import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
 import UserDetailModal from "../components/UserDetailModal";
+import { useToast } from "../components/Toast";
 
 interface UserForm {
   name: string;
@@ -19,11 +20,17 @@ const empty: UserForm = { name: "", email: "", role: "user", is_root: false, ten
 
 export default function Users() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTenant, setFilterTenant] = useState("all");
+  const [filterRole, setFilterRole] = useState("all");
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -79,11 +86,14 @@ export default function Users() {
         tenant_id: form.tenant_id ? form.tenant_id : null,
         tenant_role: form.tenant_role || "member",
       });
+      toast.success(`User ${form.email} created successfully`, "[200 OK]");
       setCreateOpen(false);
       setForm(empty);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      const msg = err instanceof Error ? err.message : "Create failed";
+      setError(msg);
+      toast.error(msg, "[CREATE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -102,10 +112,13 @@ export default function Users() {
         tenant_id: editForm.tenant_id ? editForm.tenant_id : null,
         tenant_role: editForm.tenant_role || "member",
       });
+      toast.success(`User ${editForm.email || editTarget.email} updated`, "[200 OK]");
       setEditTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      const msg = err instanceof Error ? err.message : "Update failed";
+      setError(msg);
+      toast.error(msg, "[UPDATE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -117,10 +130,13 @@ export default function Users() {
     setError(null);
     try {
       await api.deleteUser(deleteTarget.id);
+      toast.info(`User ${deleteTarget.email} deleted`, "[200 OK]");
       setDeleteTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      const msg = err instanceof Error ? err.message : "Delete failed";
+      setError(msg);
+      toast.error(msg, "[DELETE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -134,18 +150,42 @@ export default function Users() {
     setPasswordSuccess(null);
     try {
       await api.setPassword(passwordTarget.id, newPassword.trim());
-      setPasswordSuccess(`Password updated for ${passwordTarget.email}`);
+      const msg = `Password updated for ${passwordTarget.email}`;
+      setPasswordSuccess(msg);
+      toast.success(msg, "[200 OK]");
       setNewPassword("");
       setTimeout(() => {
         setPasswordTarget(null);
         setPasswordSuccess(null);
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update password");
+      const msg = err instanceof Error ? err.message : "Failed to update password";
+      setError(msg);
+      toast.error(msg, "[AUTH ERROR]");
     } finally {
       setBusy(false);
     }
   };
+
+  const filteredUsers = users.filter((u) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = (u.name || "").toLowerCase().includes(q);
+      const matchEmail = u.email.toLowerCase().includes(q);
+      const matchId = u.id.toLowerCase().includes(q);
+      if (!matchName && !matchEmail && !matchId) return false;
+    }
+    if (filterTenant !== "all") {
+      if (filterTenant === "none" && u.tenant_id) return false;
+      if (filterTenant !== "none" && u.tenant_id !== filterTenant) return false;
+    }
+    if (filterRole !== "all") {
+      if (filterRole === "root" && !u.is_root) return false;
+      if (filterRole === "admin" && (u.role !== "admin" || u.is_root)) return false;
+      if (filterRole === "user" && (u.role !== "user" || u.is_root)) return false;
+    }
+    return true;
+  });
 
   return (
     <div>
@@ -153,7 +193,7 @@ export default function Users() {
         <div>
           <h1 className="page__title">Users &amp; Members</h1>
           <p className="page__sub">
-            {users.length} account(s). Manage team credentials, passwords, and roles.
+            {filteredUsers.length} of {users.length} account(s). Manage team credentials, passwords, and roles.
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
@@ -173,109 +213,158 @@ export default function Users() {
 
       {error && <div className="error-banner">{error}</div>}
 
+      {/* Toolbar Filter */}
+      <div className="filter-bar filter-bar--inline">
+        <div className="search-box">
+          <span className="material-symbols-outlined">search</span>
+          <input
+            type="text"
+            className="input"
+            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+            placeholder="Search members, emails, or IDs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <select
+          className="select"
+          style={{ width: "auto", minWidth: 170, fontFamily: "var(--font-mono)", fontSize: 12 }}
+          value={filterTenant}
+          onChange={(e) => setFilterTenant(e.target.value)}
+        >
+          <option value="all">All Tenants</option>
+          <option value="none">Global (No Tenant)</option>
+          {tenants.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name} ({t.type.toUpperCase()})
+            </option>
+          ))}
+        </select>
+        <select
+          className="select"
+          style={{ width: "auto", minWidth: 140, fontFamily: "var(--font-mono)", fontSize: 12 }}
+          value={filterRole}
+          onChange={(e) => setFilterRole(e.target.value)}
+        >
+          <option value="all">All Roles</option>
+          <option value="root">Root Admin</option>
+          <option value="admin">Tenant Admin</option>
+          <option value="user">Standard User</option>
+        </select>
+      </div>
+
       <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Tenant</th>
-              <th>Role</th>
+              <th>Member</th>
+              <th>Tenant / Org</th>
+              <th>System Role</th>
               <th>Created</th>
               <th style={{ textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => {
-              const matchedTenant = tenants.find((t) => t.id === u.tenant_id);
-              return (
-                <tr key={u.id}>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      style={{
-                        padding: 0,
-                        minHeight: "unset",
-                        fontWeight: 600,
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: 13,
-                      }}
-                      onClick={() => setSelectedUser(u)}
-                      title="View user details & analytics"
-                    >
-                      {u.name || "—"}
-                    </button>
-                  </td>
-                  <td className="mono" style={{ fontSize: 12 }}>
-                    <button
-                      type="button"
-                      className="btn btn--ghost mono"
-                      style={{
-                        padding: 0,
-                        minHeight: "unset",
-                        color: "var(--primary)",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                      onClick={() => setSelectedUser(u)}
-                      title="View user details & analytics"
-                    >
-                      {u.email}
-                    </button>
-                  </td>
-                  <td>
-                    {matchedTenant ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+                  No members match the selected search or filters.
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((u) => {
+                const matchedTenant = tenants.find((t) => t.id === u.tenant_id);
+                return (
+                  <tr key={u.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div
                           style={{
-                            display: "inline-block",
-                            padding: "2px 8px",
-                            borderRadius: 4,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            background: matchedTenant.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
-                            color: matchedTenant.type === "internal" ? "#818cf8" : "#34d399",
-                          }}
-                        >
-                          {matchedTenant.name}
-                        </span>
-                        <span className="muted mono" style={{ fontSize: 10, textTransform: "uppercase" }}>
-                          ({u.tenant_role || "member"})
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>Global</span>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {u.role === "admin" ? (
-                        <span className="badge badge--violet">admin</span>
-                      ) : (
-                        <span className="badge">user</span>
-                      )}
-                      {u.is_root && (
-                        <span
-                          className="mono"
-                          style={{
-                            fontSize: 10,
+                            width: 32,
+                            height: 32,
+                            borderRadius: "var(--radius-sm)",
+                            background: u.is_root
+                              ? "rgba(245, 158, 11, 0.15)"
+                              : u.role === "admin"
+                              ? "rgba(16, 185, 129, 0.15)"
+                              : "rgba(34, 211, 238, 0.15)",
+                            border: u.is_root
+                              ? "1px solid rgba(245, 158, 11, 0.4)"
+                              : u.role === "admin"
+                              ? "1px solid rgba(16, 185, 129, 0.4)"
+                              : "1px solid rgba(34, 211, 238, 0.4)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
                             fontWeight: 700,
-                            padding: "1px 5px",
-                            borderRadius: 3,
-                            background: "rgba(245, 158, 11, 0.15)",
-                            color: "var(--amber)",
-                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            fontSize: 13,
+                            fontFamily: "var(--font-mono)",
+                            color: u.is_root ? "var(--amber)" : u.role === "admin" ? "var(--emerald)" : "var(--primary)",
                           }}
                         >
-                          ROOT
+                          {(u.name || u.email).charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            style={{
+                              padding: 0,
+                              minHeight: "unset",
+                              fontWeight: 600,
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: 13,
+                            }}
+                            onClick={() => setSelectedUser(u)}
+                            title="View member deep-dive"
+                          >
+                            {u.name || "—"}
+                          </button>
+                          <div className="mono muted" style={{ fontSize: 11 }}>
+                            {u.email}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {matchedTenant ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span
+                              className={`terminal-badge ${matchedTenant.type === "internal" ? "terminal-badge--internal" : "terminal-badge--external"}`}
+                            >
+                              [{matchedTenant.type.toUpperCase()}]
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>{matchedTenant.name}</span>
+                          </div>
+                          <span className="muted mono" style={{ fontSize: 10 }}>
+                            ({u.tenant_role || "member"})
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="terminal-badge" style={{ color: "var(--text-muted)", borderColor: "var(--border)" }}>
+                          [GLOBAL]
                         </span>
                       )}
-                    </div>
-                  </td>
-                  <td className="muted">{fmtDate(u.created_at)}</td>
+                    </td>
+                    <td>
+                      {u.is_root ? (
+                        <span className="terminal-badge terminal-badge--root glow-amber">
+                          [ROOT]
+                        </span>
+                      ) : u.role === "admin" ? (
+                        <span className="terminal-badge terminal-badge--admin">
+                          [ADMIN]
+                        </span>
+                      ) : (
+                        <span className="terminal-badge terminal-badge--user">
+                          [USER]
+                        </span>
+                      )}
+                    </td>
+                    <td className="muted mono" style={{ fontSize: 11 }}>{fmtDate(u.created_at)}</td>
                   <td>
                     <div className="table__actions">
                       <button
@@ -333,14 +422,8 @@ export default function Users() {
                   </td>
                 </tr>
               );
-            })}
-            {!users.length && (
-              <tr>
-                <td colSpan={6}>
-                  <div className="empty">No users yet</div>
-                </td>
-              </tr>
-            )}
+            })
+          )}
           </tbody>
         </table>
       </div>

@@ -98,11 +98,12 @@ export default function PeopleAccess() {
                     padding: "6px 14px",
                     borderRadius: 6,
                     fontSize: 13,
-                    fontWeight: isActive ? 600 : 400,
                     cursor: "pointer",
                     border: "none",
                     background: isActive ? "var(--primary)" : "transparent",
-                    color: isActive ? "#ffffff" : "var(--text-muted)",
+                    color: isActive ? "#06282d" : "var(--text-muted)",
+                    fontWeight: isActive ? 700 : 400,
+                    boxShadow: isActive ? "0 0 12px rgba(34, 211, 238, 0.35)" : "none",
                     transition: "all 0.15s ease",
                   }}
                 >

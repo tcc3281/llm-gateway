@@ -83,14 +83,18 @@ export default function AuditLogs() {
 
   return (
     <div className="page__content">
-      <div className="page__head">
+      <div className="page__header" style={{ marginBottom: "20px" }}>
         <div>
           <h1 className="page__title">Audit Trail</h1>
-          <p className="page__desc">
+          <p className="page__sub">
             Immutable log of administrative operations, policy changes, and key lifecycle events for compliance and security auditing.
           </p>
         </div>
-        <button className="btn btn--secondary" onClick={() => loadAuditLogs()}>
+        <button
+          className="btn btn--secondary"
+          style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
+          onClick={() => loadAuditLogs()}
+        >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>refresh</span>
           Refresh
         </button>
@@ -99,24 +103,11 @@ export default function AuditLogs() {
       {error && <div className="error-banner">{error}</div>}
 
       {/* Filter Toolbar */}
-      <form
-        onSubmit={handleSearch}
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 12,
-          alignItems: "center",
-          marginBottom: 16,
-          background: "var(--surface-raised)",
-          padding: 12,
-          borderRadius: 6,
-          border: "1px solid var(--border)",
-        }}
-      >
+      <form onSubmit={handleSearch} className="filter-bar filter-bar--inline">
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span className="mono text-sm muted">Actor:</span>
           <select
-            className="input"
+            className="select"
             style={{ width: 130 }}
             value={actorType}
             onChange={(e) => {
@@ -135,7 +126,7 @@ export default function AuditLogs() {
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span className="mono text-sm muted">Target:</span>
           <select
-            className="input"
+            className="select"
             style={{ width: 140 }}
             value={targetType}
             onChange={(e) => {
@@ -160,7 +151,7 @@ export default function AuditLogs() {
             value={action}
             onChange={(e) => setAction(e.target.value)}
           />
-          <button type="submit" className="btn btn--secondary">
+          <button type="submit" className="btn btn--primary" style={{ flexShrink: 0 }}>
             Filter
           </button>
         </div>

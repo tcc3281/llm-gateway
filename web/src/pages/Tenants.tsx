@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { ModelPricing, Tenant, TenantCreditTransaction, TopUpCreditRequest } from "../api/types";
 import { fmtDate, fmtMoney } from "../lib/format";
 import Modal from "../components/Modal";
+import { useToast } from "../components/Toast";
 
 interface TenantForm {
   name: string;
@@ -23,6 +24,7 @@ const emptyForm: TenantForm = {
 };
 
 export default function Tenants() {
+  const toast = useToast();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -110,11 +112,14 @@ export default function Tenants() {
         allowed_models: createForm.allowed_models,
         is_active: createForm.is_active,
       });
+      toast.success(`Tenant "${createForm.name}" created`, "[200 OK]");
       setCreateOpen(false);
       setCreateForm(emptyForm);
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create tenant");
+      const msg = err instanceof Error ? err.message : "Failed to create tenant";
+      setError(msg);
+      toast.error(msg, "[CREATE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -146,10 +151,13 @@ export default function Tenants() {
         allowed_models: editForm.allowed_models,
         is_active: editForm.is_active,
       });
+      toast.success(`Tenant "${editForm.name}" updated`, "[200 OK]");
       setEditTarget(null);
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update tenant");
+      const msg = err instanceof Error ? err.message : "Failed to update tenant";
+      setError(msg);
+      toast.error(msg, "[UPDATE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -166,11 +174,14 @@ export default function Tenants() {
         contract_ref: topUpForm.contract_ref.trim(),
         notes: topUpForm.notes.trim(),
       });
+      toast.success(`Topped up $${topUpForm.amount} credits for ${topUpTarget.name}`, "[200 OK]");
       setTopUpTarget(null);
       setTopUpForm({ amount: 100, contract_ref: "", notes: "" });
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Top-up failed");
+      const msg = err instanceof Error ? err.message : "Top-up failed";
+      setError(msg);
+      toast.error(msg, "[TOP-UP ERROR]");
     } finally {
       setBusy(false);
     }
@@ -182,10 +193,13 @@ export default function Tenants() {
     setError(null);
     try {
       await api.deleteTenant(deleteTarget.id);
+      toast.info(`Tenant "${deleteTarget.name}" deleted`, "[200 OK]");
       setDeleteTarget(null);
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      const msg = err instanceof Error ? err.message : "Delete failed";
+      setError(msg);
+      toast.error(msg, "[DELETE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -395,18 +409,9 @@ export default function Tenants() {
 
                     <td style={{ padding: "12px 16px" }}>
                       <span
-                        style={{
-                          display: "inline-block",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          background: t.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
-                          color: t.type === "internal" ? "#818cf8" : "#34d399",
-                        }}
+                        className={`terminal-badge ${t.type === "internal" ? "terminal-badge--internal" : "terminal-badge--external"}`}
                       >
-                        {t.type}
+                        [{t.type.toUpperCase()}]
                       </span>
                     </td>
 
@@ -428,7 +433,7 @@ export default function Tenants() {
 
                     <td style={{ padding: "12px 16px" }}>
                       {isPrepaid ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                           <span
                             className="mono"
                             style={{
@@ -438,20 +443,15 @@ export default function Tenants() {
                           >
                             {fmtMoney(t.credit_balance, 2)}
                           </span>
-                          {isDepleted && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                background: "rgba(239, 68, 68, 0.2)",
-                                color: "var(--danger)",
-                                padding: "1px 5px",
-                                borderRadius: 3,
-                                fontWeight: 700,
-                              }}
-                            >
-                              DEPLETED
+                          {isDepleted ? (
+                            <span className="terminal-badge terminal-badge--root glow-amber">
+                              [402 DEPLETED]
                             </span>
-                          )}
+                          ) : t.credit_balance < 10 ? (
+                            <span className="terminal-badge" style={{ color: "var(--amber)", borderColor: "rgba(245, 158, 11, 0.4)" }}>
+                              [LOW CREDITS]
+                            </span>
+                          ) : null}
                         </div>
                       ) : (
                         <span className="muted mono">— (Postpaid)</span>

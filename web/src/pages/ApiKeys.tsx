@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { APIKey, KeyModelPolicy, User } from "../api/types";
 import { fmtDate, fmtMoney, fmtNum } from "../lib/format";
 import Modal from "../components/Modal";
+import { useToast } from "../components/Toast";
 
 interface KeyForm {
   user_id: string;
@@ -23,6 +24,7 @@ const empty: KeyForm = {
 };
 
 export default function ApiKeys() {
+  const toast = useToast();
   const [keys, setKeys] = useState<APIKey[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [userFilter, setUserFilter] = useState("");
@@ -56,7 +58,8 @@ export default function ApiKeys() {
       const res = await api.listKeyModelPolicies(k.id);
       setModelPolicies(res);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to load model rules");
+      const msg = err instanceof Error ? err.message : "Failed to load model rules";
+      toast.error(msg, "[RULES ERROR]");
     } finally {
       setModelPolicyLoading(false);
     }
@@ -70,11 +73,13 @@ export default function ApiKeys() {
         model_pattern: newModelPattern.trim(),
         is_allowlist: newIsAllowlist,
       });
+      toast.success(`Model policy "${newModelPattern.trim()}" added`, "[200 OK]");
       setNewModelPattern("");
       const res = await api.listKeyModelPolicies(modelTarget.id);
       setModelPolicies(res);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add model rule");
+      const msg = err instanceof Error ? err.message : "Failed to add model rule";
+      toast.error(msg, "[POLICY ERROR]");
     }
   };
 
@@ -82,10 +87,12 @@ export default function ApiKeys() {
     if (!modelTarget) return;
     try {
       await api.deleteKeyModelPolicy(modelTarget.id, policyId);
+      toast.info("Model rule removed", "[200 OK]");
       const res = await api.listKeyModelPolicies(modelTarget.id);
       setModelPolicies(res);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to remove model rule");
+      const msg = err instanceof Error ? err.message : "Failed to remove model rule";
+      toast.error(msg, "[DELETE ERROR]");
     }
   };
 
@@ -98,13 +105,18 @@ export default function ApiKeys() {
     }
   }, [userFilter]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const loadUsers = useCallback(async () => {
+    try {
+      setUsers(await api.listUsers());
+    } catch (e) {
+      console.error("Failed to load users", e);
+    }
+  }, []);
 
   useEffect(() => {
-    api.listUsers().then(setUsers).catch(() => {});
-  }, []);
+    load();
+    loadUsers();
+  }, [load, loadUsers]);
 
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -120,10 +132,13 @@ export default function ApiKeys() {
         cache_ttl_seconds: parseInt(form.cache_ttl_seconds, 10) ?? 0,
       });
       setCreatedSecret(res.api_key);
+      toast.success(`Virtual API key "${form.name}" created`, "[200 OK]");
       setForm(empty);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      const msg = err instanceof Error ? err.message : "Create failed";
+      setError(msg);
+      toast.error(msg, "[CREATE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -149,10 +164,13 @@ export default function ApiKeys() {
           ? `${editForm.expires_at}:00Z`
           : null,
       });
+      toast.success("API key settings updated", "[200 OK]");
       setEditTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      const msg = err instanceof Error ? err.message : "Update failed";
+      setError(msg);
+      toast.error(msg, "[UPDATE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -165,13 +183,17 @@ export default function ApiKeys() {
     try {
       if (confirmTarget.action === "revoke") {
         await api.revokeKey(confirmTarget.key.id);
+        toast.info(`Key ${confirmTarget.key.name} revoked`, "[200 OK]");
       } else {
         await api.reactivateKey(confirmTarget.key.id);
+        toast.success(`Key ${confirmTarget.key.name} reactivated`, "[200 OK]");
       }
       setConfirmTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Operation failed");
+      const msg = err instanceof Error ? err.message : "Operation failed";
+      setError(msg);
+      toast.error(msg, "[OPERATION ERROR]");
     } finally {
       setBusy(false);
     }
@@ -228,7 +250,21 @@ export default function ApiKeys() {
               <tr key={k.id}>
                 <td>{k.name || "—"}</td>
                 <td className="mono" style={{ fontSize: 11 }}>
-                  {k.key_prefix}…
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>{k.key_prefix}…</span>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      style={{ padding: "0 4px", minHeight: 20, fontSize: 11 }}
+                      title="Copy key prefix"
+                      onClick={() => {
+                        navigator.clipboard.writeText(k.key_prefix);
+                        toast.info(`Key prefix ${k.key_prefix} copied`, "[COPIED]");
+                      }}
+                    >
+                      copy
+                    </button>
+                  </div>
                 </td>
                 <td className="muted">{userLabel(k.user_id, users)}</td>
                 <td className="num">{fmtMoney(k.budget_limit, 2)}</td>
@@ -334,7 +370,20 @@ export default function ApiKeys() {
               <label className="field__label">
                 Secret key (shown once — store it securely)
               </label>
-              <div className="secret-box">{createdSecret}</div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <div className="secret-box" style={{ flex: 1, wordBreak: "break-all" }}>{createdSecret}</div>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdSecret);
+                    toast.info("Virtual API key copied to clipboard", "[COPIED]");
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
             </div>
           ) : (
             <KeyFields form={form} setForm={setForm} users={users} withUser />
