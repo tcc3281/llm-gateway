@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"llm-gateway/internal/adapter/canonical"
+	"llm-gateway/internal/model"
 	"llm-gateway/internal/plugin"
 )
 
