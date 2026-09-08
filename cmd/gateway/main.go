@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"llm-gateway/internal/alert"
 	"llm-gateway/internal/analytics"
 	"llm-gateway/internal/auth"
 	"llm-gateway/internal/cache"
@@ -71,6 +72,8 @@ func main() {
 	globalCacheTTL := time.Duration(cfg.ResponseCacheTTL) * time.Second
 	responseCache := cache.NewResponseCache(redisClient, globalCacheTTL)
 	permEngine := permission.NewPermissionEngine(pg)
+	alertEngine := alert.NewEngine(pg, 5000)
+	defer alertEngine.Close()
 
 	gwService := service.NewGatewayService(
 		providerClient,
@@ -86,6 +89,7 @@ func main() {
 		cfg.SLOMaxTBTMs,
 		cfg.AgentMaxToolCalls,
 	)
+	gwService.SetAlertEngine(alertEngine)
 
 	// Refresh each provider's discovered model catalog hourly in the background
 	// so new upstream models resolve without an admin touching the UI.
@@ -93,7 +97,7 @@ func main() {
 
 	// 5. Initialize Handlers
 	gwHandler := handler.NewGatewayHandler(authService, gwService, redisClient, pg)
-	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient, cfg.AdminAllowedIPs, cfg, gwService, permEngine)
+	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient, cfg.AdminAllowedIPs, cfg, gwService, permEngine, alertEngine)
 
 	// 6. Router Setup: Public Gateway Mux (Port 8080)
 	publicMux := http.NewServeMux()
@@ -169,6 +173,12 @@ func main() {
 	adminMux.HandleFunc("DELETE /admin/models", adminHandler.DeleteModel)
 	adminMux.HandleFunc("GET /admin/logs", adminHandler.GetUsageLogs)
 	adminMux.HandleFunc("GET /admin/logs/{id}", adminHandler.GetUsageLogDetail)
+	adminMux.HandleFunc("GET /admin/alerts/rules", adminHandler.ListAlertRules)
+	adminMux.HandleFunc("POST /admin/alerts/rules", adminHandler.CreateAlertRule)
+	adminMux.HandleFunc("PATCH /admin/alerts/rules/{id}", adminHandler.UpdateAlertRule)
+	adminMux.HandleFunc("DELETE /admin/alerts/rules/{id}", adminHandler.DeleteAlertRule)
+	adminMux.HandleFunc("GET /admin/alerts/history", adminHandler.ListAlertHistory)
+	adminMux.HandleFunc("POST /admin/alerts/test", adminHandler.TestAlertWebhook)
 	adminMux.HandleFunc("GET /admin/system/info", adminHandler.GetSystemInfo)
 	adminMux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

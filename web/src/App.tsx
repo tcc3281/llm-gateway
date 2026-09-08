@@ -8,6 +8,7 @@ import PeopleAccess from "./pages/PeopleAccess";
 import ApiKeys from "./pages/ApiKeys";
 import Providers from "./pages/Providers";
 import Models from "./pages/Models";
+import Alerts from "./pages/Alerts";
 import UsageLogs from "./pages/UsageLogs";
 import AuditLogs from "./pages/AuditLogs";
 import Settings from "./pages/Settings";
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="keys" element={<ApiKeys />} />
             <Route path="providers" element={<Providers />} />
             <Route path="models" element={<Models />} />
+            <Route path="alerts" element={<Alerts />} />
             <Route path="logs" element={<UsageLogs />} />
             <Route path="audit-logs" element={<AuditLogs />} />
             <Route path="settings" element={<Settings />} />

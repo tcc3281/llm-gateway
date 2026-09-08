@@ -1248,5 +1248,72 @@ textarea.input:focus {
   background: var(--surface-highest);
 }
 
+/* ==========================================================================
+   Form Controls — Obsidian Telemetry Dark
+   ========================================================================== */
 
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
 
+.form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+input[type="url"],
+select,
+textarea,
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm);
+  color: var(--text) !important;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="email"]:focus,
+input[type="url"]:focus,
+select:focus,
+textarea:focus,
+.form-input:focus,
+.form-select:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
+}
+
+select option {
+  background: var(--surface-high) !important;
+  color: var(--text) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint) !important;
+}

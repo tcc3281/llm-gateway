@@ -432,5 +432,88 @@ type TenantPatch struct {
 	IsActive           *bool     `json:"is_active,omitempty"`
 }
 
+// AlertChannelConfig represents an individual webhook destination in a multi-channel alert rule.
+type AlertChannelConfig struct {
+	ChannelType   string `json:"channel_type"`             // "generic", "slack", "discord", "pagerduty"
+	ChannelName   string `json:"channel_name,omitempty"`   // e.g. "#ops-incidents", "OpsGenie P1"
+	WebhookURL    string `json:"webhook_url"`
+	WebhookSecret string `json:"webhook_secret,omitempty"` // For HMAC-SHA256 signature
+	IsEnabled     bool   `json:"is_enabled"`
+}
+
+// AlertRule defines a monitoring condition and its webhook destinations.
+type AlertRule struct {
+	ID              uuid.UUID            `json:"id"`
+	Name            string               `json:"name"`
+	EventType       string               `json:"event_type"` // "budget_threshold", "rate_limit_surge", "error_rate_surge", "latency_anomaly", "iam_deny_surge"
+	Severity        string               `json:"severity"`   // "info", "warning", "critical"
+	TenantID        *uuid.UUID           `json:"tenant_id,omitempty"`
+	FilterProvider  string               `json:"filter_provider,omitempty"` // e.g. "openai" or "*"
+	FilterModel     string               `json:"filter_model,omitempty"`    // e.g. "gpt-4o"
+	ThresholdValue  float64              `json:"threshold_value"`
+	WindowSeconds   int                  `json:"window_seconds"`   // Evaluation time window in seconds
+	CooldownSeconds int                  `json:"cooldown_seconds"` // Minimum time between consecutive alerts
+	WebhookURL      string               `json:"webhook_url"`      // Primary webhook URL (backwards compatible)
+	WebhookSecret   string               `json:"webhook_secret,omitempty"` // For HMAC-SHA256 signature
+	ChannelType     string               `json:"channel_type"`             // "generic", "slack", "discord", "pagerduty"
+	Channels        []AlertChannelConfig `json:"channels,omitempty"`       // Multi-channel destinations
+	IsActive        bool                 `json:"is_active"`
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
+}
+
+type AlertRulePatch struct {
+	Name            *string               `json:"name,omitempty"`
+	EventType       *string               `json:"event_type,omitempty"`
+	Severity        *string               `json:"severity,omitempty"`
+	TenantID        *uuid.UUID            `json:"tenant_id,omitempty"`
+	FilterProvider  *string               `json:"filter_provider,omitempty"`
+	FilterModel     *string               `json:"filter_model,omitempty"`
+	ThresholdValue  *float64              `json:"threshold_value,omitempty"`
+	WindowSeconds   *int                  `json:"window_seconds,omitempty"`
+	CooldownSeconds *int                  `json:"cooldown_seconds,omitempty"`
+	WebhookURL      *string               `json:"webhook_url,omitempty"`
+	WebhookSecret   *string               `json:"webhook_secret,omitempty"`
+	ChannelType     *string               `json:"channel_type,omitempty"`
+	Channels        *[]AlertChannelConfig `json:"channels,omitempty"`
+	IsActive        *bool                 `json:"is_active,omitempty"`
+}
+
+// AlertHistory records every triggered or suppressed alert dispatch.
+type AlertHistory struct {
+	ID           uuid.UUID       `json:"id"`
+	RuleID       *uuid.UUID      `json:"rule_id,omitempty"`
+	RuleName     string          `json:"rule_name"`
+	EventType    string          `json:"event_type"`
+	TenantID     *uuid.UUID      `json:"tenant_id,omitempty"`
+	Title        string          `json:"title"`
+	Message      string          `json:"message"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
+	Status       string          `json:"status"` // "delivered", "failed", "suppressed_cooldown"
+	StatusCode   *int            `json:"status_code,omitempty"`
+	ErrorMessage *string         `json:"error_message,omitempty"`
+	TriggeredAt  time.Time       `json:"triggered_at"`
+}
+
+// AlertEvent is a non-blocking in-flight notification sent to the AlertEngine.
+type AlertEvent struct {
+	EventType string                 `json:"event_type"`
+	TenantID  *uuid.UUID             `json:"tenant_id,omitempty"`
+	UserID    *uuid.UUID             `json:"user_id,omitempty"`
+	KeyID     *uuid.UUID             `json:"key_id,omitempty"`
+	Model     string                 `json:"model,omitempty"`
+	Value     float64                `json:"value"`
+	Message   string                 `json:"message"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
+}
+
+type TestWebhookRequest struct {
+	WebhookURL    string `json:"webhook_url"`
+	WebhookSecret string `json:"webhook_secret,omitempty"`
+	ChannelType   string `json:"channel_type"` // "generic", "slack", "discord"
+}
+
+
 
 

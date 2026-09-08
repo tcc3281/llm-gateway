@@ -17,6 +17,7 @@ import (
 	"llm-gateway/internal/adapter/canonical"
 	"llm-gateway/internal/adapter/gemini"
 	"llm-gateway/internal/adapter/openai"
+	"llm-gateway/internal/alert"
 	"llm-gateway/internal/analytics"
 	"llm-gateway/internal/cache"
 	"llm-gateway/internal/db"
@@ -81,6 +82,15 @@ type GatewayService struct {
 	sloMaxTTFTMs         int
 	sloMaxTBTMs          int
 	agentMaxToolCalls    int
+	alertEngine          *alert.Engine
+}
+
+func (g *GatewayService) SetAlertEngine(e *alert.Engine) {
+	g.alertEngine = e
+}
+
+func (g *GatewayService) AlertEngine() *alert.Engine {
+	return g.alertEngine
 }
 
 func NewGatewayService(
@@ -1274,6 +1284,41 @@ func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName
 		go func(tid uuid.UUID, cost float64) {
 			_, _ = g.pg.DeductTenantCredit(tid, cost)
 		}(*params.ApiKey.TenantID, costResult.Cost)
+	}
+
+	// Non-blocking alert evaluation
+	if g.alertEngine != nil {
+		if statusCode >= 500 {
+			g.alertEngine.Emit(model.AlertEvent{
+				EventType: "error_rate_surge",
+				TenantID:  params.ApiKey.TenantID,
+				Value:     1.0,
+				Message:   fmt.Sprintf("Upstream failure (HTTP %d) on %s/%s: %s", statusCode, provider, modelName, errMsg),
+				Metadata: map[string]interface{}{
+					"provider":    provider,
+					"model":       modelName,
+					"status_code": statusCode,
+					"error":       errMsg,
+					"key_id":      params.ApiKey.ID.String(),
+				},
+				Timestamp: time.Now(),
+			})
+		}
+		if totalLatency > 10000 {
+			g.alertEngine.Emit(model.AlertEvent{
+				EventType: "latency_anomaly",
+				TenantID:  params.ApiKey.TenantID,
+				Value:     float64(totalLatency),
+				Message:   fmt.Sprintf("High latency anomaly on %s/%s: %dms", provider, modelName, totalLatency),
+				Metadata: map[string]interface{}{
+					"provider":   provider,
+					"model":      modelName,
+					"latency_ms": totalLatency,
+					"key_id":     params.ApiKey.ID.String(),
+				},
+				Timestamp: time.Now(),
+			})
+		}
 	}
 }
 
