@@ -230,9 +230,8 @@ Loại bỏ việc quản lý username/password thủ công nội bộ, đáp �
 | Phiên bản | Mục tiêu chiến lược | Các tính năng trọng tâm | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **v0.2.x** | Enterprise Foundation | Distributed Architecture, AWS IAM, Multi-tenancy, Alerting, i18n, MIT License | **Đã hoàn thành** |
-| **v0.3.0** | **Virtual Models & Routing** | Virtual Model Aliasing, Fallback Chains, Model Mapping CLI & Web UI | *Kế hoạch kế tiếp* |
-| **v0.3.1** | **CLI Tooling & SSO Login** | Quản lý Profile đa môi trường, `llmgw login` (OIDC SSO), Live Tail Logs | *Kế hoạch* |
-| **v0.4.0** | **Plugin Core Architecture** | Core Plugin Engine (Lifecycle Hooks), Multi-Level Scoping (Key/User/Tenant/Global), Plugins: `rate-limiting` (RPM/TPM), `budget-control` | *Kế hoạch* |
+| **v0.3.x** | **Virtual Models & Plugins** | Virtual Model Aliasing, Fallback Chains, 10 Modular Plugins, Scope Bindings | **Đã hoàn thành (v0.3.1)** |
+| **v0.4.0** | **CLI Tooling & Live Logs** | Quản lý Profile đa môi trường, `llmgw plugins` CLI, Live Tail Logs | *Kế hoạch kế tiếp* |
 | **v0.5.0** | **Advanced Intelligence Plugins** | Plugins: `semantic-cache` (Vector Embedding), `pii-masking`, `prompt-guard`, `langfuse-exporter` | *Kế hoạch* |
 | **v0.6.0** | **Cell-Based Isolation & Sharding** | Dedicated Shard Pool, Dynamic Quarantine, Blast Radius Containment, Hybrid GPU Routing | *Kế hoạch* |
 | **v0.7.0** | **Cluster-Native Mesh Scaling** | Gossip Protocol Mesh (`memberlist`), Local Quota Token-Leasing, Cluster-Aware KV-Cache Routing | *Nghiên cứu* |
