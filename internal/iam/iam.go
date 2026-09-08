@@ -41,5 +41,6 @@ func (s *Service) CheckModelAccess(ctx context.Context, keyID uuid.UUID, model s
 
 // CheckUserPermission checks if a user has permission to perform an action on a target.
 func (s *Service) CheckUserPermission(ctx context.Context, userID uuid.UUID, action string, targetResource string) (bool, error) {
-	return s.Permission.CheckUserPermission(ctx, userID, action, targetResource)
+	allowed, _, err := s.Permission.Check(ctx, userID, action, targetResource)
+	return allowed, err
 }

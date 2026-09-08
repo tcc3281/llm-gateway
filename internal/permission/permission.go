@@ -111,6 +111,12 @@ func (pe *PermissionEngine) CheckModelAccess(ctx context.Context, userID uuid.UU
 	return allowed, err
 }
 
+// CheckUserPermission is a convenience helper to evaluate action and resource permission for a user.
+func (pe *PermissionEngine) CheckUserPermission(ctx context.Context, userID uuid.UUID, action, resource string) (bool, error) {
+	allowed, _, err := pe.Check(ctx, userID, action, resource)
+	return allowed, err
+}
+
 // CheckKeyModelAccess evaluates per-key model allowlist / denylist rules.
 // If no rules exist for key, it returns true (fallback to user IAM policies).
 func (pe *PermissionEngine) CheckKeyModelAccess(ctx context.Context, keyID uuid.UUID, modelName string) (bool, error) {
