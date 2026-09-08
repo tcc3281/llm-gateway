@@ -10,6 +10,7 @@ import ApiKeys from "./pages/ApiKeys";
 import Providers from "./pages/Providers";
 import Models from "./pages/Models";
 import VirtualModels from "./pages/VirtualModels";
+import Plugins from "./pages/Plugins";
 import Alerts from "./pages/Alerts";
 import UsageLogs from "./pages/UsageLogs";
 import AuditLogs from "./pages/AuditLogs";
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="providers" element={<Providers />} />
             <Route path="models" element={<Models />} />
             <Route path="virtual-models" element={<VirtualModels />} />
+            <Route path="plugins" element={<Plugins />} />
             <Route path="alerts" element={<Alerts />} />
             <Route path="logs" element={<UsageLogs />} />
             <Route path="audit-logs" element={<AuditLogs />} />

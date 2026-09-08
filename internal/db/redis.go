@@ -139,6 +139,22 @@ func (r *RedisClient) AllowRequest(ctx context.Context, keyID string, limitRPM i
 }
 
 // Low-level raw caching methods (used for response caching, etc.)
+func (r *RedisClient) Client() *redis.Client {
+	return r.client
+}
+
+func (r *RedisClient) Get(ctx context.Context, key string) (string, error) {
+	return r.client.Get(ctx, key).Result()
+}
+
+func (r *RedisClient) Set(ctx context.Context, key string, val interface{}, ttl time.Duration) error {
+	return r.client.Set(ctx, key, val, ttl).Err()
+}
+
+func (r *RedisClient) Del(ctx context.Context, keys ...string) error {
+	return r.client.Del(ctx, keys...).Err()
+}
+
 func (r *RedisClient) GetRaw(ctx context.Context, key string) ([]byte, error) {
 	return r.client.Get(ctx, key).Bytes()
 }

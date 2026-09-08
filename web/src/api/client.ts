@@ -28,6 +28,10 @@ import type {
   VirtualModel,
   CreateVirtualModelRequest,
   UpdateVirtualModelRequest,
+  Plugin,
+  PluginBinding,
+  CreatePluginBindingRequest,
+  UpdatePluginBindingRequest,
 } from "./types";
 
 const KEY_STORAGE = "llmgw_admin_key";
@@ -437,6 +441,29 @@ export const api = {
     }),
   deleteVirtualModel: (id: string) =>
     request<{ status: string }>(`/admin/virtual-models/${id}`, {
+      method: "DELETE",
+    }),
+
+  // Plugins & Extensibility (v0.3.0)
+  listPlugins: () => request<Plugin[]>("/admin/plugins"),
+  getPlugin: (name: string) => request<Plugin>(`/admin/plugins/${name}`),
+  listPluginBindings: (params?: { tenant_id?: string; plugin_name?: string }) =>
+    request<PluginBinding[]>(
+      `/admin/plugin-bindings${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+  getPluginBinding: (id: string) => request<PluginBinding>(`/admin/plugin-bindings/${id}`),
+  createPluginBinding: (data: CreatePluginBindingRequest) =>
+    request<PluginBinding>("/admin/plugin-bindings", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updatePluginBinding: (id: string, data: UpdatePluginBindingRequest) =>
+    request<PluginBinding>(`/admin/plugin-bindings/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deletePluginBinding: (id: string) =>
+    request<{ status: string }>(`/admin/plugin-bindings/${id}`, {
       method: "DELETE",
     }),
 

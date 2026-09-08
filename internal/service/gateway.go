@@ -27,6 +27,8 @@ import (
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
 	"llm-gateway/internal/permission"
+	"llm-gateway/internal/plugin"
+	_ "llm-gateway/internal/plugin/builtin"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/telemetry"
 	"llm-gateway/pkg/sse"
@@ -87,6 +89,7 @@ type GatewayService struct {
 	sloMaxTBTMs          int
 	agentMaxToolCalls    int
 	alertEngine          *alert.Engine
+	pluginEngine         *plugin.PluginEngine
 }
 
 func (g *GatewayService) SetAlertEngine(e *alert.Engine) {
@@ -95,6 +98,14 @@ func (g *GatewayService) SetAlertEngine(e *alert.Engine) {
 
 func (g *GatewayService) AlertEngine() *alert.Engine {
 	return g.alertEngine
+}
+
+func (g *GatewayService) SetPluginEngine(pe *plugin.PluginEngine) {
+	g.pluginEngine = pe
+}
+
+func (g *GatewayService) PluginEngine() *plugin.PluginEngine {
+	return g.pluginEngine
 }
 
 func NewGatewayService(
@@ -111,6 +122,10 @@ func NewGatewayService(
 	sloMaxTBTMs int,
 	agentMaxToolCalls int,
 ) *GatewayService {
+	var pe *plugin.PluginEngine
+	if pg != nil {
+		pe = plugin.NewPluginEngine(pg, nil)
+	}
 	return &GatewayService{
 		providerClient:       p,
 		keyStore:             k,
@@ -124,6 +139,7 @@ func NewGatewayService(
 		sloMaxTTFTMs:         sloMaxTTFTMs,
 		sloMaxTBTMs:          sloMaxTBTMs,
 		agentMaxToolCalls:    agentMaxToolCalls,
+		pluginEngine:         pe,
 	}
 }
 
@@ -660,6 +676,52 @@ func (g *GatewayService) reserveTenantHold(ctx context.Context, apiKey *model.AP
 func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
 	startTime := time.Now()
 
+	// 0. Setup Plugin Context & Pre-Auth Lifecycle Hook
+	var pctx *plugin.PluginContext
+	var pluginBindings []model.PluginBinding
+
+	if g.pluginEngine != nil {
+		var user *model.User
+		var tenant *model.Tenant
+		var tenantID *uuid.UUID
+		if params.ApiKey != nil {
+			tenantID = params.ApiKey.TenantID
+			if g.pg != nil {
+				user, _ = g.pg.GetUserByID(params.ApiKey.UserID)
+				if tenantID != nil {
+					tenant, _ = g.pg.GetTenantByID(*tenantID)
+				}
+			}
+		}
+
+		pctx = &plugin.PluginContext{
+			Ctx:            ctx,
+			APIKey:         params.ApiKey,
+			User:           user,
+			Tenant:         tenant,
+			RequestBody:    params.RequestBody,
+			InboundFormat:  params.InboundFormat,
+			ResponseWriter: params.ResponseWriter,
+			Redis:          g.redis,
+			Postgres:       g.pg,
+			ExtraHeaders:   make(map[string]string),
+		}
+
+		pluginBindings, _ = g.pluginEngine.LoadBindings(ctx, params.ApiKey, user, tenantID, "", "")
+		if err := g.pluginEngine.RunPreAuth(pctx, pluginBindings); err != nil {
+			return err
+		}
+		if pctx.Stop {
+			if pctx.StopStatusCode > 0 {
+				params.ResponseWriter.WriteHeader(pctx.StopStatusCode)
+			}
+			if len(pctx.StopErrorBody) > 0 {
+				params.ResponseWriter.Write(pctx.StopErrorBody)
+			}
+			return nil
+		}
+	}
+
 	// 1. Decode Inbound Client Request to Canonical Request
 	var canReq *canonical.CanonicalRequest
 	var err error
@@ -674,6 +736,11 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 
 	if err != nil {
 		return fmt.Errorf("failed to decode request: %w", err)
+	}
+
+	if pctx != nil {
+		pctx.CanReq = canReq
+		pctx.Model = canReq.Model
 	}
 
 	// 1b. IAM & Key Model Permission Check
@@ -698,6 +765,40 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	// 1c. Multi-Tenant System Boundary Check (Layer 1 Contract)
 	if err := g.checkTenantBoundary(ctx, params.ApiKey, canReq.Model); err != nil {
 		return err
+	}
+
+	// 1d. Plugin Post-Auth & Pre-Routing Lifecycle Hooks
+	if g.pluginEngine != nil && pctx != nil {
+		var tenantID *uuid.UUID
+		if params.ApiKey != nil {
+			tenantID = params.ApiKey.TenantID
+		}
+		pluginBindings, _ = g.pluginEngine.LoadBindings(ctx, params.ApiKey, pctx.User, tenantID, "", canReq.Model)
+		if err := g.pluginEngine.RunPostAuth(pctx, pluginBindings); err != nil {
+			return err
+		}
+		if pctx.Stop {
+			if pctx.StopStatusCode > 0 {
+				params.ResponseWriter.WriteHeader(pctx.StopStatusCode)
+			}
+			if len(pctx.StopErrorBody) > 0 {
+				params.ResponseWriter.Write(pctx.StopErrorBody)
+			}
+			return nil
+		}
+
+		if err := g.pluginEngine.RunPreRouting(pctx, pluginBindings); err != nil {
+			return err
+		}
+		if pctx.Stop {
+			if pctx.StopStatusCode > 0 {
+				params.ResponseWriter.WriteHeader(pctx.StopStatusCode)
+			}
+			if len(pctx.StopErrorBody) > 0 {
+				params.ResponseWriter.Write(pctx.StopErrorBody)
+			}
+			return nil
+		}
 	}
 
 	// Content-Agnostic Structural Tracing on OTel span
@@ -791,8 +892,14 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		}()
 	}
 
-	// 4. Dispatch with Fallback Ladder
-	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey)
+	// 4. Dispatch with Fallback Ladder (injecting plugin extra/removed headers)
+	var extraHeaders map[string]string
+	var removeHeaders []string
+	if pctx != nil {
+		extraHeaders = pctx.ExtraHeaders
+		removeHeaders = pctx.RemoveHeaders
+	}
+	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey, extraHeaders, removeHeaders)
 	if err != nil {
 		durationSec := time.Since(startTime).Seconds()
 		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, targetModelName, "chat", durationSec, http.StatusServiceUnavailable)
@@ -828,10 +935,10 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		return g.handleStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, fallbackUsed, inputToolCalls)
 	}
 
-	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed, inputToolCalls)
+	return g.handleNonStreamResponse(ctx, params, usedTarget, canReq, upResp, startTime, cacheKey, cacheTTL, cacheEnabled, fallbackUsed, inputToolCalls, pctx, pluginBindings)
 }
 
-func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool, inputToolCalls int) error {
+func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params ProxyParams, target ResolvedTarget, canReq *canonical.CanonicalRequest, upResp *provider.UpstreamResponse, startTime time.Time, cacheKey string, cacheTTL time.Duration, cacheEnabled, fallbackUsed bool, inputToolCalls int, pctx *plugin.PluginContext, pluginBindings []model.PluginBinding) error {
 	bodyBytes, err := io.ReadAll(upResp.Body)
 	if err != nil {
 		return err
@@ -852,6 +959,11 @@ func (g *GatewayService) handleNonStreamResponse(ctx context.Context, params Pro
 		params.ResponseWriter.WriteHeader(http.StatusInternalServerError)
 		params.ResponseWriter.Write([]byte(fmt.Sprintf(`{"error": "%s"}`, err.Error())))
 		return err
+	}
+
+	// Run Post-Upstream Plugins (v0.3.0)
+	if g.pluginEngine != nil && pctx != nil {
+		_ = g.pluginEngine.RunPostUpstream(pctx, canResp, pluginBindings)
 	}
 
 	// Format Canonical to Client Inbound Format

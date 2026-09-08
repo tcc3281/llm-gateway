@@ -43,6 +43,12 @@ const (
 	ActionVirtualModelCreate = "virtual_model:create"
 	ActionVirtualModelUpdate = "virtual_model:update"
 	ActionVirtualModelDelete = "virtual_model:delete"
+
+	// Plugin actions
+	ActionPluginRead   = "plugin:read"
+	ActionPluginCreate = "plugin:create"
+	ActionPluginUpdate = "plugin:update"
+	ActionPluginDelete = "plugin:delete"
 )
 
 // ActionDef represents an IAM action metadata item for frontend policy builders.
@@ -96,4 +102,10 @@ var AllActions = []ActionDef{
 	{Action: ActionVirtualModelCreate, Namespace: "virtual_model", Label: "Create Virtual Models", Description: "Define new virtual models with dynamic targets and canary weights"},
 	{Action: ActionVirtualModelUpdate, Namespace: "virtual_model", Label: "Update Virtual Models", Description: "Modify virtual model routing strategies, weights, and fallbacks"},
 	{Action: ActionVirtualModelDelete, Namespace: "virtual_model", Label: "Delete Virtual Models", Description: "Remove virtual model aliases"},
+
+	// Plugins & Extensibility
+	{Action: ActionPluginRead, Namespace: "plugin", Label: "View Plugins", Description: "Inspect plugin catalog and active scope bindings"},
+	{Action: ActionPluginCreate, Namespace: "plugin", Label: "Bind Plugins", Description: "Create new plugin bindings across scopes"},
+	{Action: ActionPluginUpdate, Namespace: "plugin", Label: "Update Plugins", Description: "Modify plugin configurations and toggle active state"},
+	{Action: ActionPluginDelete, Namespace: "plugin", Label: "Remove Plugins", Description: "Delete plugin bindings"},
 }
