@@ -513,4 +513,63 @@ export interface TestWebhookResponse {
   error?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Virtual Models & Dynamic Routing Types (v0.3.0)
+// ---------------------------------------------------------------------------
+
+export interface VirtualModelTarget {
+  id?: number;
+  virtual_model_id?: string;
+  provider: string;
+  model_name: string;
+  weight: number;
+  priority: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface VirtualModel {
+  id: string;
+  name: string;
+  description: string;
+  tenant_id?: string | null;
+  routing_strategy: "weighted" | "fallback" | "round_robin";
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  targets: VirtualModelTarget[];
+}
+
+export interface CreateVirtualModelRequest {
+  name: string;
+  description?: string;
+  tenant_id?: string | null;
+  routing_strategy?: "weighted" | "fallback" | "round_robin";
+  is_active?: boolean;
+  targets: Array<{
+    provider: string;
+    model_name: string;
+    weight: number;
+    priority: number;
+    is_active?: boolean;
+  }>;
+}
+
+export interface UpdateVirtualModelRequest {
+  name?: string;
+  description?: string;
+  tenant_id?: string | null;
+  routing_strategy?: "weighted" | "fallback" | "round_robin";
+  is_active?: boolean;
+  targets?: Array<{
+    provider: string;
+    model_name: string;
+    weight: number;
+    priority: number;
+    is_active?: boolean;
+  }>;
+}
+
+
 

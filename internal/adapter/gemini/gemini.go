@@ -53,12 +53,23 @@ type GeminiSystemContent struct {
 	Parts []GeminiPart `json:"parts"`
 }
 
+const GeminiDummyThoughtSignature = "c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="
+
 type GeminiPart struct {
-	Text             string                  `json:"text,omitempty"`
-	Thought          bool                    `json:"thought,omitempty"`
-	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
-	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
-	InlineData       *GeminiInlineData       `json:"inlineData,omitempty"`
+	Text                  string                  `json:"text,omitempty"`
+	Thought               bool                    `json:"thought,omitempty"`
+	ThoughtSignature      string                  `json:"thoughtSignature,omitempty"`
+	ThoughtSignatureSnake string                  `json:"thought_signature,omitempty"`
+	FunctionCall          *GeminiFunctionCall     `json:"functionCall,omitempty"`
+	FunctionResponse      *GeminiFunctionResponse `json:"functionResponse,omitempty"`
+	InlineData            *GeminiInlineData       `json:"inlineData,omitempty"`
+}
+
+func (p *GeminiPart) GetThoughtSignature() string {
+	if p.ThoughtSignature != "" {
+		return p.ThoughtSignature
+	}
+	return p.ThoughtSignatureSnake
 }
 
 type GeminiInlineData struct {
@@ -69,6 +80,7 @@ type GeminiInlineData struct {
 // GeminiFunctionCall is a model-requested tool invocation. Args carries the
 // argument object (not a string, unlike the OpenAI wire form).
 type GeminiFunctionCall struct {
+	ID   string          `json:"id,omitempty"`
 	Name string          `json:"name"`
 	Args json.RawMessage `json:"args,omitempty"`
 }
@@ -77,6 +89,7 @@ type GeminiFunctionCall struct {
 // responses to calls by name (it has no tool_call_id), so the encoder must
 // recover the name from the preceding assistant tool call.
 type GeminiFunctionResponse struct {
+	ID       string          `json:"id,omitempty"`
 	Name     string          `json:"name"`
 	Response json.RawMessage `json:"response,omitempty"`
 }
@@ -108,6 +121,14 @@ type GeminiUsageMetadata struct {
 	PromptTokenCount     int `json:"promptTokenCount"`
 	CandidatesTokenCount int `json:"candidatesTokenCount"`
 	TotalTokenCount      int `json:"totalTokenCount"`
+}
+
+func isGeminiThoughtSignatureRequired(model string) bool {
+	lower := strings.ToLower(model)
+	return strings.Contains(lower, "gemini-3") ||
+		strings.Contains(lower, "gemini-2.5") ||
+		strings.Contains(lower, "thinking") ||
+		strings.Contains(lower, "thought")
 }
 
 // EncodeCanonicalRequest converts CanonicalRequest into Gemini API Request payload
@@ -161,9 +182,19 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 				log.Printf("gemini encoder: no assistant tool call found for tool_call_id %q; dropping tool result", msg.ToolCallID)
 				continue
 			}
-			respJSON, _ := json.Marshal(map[string]string{"result": msg.Content})
+			var respJSON json.RawMessage
+			trimmed := strings.TrimSpace(msg.Content)
+			if json.Valid([]byte(trimmed)) && strings.HasPrefix(trimmed, "{") {
+				respJSON = json.RawMessage(trimmed)
+			} else {
+				respJSON, _ = json.Marshal(map[string]string{"result": msg.Content})
+			}
 			content.Parts = append(content.Parts, GeminiPart{
-				FunctionResponse: &GeminiFunctionResponse{Name: name, Response: respJSON},
+				FunctionResponse: &GeminiFunctionResponse{
+					ID:       msg.ToolCallID,
+					Name:     name,
+					Response: respJSON,
+				},
 			})
 		case "assistant", "model":
 			if msg.Content != "" {
@@ -174,8 +205,17 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 				if len(tc.Arguments) > 0 {
 					args = json.RawMessage(tc.Arguments)
 				}
+				sig := tc.ThoughtSignature
+				if sig == "" && isGeminiThoughtSignatureRequired(canReq.Model) {
+					sig = GeminiDummyThoughtSignature
+				}
 				content.Parts = append(content.Parts, GeminiPart{
-					FunctionCall: &GeminiFunctionCall{Name: tc.Name, Args: args},
+					ThoughtSignature: sig,
+					FunctionCall: &GeminiFunctionCall{
+						ID:   tc.ID,
+						Name: tc.Name,
+						Args: args,
+					},
 				})
 			}
 		default:
@@ -360,17 +400,21 @@ func DecodeUpstreamResponse(body []byte, model string) (*canonical.CanonicalResp
 		for i, p := range resp.Candidates[0].Content.Parts {
 			switch {
 			case p.FunctionCall != nil:
-				// Gemini has no tool_call_id; synthesize "call_<n>" for the
-				// canonical/OpenAI wire. Encode-to-Gemini ignores the id and
-				// matches by name, so the synthesized value round-trips safely.
+				// Gemini has no tool_call_id on older models; synthesize "call_<n>" for the
+				// canonical/OpenAI wire. If ID is present (Gemini 3+), preserve it.
 				args, err := json.Marshal(p.FunctionCall.Args)
 				if err != nil {
 					args = []byte("{}")
 				}
+				id := p.FunctionCall.ID
+				if id == "" {
+					id = fmt.Sprintf("call_%d", i)
+				}
 				toolCalls = append(toolCalls, canonical.ToolCall{
-					ID:        fmt.Sprintf("call_%d", i),
-					Name:      p.FunctionCall.Name,
-					Arguments: string(args),
+					ID:               id,
+					Name:             p.FunctionCall.Name,
+					Arguments:        string(args),
+					ThoughtSignature: p.GetThoughtSignature(),
 				})
 			case p.Thought:
 				thoughtParts = append(thoughtParts, p.Text)
@@ -420,11 +464,16 @@ func DecodeStreamChunk(chunkBytes []byte, model string) (*canonical.CanonicalStr
 				if err != nil {
 					args = []byte("{}")
 				}
+				id := p.FunctionCall.ID
+				if id == "" {
+					id = fmt.Sprintf("call_%d", i)
+				}
 				chunk.DeltaToolCalls = append(chunk.DeltaToolCalls, canonical.ToolCallDelta{
-					Index:     i,
-					ID:        fmt.Sprintf("call_%d", i),
-					Name:      p.FunctionCall.Name,
-					Arguments: string(args),
+					Index:            i,
+					ID:               id,
+					Name:             p.FunctionCall.Name,
+					Arguments:        string(args),
+					ThoughtSignature: p.GetThoughtSignature(),
 				})
 			case p.Thought:
 				thoughtParts = append(thoughtParts, p.Text)

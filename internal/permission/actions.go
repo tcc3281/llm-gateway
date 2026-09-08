@@ -37,6 +37,12 @@ const (
 	// Provider management actions
 	ActionProviderRead   = "provider:read"
 	ActionProviderUpdate = "provider:update"
+
+	// Virtual model actions
+	ActionVirtualModelRead   = "virtual_model:read"
+	ActionVirtualModelCreate = "virtual_model:create"
+	ActionVirtualModelUpdate = "virtual_model:update"
+	ActionVirtualModelDelete = "virtual_model:delete"
 )
 
 // ActionDef represents an IAM action metadata item for frontend policy builders.
@@ -83,5 +89,11 @@ var AllActions = []ActionDef{
 
 	// Provider Management
 	{Action: ActionProviderRead, Namespace: "provider", Label: "View Providers", Description: "Inspect configured upstream AI providers"},
-	{Action: ActionProviderUpdate, Namespace: "provider", Label: "Configure Providers", Description: "Add or update upstream provider API credentials"},
+	{Action: ActionProviderUpdate, Namespace: "provider", Label: "Configure Providers", Description: "Update provider API keys and routing configuration"},
+
+	// Virtual Models & Routing
+	{Action: ActionVirtualModelRead, Namespace: "virtual_model", Label: "View Virtual Models", Description: "List and inspect virtual model aliases and routing rules"},
+	{Action: ActionVirtualModelCreate, Namespace: "virtual_model", Label: "Create Virtual Models", Description: "Define new virtual models with dynamic targets and canary weights"},
+	{Action: ActionVirtualModelUpdate, Namespace: "virtual_model", Label: "Update Virtual Models", Description: "Modify virtual model routing strategies, weights, and fallbacks"},
+	{Action: ActionVirtualModelDelete, Namespace: "virtual_model", Label: "Delete Virtual Models", Description: "Remove virtual model aliases"},
 }

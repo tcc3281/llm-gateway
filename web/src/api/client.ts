@@ -25,6 +25,9 @@ import type {
   UsageLogDetail,
   UsageLogsPage,
   User,
+  VirtualModel,
+  CreateVirtualModelRequest,
+  UpdateVirtualModelRequest,
 } from "./types";
 
 const KEY_STORAGE = "llmgw_admin_key";
@@ -91,10 +94,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-function qs(params: Record<string, string | number | undefined>): string {
+function qs(params?: Record<string, string | number | undefined | null>): string {
+  if (!params) return "";
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined && v !== "") q.set(k, String(v));
+    if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
   }
   const s = q.toString();
   return s ? `?${s}` : "";
@@ -414,6 +418,26 @@ export const api = {
     request<TestWebhookResponse>("/admin/alerts/test", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  // Virtual Models & Dynamic Routing (v0.3.0)
+  listVirtualModels: (params?: { tenant_id?: string }) =>
+    request<VirtualModel[]>(`/admin/virtual-models${qs(params as Record<string, string | number | undefined>)}`),
+  getVirtualModel: (id: string) =>
+    request<VirtualModel>(`/admin/virtual-models/${id}`),
+  createVirtualModel: (data: CreateVirtualModelRequest) =>
+    request<VirtualModel>("/admin/virtual-models", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateVirtualModel: (id: string, data: UpdateVirtualModelRequest) =>
+    request<VirtualModel>(`/admin/virtual-models/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteVirtualModel: (id: string) =>
+    request<{ status: string }>(`/admin/virtual-models/${id}`, {
+      method: "DELETE",
     }),
 
   // System

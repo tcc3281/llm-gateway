@@ -514,6 +514,64 @@ type TestWebhookRequest struct {
 	ChannelType   string `json:"channel_type"` // "generic", "slack", "discord"
 }
 
+// VirtualModel represents a dynamic business alias mapped to one or more real models.
+type VirtualModel struct {
+	ID              uuid.UUID            `json:"id"`
+	Name            string               `json:"name"`
+	Description     string               `json:"description"`
+	TenantID        *uuid.UUID           `json:"tenant_id,omitempty"`
+	RoutingStrategy string               `json:"routing_strategy"` // "weighted" | "fallback" | "round_robin"
+	IsActive        bool                 `json:"is_active"`
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
+	Targets         []VirtualModelTarget `json:"targets"`
+}
+
+// VirtualModelTarget represents a real provider and model destination in a VirtualModel.
+type VirtualModelTarget struct {
+	ID             int64     `json:"id"`
+	VirtualModelID uuid.UUID `json:"virtual_model_id"`
+	Provider       string    `json:"provider"`
+	ModelName      string    `json:"model_name"`
+	Weight         int       `json:"weight"`
+	Priority       int       `json:"priority"`
+	IsActive       bool      `json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// VirtualModelTargetInput is used when creating or updating targets of a virtual model.
+type VirtualModelTargetInput struct {
+	Provider  string `json:"provider"`
+	ModelName string `json:"model_name"`
+	Weight    int    `json:"weight"`
+	Priority  int    `json:"priority"`
+	IsActive  *bool  `json:"is_active,omitempty"`
+}
+
+// CreateVirtualModelRequest payload for POST /admin/virtual-models.
+type CreateVirtualModelRequest struct {
+	Name            string                    `json:"name"`
+	Description     string                    `json:"description,omitempty"`
+	TenantID        *uuid.UUID                `json:"tenant_id,omitempty"`
+	RoutingStrategy string                    `json:"routing_strategy,omitempty"` // default "weighted"
+	IsActive        *bool                     `json:"is_active,omitempty"`
+	AllowOverride   bool                      `json:"allow_override,omitempty"`   // if true, allows overriding a provider model name
+	Targets         []VirtualModelTargetInput `json:"targets"`
+}
+
+// UpdateVirtualModelRequest payload for PUT /admin/virtual-models/{id}.
+type UpdateVirtualModelRequest struct {
+	Name            *string                   `json:"name,omitempty"`
+	Description     *string                   `json:"description,omitempty"`
+	TenantID        *uuid.UUID                `json:"tenant_id,omitempty"`
+	RoutingStrategy *string                   `json:"routing_strategy,omitempty"`
+	IsActive        *bool                     `json:"is_active,omitempty"`
+	AllowOverride   *bool                     `json:"allow_override,omitempty"`
+	Targets         []VirtualModelTargetInput `json:"targets,omitempty"`
+}
+
+
 
 
 
