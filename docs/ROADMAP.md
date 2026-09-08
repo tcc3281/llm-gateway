@@ -138,13 +138,103 @@ Khác với các hệ thống thông thường chỉ cho phép cấu hình Globa
 
 ---
 
+## 📌 4. Tính Năng Trọng Tâm 4: Cách Ly Vật Lý & Shard Riêng Biệt (Cell-Based Isolation & Dedicated Shards)
+
+### 🎯 Bài toán thực tế: Vấn Nạn "Noisy Neighbor"
+Phần lớn gateway mã nguồn mở hiện nay chỉ phân quyền logic trên cùng một cụm hạ tầng dùng chung. Điều này tạo ra rủi ro nghiêm trọng:
+- Một tenant bị nghẽn (dính lỗi 429 từ nhà cung cấp, chạy agent lặp vô tận, hoặc spam tải) có thể kéo tụt hiệu năng hoặc làm sập toàn bộ hệ thống.
+- Các khách hàng khối Tài chính (FinTech), Y tế, Thương mại điện tử yêu cầu cam kết SLA nghiêm ngặt và không chấp nhận dùng chung luồng mạng/bộ nhớ với tenant khác.
+
+### 💡 Kiến Trúc Phân Mảnh (Cell-Based Isolation) & Chiến Lược Thương Mại
+Khả năng cách ly hạ tầng vật lý theo Tenant là "mỏ vàng" để thương mại hóa sản phẩm cấp doanh nghiệp:
+
+```
+                          [ LLM Gateway Traffic Router ]
+                                         │
+                 ┌───────────────────────┴───────────────────────┐
+                 ▼                                               ▼
+     [ Shared Node Pool ]                           [ Dedicated Shard Pool ]
+   (Free / Starter / Dev)                       (Enterprise / VIP Tenants)
+   - Chịu giới hạn luồng chung                  - Node proxy & tài nguyên riêng biệt
+   - Dùng chung hạn mức API Key                 - Gán API Key Tier cao cấp (PTU/Tier 5)
+   - Tự động chuyển vùng suy thoái             - Cam kết 100% SLA & Zero Noisy Neighbor
+```
+
+### 🚀 Các trụ cột năng lực cốt lõi:
+1. **Bán Gói "Dedicated Shard" (Mô hình kiếm tiền trực tiếp)**:
+   - Doanh nghiệp lớn trả phí hàng tháng để sở hữu một hoặc nhiều node proxy riêng biệt. Lưu lượng đi trên kênh xử lý độc lập, được gán riêng API Key cấp cao phía upstream.
+2. **Blast Radius Containment (Khoanh vùng sự cố)**:
+   - Sự cố vòng lặp của một AI Agent hay script thử nghiệm của dev chỉ gây ảnh hưởng cục bộ trên shard đó. Cổng AI phục vụ khách hàng chính vẫn hoạt động ổn định 100%.
+3. **Guaranteed Concurrency (Cam kết luồng đồng thời)**:
+   - Phân bổ tài nguyên chính xác: Shard nội bộ tối đa 20 luồng, Shard ứng dụng core luôn được bảo đảm 500 luồng trực tiếp không bị tranh chấp.
+4. **Tối ưu hóa hạ tầng GPU Hybrid (Smart Cost Arbitrage)**:
+   - **Internal Node Group**: Toàn bộ request từ IDE lập trình viên và tác vụ thử nghiệm chuyển thẳng về cụm GPU on-premise (vLLM / SGLang) $\rightarrow$ Chi phí cận biên bằng 0.
+   - **Production Node Group**: Giao dịch quan trọng của khách hàng trả phí được ưu tiên đẩy sang API đám mây độ ổn định cao (OpenAI, Anthropic).
+5. **Cơ chế "Dynamic Quarantine" (Tự động chuyển vùng suy thoái)**:
+   - Khi phát hiện một tenant tăng đột biến bất thường, Gateway không ngắt kết nối thô bạo (429) mà tự động chuyển hướng các request tiếp theo sang **Degraded Pool**. Tenant vi phạm vẫn được phục vụ với tốc độ vừa phải, còn các tenant chuẩn hoàn toàn không bị ảnh hưởng độ trễ.
+
+---
+
+## 📌 5. Tính Năng Trọng Tâm 5: Scale Cụm Tự Thân Thông Minh (Cluster-Native Scaling & Gossip Mesh)
+
+### 🎯 Điểm nghẽn của các giải pháp hiện tại
+- **Phụ thuộc Redis/DB trung tâm**: Khi cụm proxy scale từ 5 lên 50 pod, tất cả pod đều spam query kiểm tra token/quota vào một cụm Redis duy nhất $\rightarrow$ Redis trở thành điểm nghẽn cổ chai (SPOF) và lock contention.
+- **Bất cập của Kubernetes HPA thông thường**: HPA scale theo CPU. Nhưng LLM Streaming giữ kết nối HTTP SSE rất lâu (10s – 60s) trong khi CPU tiêu thụ rất ít $\rightarrow$ K8s không chịu scale thêm pod, dẫn đến cạn kiệt TCP connection pool.
+
+### 💡 Giải Pháp Cluster-Native bằng Go:
+1. **Cụm Mesh gọn nhẹ bằng Gossip Protocol (`hashicorp/memberlist`)**:
+   - Các node Gateway viết bằng Go tự tìm thấy nhau trong mạng nội bộ, tự phát hiện khi có node mới bật lên hoặc node cũ chết mà không cần cài đặt dịch vụ Service Discovery phức tạp.
+2. **Local Quota Token-Leasing (Thuật toán mượn hạn mức)**:
+   - Thay vì mỗi request phải ping Redis để kiểm tra budget: Mỗi node proxy "mượn" trước một lượng budget nhỏ (ví dụ 1$ hoặc 50.000 tokens) từ Control Plane lưu trong RAM local.
+   - Node tự trừ trực tiếp trên RAM. Khi xài gần hết mới xin cấp thêm bất đồng bộ $\rightarrow$ Cụm proxy scale lên hàng trăm node mà database trung tâm vẫn hoàn toàn rảnh rỗi.
+3. **Cluster-Aware KV-Cache Routing & Consistent Hashing**:
+   - Khi đứng trước cụm nhiều máy chủ GPU nội bộ (vLLM / SGLang), proxy dùng thuật toán băm nhất quán để đảm bảo cùng một `session_id` hoặc `tenant_id` sẽ luôn điều phối về cùng một GPU worker $\rightarrow$ **Tránh tối đa KV-cache miss**, giúp GPU không phải tính toán pre-fill lại từ đầu.
+
+---
+
+## 📌 6. Tính Năng Trọng Tâm 6: Đăng Nhập Một Lần Doanh Nghiệp (Enterprise SSO & Identity Federation)
+
+### 🎯 Mục tiêu
+Loại bỏ việc quản lý username/password thủ công nội bộ, đáp ứng tiêu chuẩn kiểm toán bảo mật khắt khe của doanh nghiệp thông qua cơ chế **Single Sign-On (SSO)** với các Identity Provider (IdP) hàng đầu.
+
+```text
+[ Người Dùng / Kỹ Sư ] 
+      │
+      ├── 1. Truy cập ─────────► [ LLM Gateway Dashboard / CLI ]
+      │                                       │
+      │   2. Chuyển hướng xác thực            │
+      ▼                                       ▼
+[ Identity Provider (IdP) ] ◄─────────────────┘
+(Google Workspace, Okta, Azure AD, Keycloak)
+      │
+      ├── 3. Xác thực người dùng (MFA/2FA)
+      │
+      └── 4. Cấp OIDC JWT Token ──► Trả về LLM Gateway ──► Đăng nhập thành công & Map RBAC
+```
+
+### 💡 Các năng lực triển khai:
+1. **Hỗ trợ Đa Giao thức Chuẩn Doanh Nghiệp**:
+   - **OIDC (OpenID Connect)**: Tích hợp Google Workspace, GitHub Enterprise, Okta, Keycloak qua JSON Web Tokens (JWT).
+   - **SAML 2.0**: Tương thích hệ thống phân quyền của ngân hàng và tập đoàn lớn (Microsoft Entra ID / Azure AD, Ping Identity).
+2. **Xác thực CLI Thông Minh (`llmgw login`)**:
+   - Kỹ sư chạy lệnh `llmgw login` trên terminal: CLI tự động mở trình duyệt web điều hướng tới IdP của công ty.
+   - Sau khi đăng nhập và vượt qua MFA, IdP trả token tạm thời về CLI. Kỹ sư không bao giờ phải gõ hay lưu mật khẩu trên máy cá nhân.
+3. **Đồng bộ Nhóm & Phân Quyền Tự Động (Group-to-Role Mapping & Instant Offboarding)**:
+   - Nhóm người dùng từ Okta/Azure AD (ví dụ: `DataScience-Team`, `AI-Engineers`) tự động được map sang Role và Tenant tương ứng trên Gateway.
+   - Khi nhân viên nghỉ việc: Khóa tài khoản tại IdP trung tâm sẽ ngay lập tức vô hiệu hóa quyền truy cập trên cả Web Dashboard lẫn CLI Gateway.
+
+---
+
 ## 📅 Lộ Trình Triển Khai Đề Xuất (Release Plan)
 
 | Phiên bản | Mục tiêu chiến lược | Các tính năng trọng tâm | Trạng thái |
 | :--- | :--- | :--- | :---: |
 | **v0.2.x** | Enterprise Foundation | Distributed Architecture, AWS IAM, Multi-tenancy, Alerting, i18n, MIT License | **Đã hoàn thành** |
 | **v0.3.0** | **Virtual Models & Routing** | Virtual Model Aliasing, Fallback Chains, Model Mapping CLI & Web UI | *Kế hoạch kế tiếp* |
-| **v0.3.1** | **CLI Tooling Optimization** | Quản lý Profile đa môi trường, Live Tail Logs, Package standalone binary | *Kế hoạch* |
+| **v0.3.1** | **CLI Tooling & SSO Login** | Quản lý Profile đa môi trường, `llmgw login` (OIDC SSO), Live Tail Logs | *Kế hoạch* |
 | **v0.4.0** | **Plugin Core Architecture** | Core Plugin Engine (Lifecycle Hooks), Multi-Level Scoping (Key/User/Tenant/Global), Plugins: `rate-limiting` (RPM/TPM), `budget-control` | *Kế hoạch* |
-| **v0.5.0** | **Advanced Intelligence Plugins** | Plugins: `semantic-cache` (Vector Embedding), `pii-masking`, `prompt-guard`, `langfuse-exporter` | *Nghiên cứu* |
-| **v1.0.0** | **Enterprise Production Ready** | Custom WASM/Go Plugin SDK cho bên thứ 3, High-Throughput Zero-Copy Engine | *Mục tiêu dài hạn* |
+| **v0.5.0** | **Advanced Intelligence Plugins** | Plugins: `semantic-cache` (Vector Embedding), `pii-masking`, `prompt-guard`, `langfuse-exporter` | *Kế hoạch* |
+| **v0.6.0** | **Cell-Based Isolation & Sharding** | Dedicated Shard Pool, Dynamic Quarantine, Blast Radius Containment, Hybrid GPU Routing | *Kế hoạch* |
+| **v0.7.0** | **Cluster-Native Mesh Scaling** | Gossip Protocol Mesh (`memberlist`), Local Quota Token-Leasing, Cluster-Aware KV-Cache Routing | *Nghiên cứu* |
+| **v1.0.0** | **Enterprise Production Ready** | Enterprise SSO (SAML 2.0 / OIDC), Custom WASM/Go Plugin SDK, Zero-Knowledge Engine | *Mục tiêu dài hạn* |
+
