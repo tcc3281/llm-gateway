@@ -79,29 +79,72 @@ Nâng cấp công cụ dòng lệnh `llmgw` thành một trợ thủ đắc lự
 
 ---
 
-## 📌 3. Các Tính Năng Nâng Cao Dự Kiến (Future Pipeline)
+## 📌 3. Tính Năng Trọng Tâm 3: Hệ Thống Plugin Đa Cấp Độ (Kong-like Plugin Architecture)
 
-### 3.1. Rate Limiting theo Tokens Per Minute (TPM)
-- Hiện tại hệ thống đã có Rate Limit theo Requests Per Minute (RPM) và Budget Quota theo USD.
-- Bổ sung thêm Token Bucket đếm số lượng Token đầu vào/ra theo phút (TPM) để tránh tình trạng một vài request khổng lồ chiếm trọn băng thông của model upstream.
+### 🎯 Bài toán & Tầm nhìn kiến trúc
+Giống như kiến trúc mở rộng nổi tiếng của **Kong API Gateway**, thay vì nhồi nhét mọi logic nghiệp vụ vào lõi Gateway khiến mã nguồn phình to và khó bảo trì, LLM Gateway sẽ chuyển dịch sang **Kiến trúc Plugin Module hóa (Pluggable Pipeline Engine)**:
+- Mỗi tính năng kiểm soát, tối ưu, bảo mật hoặc quan sát được đóng gói thành một **Plugin độc lập**.
+- Quản trị viên có thể **bật (activate), tắt (deactivate)** hoặc cấu hình tham số cho từng tính năng tức thì qua Web UI hoặc CLI mà không cần restart Gateway.
+- Vòng đời can thiệp linh hoạt (Plugin Lifecycle Hooks):
+  ```
+  Client Request 
+       │
+       ▼
+  [Pre-Auth Hook] ──► [Post-Auth / IAM Hook] ──► [Pre-Routing / Guardrails]
+                                                        │
+  Client Response ◄── [Audit / Post-Upstream] ◄── [Upstream LLM Provider]
+  ```
 
-### 3.2. Semantic Caching với Vector Embeddings
-- Nâng cấp bộ đệm Redis Response Cache hiện tại (dựa trên SHA-256 hash của prompt):
-- Tích hợp mô hình embedding cục bộ hoặc API embedding siêu nhẹ để so sánh độ tương đồng ngữ nghĩa (Cosine Similarity $\ge 0.95$).
-- Giúp trả lời tức thì các câu hỏi trùng ý nghĩa (ví dụ: *"Thủ đô của Pháp là gì?"* và *"Pháp có thủ đô là thành phố nào?"*), tiết kiệm đến 80% chi phí và giảm độ trễ xuống dưới 10ms.
+### 🎚️ Cơ chế Gắn Cấu Hình Đa Cấp Độ (Multi-Level Scoping & Inheritance)
+Khác với các hệ thống thông thường chỉ cho phép cấu hình Global, Plugin trong LLM Gateway có thể được gắn (apply) và tùy biến tham số ở nhiều tầng phân cấp khác nhau:
 
-### 3.3. Request Hedging / Speculative Routing
-- Với các request VIP đòi hỏi độ trễ cực thấp: Gửi đồng thời request tới 2 nhà cung cấp (ví dụ Azure OpenAI và OpenAI Direct). Gateway giữ luồng của bên nào trả về chunk đầu tiên (TTFT) sớm hơn và hủy kết nối với bên còn lại.
+```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ 1. GLOBAL (Áp dụng toàn bộ Gateway)                                │
+  │    └─► 2. PROVIDER (Áp dụng cho mọi model của OpenAI, Gemini, ...)  │
+  │         └─► 3. MODEL (Áp dụng cho model cụ thể: gpt-4o, claude-3-5) │
+  │              └─► 4. TENANT / GROUP (Áp dụng theo tổ chức / nhóm)    │
+  │                   └─► 5. ROLE / IAM (Áp dụng theo vai trò user)     │
+  │                        └─► 6. USER (Áp dụng theo từng người dùng)   │
+  │                             └─► 7. API KEY (Áp dụng riêng cho khóa) │
+  └─────────────────────────────────────────────────────────────────────┘
+  (Độ ưu tiên ghi đè: API Key > User > Role/IAM > Tenant/Group > Model > Provider > Global)
+```
+
+*Ví dụ vận hành thực tế*:
+- **Cấp Global**: Kích hoạt plugin `pii-masking` để đảm bảo không dữ liệu nhạy cảm nào bị lọt ra ngoài, và plugin `audit-log` để lưu vết tuân thủ.
+- **Cấp Tenant (Phòng Marketing)**: Bật plugin `budget-control` giới hạn 1,000 USD/tháng.
+- **Cấp Role (`Intern`)**: Gán plugin `rate-limiting` giới hạn 20 RPM và chặn không cho gọi các model siêu đắt tiền.
+- **Cấp Model (`o1-preview`)**: Gán plugin `rate-limiting` 5 requests/phút để tránh quá tải hạn mức OpenAI.
+- **Cấp API Key (`sk-gw-batch-worker`)**: Ghi đè tham số `rate-limiting` lên 1,000 RPM và bật plugin `semantic-cache` với ngưỡng tương đồng $0.98$.
+
+### 🧩 Danh Mục Plugin Cốt Lõi Dự Kiến (First-Party Plugin Catalog)
+
+1. **Traffic & Quota Management**:
+   - `rate-limiting`: Kiểm soát lưu lượng theo RPM (Requests/phút), TPM (Tokens/phút), hoặc Concurrent Requests theo từng Key/User/IP.
+   - `budget-control`: Quản lý hạn mức chi phí (USD) theo chu kỳ Giờ / Ngày / Tháng, tự động cảnh báo hoặc chặn request khi vượt ngưỡng.
+2. **Performance & Caching**:
+   - `semantic-cache`: Bộ đệm thông minh sử dụng Vector Embeddings (Cosine Similarity $\ge 0.95$), trả lời tức thì các câu hỏi tương đồng ngữ nghĩa, tiết kiệm tới 80% chi phí và giảm độ trễ về dưới 10ms.
+   - `request-hedging`: Gửi đồng thời tới 2 upstream provider cho các request ưu tiên cao (VIP), nhận kết quả từ bên có TTFT (Time-to-first-token) nhanh nhất.
+3. **Security, Privacy & Guardrails**:
+   - `pii-masking`: Tự động phát hiện và làm mờ dữ liệu nhạy cảm (Email, SĐT, Số thẻ ngân hàng, CCCD/CMND, API Keys) trước khi gửi tới LLM bên ngoài.
+   - `prompt-guard`: Ngăn chặn tấn công Prompt Injection, Jailbreak, và kiểm duyệt nội dung độc hại (Toxicity / Harmful content).
+4. **Resilience & Routing**:
+   - `retry-circuit-breaker`: Tự động thử lại hoặc ngắt mạch (Circuit Breaker) khi upstream trả về 429/500 liên tiếp.
+   - `header-transform`: Thêm/sửa/xóa các HTTP header gửi đến upstream hoặc trả về cho client.
+5. **Observability & Analytics**:
+   - `langfuse-exporter`: Tự động đồng bộ traces, spans và metadata sang nền tảng Langfuse.
+   - `audit-trail`: Xuất dữ liệu gọi API sang Kafka, ElasticSearch hoặc S3 phục vụ kiểm toán nội bộ.
 
 ---
 
 ## 📅 Lộ Trình Triển Khai Đề Xuất (Release Plan)
 
-| Phiên bản | Mục tiêu chính | Trạng thái |
-| :--- | :--- | :---: |
-| **v0.2.x** | Distributed architecture, AWS IAM, Multi-tenancy, Alerting, i18n, Open-Source Showcase | **Đã hoàn thành** |
-| **v0.3.0** | **Virtual Models / Model Aliasing** + Fallback Chains cơ bản | *Kế hoạch kế tiếp* |
-| **v0.3.1** | **Tối ưu hóa CLI `llmgw`** (Profile, Alias CLI, Live Tail Logs) | *Kế hoạch* |
-| **v0.4.0** | Traffic Splitting (Canary A/B) + TPM Rate Limiting | *Kế hoạch* |
-| **v0.5.0** | Semantic Vector Caching & Predictive Circuit Breaker | *Nghiên cứu* |
-| **v1.0.0** | Enterprise Production Ready (Zero-Knowledge High Concurrency) | *Mục tiêu dài hạn* |
+| Phiên bản | Mục tiêu chiến lược | Các tính năng trọng tâm | Trạng thái |
+| :--- | :--- | :--- | :---: |
+| **v0.2.x** | Enterprise Foundation | Distributed Architecture, AWS IAM, Multi-tenancy, Alerting, i18n, MIT License | **Đã hoàn thành** |
+| **v0.3.0** | **Virtual Models & Routing** | Virtual Model Aliasing, Fallback Chains, Model Mapping CLI & Web UI | *Kế hoạch kế tiếp* |
+| **v0.3.1** | **CLI Tooling Optimization** | Quản lý Profile đa môi trường, Live Tail Logs, Package standalone binary | *Kế hoạch* |
+| **v0.4.0** | **Plugin Core Architecture** | Core Plugin Engine (Lifecycle Hooks), Multi-Level Scoping (Key/User/Tenant/Global), Plugins: `rate-limiting` (RPM/TPM), `budget-control` | *Kế hoạch* |
+| **v0.5.0** | **Advanced Intelligence Plugins** | Plugins: `semantic-cache` (Vector Embedding), `pii-masking`, `prompt-guard`, `langfuse-exporter` | *Nghiên cứu* |
+| **v1.0.0** | **Enterprise Production Ready** | Custom WASM/Go Plugin SDK cho bên thứ 3, High-Throughput Zero-Copy Engine | *Mục tiêu dài hạn* |
