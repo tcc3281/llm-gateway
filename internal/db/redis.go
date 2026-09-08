@@ -146,3 +146,39 @@ func (r *RedisClient) GetRaw(ctx context.Context, key string) ([]byte, error) {
 func (r *RedisClient) SetRaw(ctx context.Context, key string, val []byte, ttl time.Duration) error {
 	return r.client.Set(ctx, key, val, ttl).Err()
 }
+
+// Hold & Settle Credit Reservations for Multi-Tenant Prepaid Billing
+func (r *RedisClient) GetTenantCreditHold(ctx context.Context, tenantID string) (float64, error) {
+	val, err := r.client.Get(ctx, fmt.Sprintf("tenant:hold:%s", tenantID)).Float64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return val, err
+}
+
+func (r *RedisClient) AddTenantCreditHold(ctx context.Context, tenantID string, amount float64, ttl time.Duration) (float64, error) {
+	key := fmt.Sprintf("tenant:hold:%s", tenantID)
+	pipe := r.client.Pipeline()
+	incr := pipe.IncrByFloat(ctx, key, amount)
+	pipe.Expire(ctx, key, ttl)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return incr.Val(), nil
+}
+
+func (r *RedisClient) ReleaseTenantCreditHold(ctx context.Context, tenantID string, amount float64) error {
+	key := fmt.Sprintf("tenant:hold:%s", tenantID)
+	pipe := r.client.Pipeline()
+	incr := pipe.IncrByFloat(ctx, key, -amount)
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return err
+	}
+	// If hold dropped below zero due to clock skew or race, normalize to 0
+	if incr.Val() < 0 {
+		_ = r.client.Set(ctx, key, 0, 10*time.Minute).Err()
+	}
+	return nil
+}

@@ -16,6 +16,8 @@ type User struct {
 	IsActive     bool      `json:"is_active"`
 	PasswordHash string    `json:"-"` // secret, never serialized
 	GroupRole    string    `json:"group_role,omitempty"` // "member" or "admin" when scoped to group context
+	TenantID     *uuid.UUID `json:"tenant_id,omitempty"`
+	TenantRole   string    `json:"tenant_role,omitempty"` // "tenant_admin", "member", "viewer"
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -23,6 +25,7 @@ type User struct {
 type APIKey struct {
 	ID                  uuid.UUID  `json:"id"`
 	UserID              uuid.UUID  `json:"user_id"`
+	TenantID            *uuid.UUID `json:"tenant_id,omitempty"`
 	KeyPrefix           string     `json:"key_prefix"`
 	KeyHash             string     `json:"-"`
 	Name                string     `json:"name"`
@@ -75,6 +78,7 @@ type ModelPricing struct {
 	ModelName            string    `json:"model_name"`
 	PromptPricePer1M     float64   `json:"prompt_price_per_1m"`
 	CompletionPricePer1M float64   `json:"completion_price_per_1m"`
+	CacheReadPricePer1M  *float64  `json:"cache_read_price_per_1m,omitempty"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }
 
@@ -83,6 +87,7 @@ type UsageLog struct {
 	CreatedAt           time.Time `json:"created_at"`
 	UserID              uuid.UUID `json:"user_id"`
 	KeyID               uuid.UUID `json:"key_id"`
+	TenantID            *uuid.UUID `json:"tenant_id,omitempty"`
 	InboundFormat       string    `json:"inbound_format"` // "openai" or "anthropic"
 	Provider            string    `json:"provider"`       // "openai", "anthropic", "gemini"
 	Model               string    `json:"model"`
@@ -247,6 +252,7 @@ type UsageLogFilter struct {
 	To            *time.Time
 	UserID        *uuid.UUID
 	KeyID         *uuid.UUID
+	TenantID      *uuid.UUID
 	Provider      string
 	Model         string
 	Status        string
@@ -383,5 +389,48 @@ type MemberDetailResponse struct {
 	ModelDetails []UserModelUsage   `json:"model_details"`
 	DailyTrends  []UsageSeriesPoint `json:"daily_trends"`
 }
+
+// Tenant represents an external client organization or an internal department tenant.
+type Tenant struct {
+	ID                 uuid.UUID `json:"id"`
+	Name               string    `json:"name"`
+	Type               string    `json:"type"` // "internal" | "external"
+	BillingMode        string    `json:"billing_mode"` // "prepaid" | "postpaid"
+	CreditBalance      float64   `json:"credit_balance"`
+	BudgetLimitMonthly float64   `json:"budget_limit_monthly"`
+	AllowedModels      []string  `json:"allowed_models"`
+	IsActive           bool      `json:"is_active"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+}
+
+// TenantCreditTransaction records balance top-ups, contract deposits, and adjustments.
+type TenantCreditTransaction struct {
+	ID           int64      `json:"id"`
+	TenantID     uuid.UUID  `json:"tenant_id"`
+	Amount       float64    `json:"amount"`
+	BalanceAfter float64    `json:"balance_after"`
+	Type         string     `json:"type"` // "contract_deposit", "admin_adjustment", "usage_deduction", "refund"
+	ContractRef  string     `json:"contract_ref,omitempty"`
+	Notes        string     `json:"notes,omitempty"`
+	CreatedBy    *uuid.UUID `json:"created_by,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+type TopUpCreditRequest struct {
+	Amount      float64 `json:"amount"`
+	ContractRef string  `json:"contract_ref"`
+	Notes       string  `json:"notes"`
+}
+
+type TenantPatch struct {
+	Name               *string   `json:"name,omitempty"`
+	Type               *string   `json:"type,omitempty"`
+	BillingMode        *string   `json:"billing_mode,omitempty"`
+	BudgetLimitMonthly *float64  `json:"budget_limit_monthly,omitempty"`
+	AllowedModels      *[]string `json:"allowed_models,omitempty"`
+	IsActive           *bool     `json:"is_active,omitempty"`
+}
+
 
 

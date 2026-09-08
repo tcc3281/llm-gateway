@@ -31,6 +31,7 @@ export default function App() {
             {/* Backwards-compatible aliases */}
             <Route path="users" element={<Navigate to="/people?tab=users" replace />} />
             <Route path="groups" element={<Navigate to="/people?tab=groups" replace />} />
+            <Route path="tenants" element={<Navigate to="/people?tab=tenants" replace />} />
             <Route path="analytics/members" element={<Navigate to="/people?tab=analytics" replace />} />
             <Route path="keys" element={<ApiKeys />} />
             <Route path="providers" element={<Providers />} />

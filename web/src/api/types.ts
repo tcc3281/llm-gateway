@@ -9,6 +9,8 @@ export interface User {
   role: "admin" | "user";
   is_root?: boolean;
   group_role?: "member" | "admin";
+  tenant_id?: string | null;
+  tenant_role?: string;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +18,7 @@ export interface User {
 export interface APIKey {
   id: string;
   user_id: string;
+  tenant_id?: string | null;
   key_prefix: string;
   name: string;
   budget_limit: number;
@@ -45,6 +48,7 @@ export interface ModelPricing {
   model_name: string;
   prompt_price_per_1m: number;
   completion_price_per_1m: number;
+  cache_read_price_per_1m?: number | null;
   updated_at: string;
 }
 
@@ -356,6 +360,53 @@ export interface LoginResponse {
     is_root: boolean;
     groups: string[];
   };
+}
+
+export interface Tenant {
+  id: string;
+  name: string;
+  type: "internal" | "external";
+  billing_mode: "prepaid" | "postpaid";
+  credit_balance: number;
+  budget_limit_monthly: number;
+  allowed_models: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TenantCreditTransaction {
+  id: number;
+  tenant_id: string;
+  amount: number;
+  balance_after: number;
+  type: "contract_deposit" | "admin_adjustment" | "usage_deduction" | "refund";
+  contract_ref?: string;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+}
+
+export interface TenantTransactionsPage {
+  data: TenantCreditTransaction[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TopUpCreditRequest {
+  amount: number;
+  contract_ref: string;
+  notes: string;
+}
+
+export interface TenantPatch {
+  name?: string;
+  type?: "internal" | "external";
+  billing_mode?: "prepaid" | "postpaid";
+  budget_limit_monthly?: number;
+  allowed_models?: string[];
+  is_active?: boolean;
 }
 
 

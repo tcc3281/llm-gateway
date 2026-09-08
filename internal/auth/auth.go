@@ -35,7 +35,7 @@ func NewAuthService(pg *db.PostgresDB, redis *db.RedisClient, adminKey string) *
 }
 
 // GenerateSecretKey creates a key like: sk-gw-abcdef123456... (returns plain key & struct)
-func (s *AuthService) CreateAPIKey(ctx context.Context, userID uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, cacheTTLSeconds int) (string, *model.APIKey, error) {
+func (s *AuthService) CreateAPIKey(ctx context.Context, userID uuid.UUID, name string, budgetLimit float64, rateLimitRPM int, cacheTTLSeconds int, tenantID ...*uuid.UUID) (string, *model.APIKey, error) {
 	bytes := make([]byte, 24)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", nil, err
@@ -45,8 +45,18 @@ func (s *AuthService) CreateAPIKey(ctx context.Context, userID uuid.UUID, name s
 	prefix := plainKey[:10]
 	hash := s.HashKey(plainKey)
 
+	var tid *uuid.UUID
+	if len(tenantID) > 0 && tenantID[0] != nil {
+		tid = tenantID[0]
+	} else if s.pg != nil {
+		if u, err := s.pg.GetUserByID(userID); err == nil && u != nil && u.TenantID != nil {
+			tid = u.TenantID
+		}
+	}
+
 	apiKey := &model.APIKey{
 		UserID:          userID,
+		TenantID:        tid,
 		KeyPrefix:       prefix,
 		KeyHash:         hash,
 		Name:            name,

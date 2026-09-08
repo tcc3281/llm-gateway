@@ -209,10 +209,12 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Email  string `json:"email"`
-		Name   string `json:"name"`
-		Role   string `json:"role"`
-		IsRoot bool   `json:"is_root"`
+		Email      string  `json:"email"`
+		Name       string  `json:"name"`
+		Role       string  `json:"role"`
+		IsRoot     bool    `json:"is_root"`
+		TenantID   *string `json:"tenant_id"`
+		TenantRole string  `json:"tenant_role"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -224,11 +226,20 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Role = "user"
 	}
 
+	var tid *uuid.UUID
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" {
+		if parsed, err := uuid.Parse(strings.TrimSpace(*req.TenantID)); err == nil {
+			tid = &parsed
+		}
+	}
+
 	user := &model.User{
-		Email:  req.Email,
-		Name:   req.Name,
-		Role:   req.Role,
-		IsRoot: req.IsRoot,
+		Email:      req.Email,
+		Name:       req.Name,
+		Role:       req.Role,
+		IsRoot:     req.IsRoot,
+		TenantID:   tid,
+		TenantRole: req.TenantRole,
 	}
 
 	if err := h.pg.CreateUser(user); err != nil {
@@ -237,10 +248,12 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logAudit(r, "admin", "user.create", "user", user.ID.String(), map[string]interface{}{
-		"email":   user.Email,
-		"name":    user.Name,
-		"role":    user.Role,
-		"is_root": user.IsRoot,
+		"email":       user.Email,
+		"name":        user.Name,
+		"role":        user.Role,
+		"is_root":     user.IsRoot,
+		"tenant_id":   user.TenantID,
+		"tenant_role": user.TenantRole,
 	})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -256,6 +269,7 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		UserID          string  `json:"user_id"`
+		TenantID        *string `json:"tenant_id"`
 		Name            string  `json:"name"`
 		BudgetLimit     float64 `json:"budget_limit"`
 		RateLimitRPM    int     `json:"rate_limit_rpm"`
@@ -273,6 +287,13 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var tid *uuid.UUID
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" {
+		if parsed, err := uuid.Parse(strings.TrimSpace(*req.TenantID)); err == nil {
+			tid = &parsed
+		}
+	}
+
 	if req.RateLimitRPM <= 0 {
 		req.RateLimitRPM = 60
 	}
@@ -282,7 +303,7 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		cacheTTL = *req.CacheTTLSeconds
 	}
 
-	plainKey, apiKey, err := h.authService.CreateAPIKey(r.Context(), userID, req.Name, req.BudgetLimit, req.RateLimitRPM, cacheTTL)
+	plainKey, apiKey, err := h.authService.CreateAPIKey(r.Context(), userID, req.Name, req.BudgetLimit, req.RateLimitRPM, cacheTTL, tid)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -400,9 +421,11 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name   *string `json:"name"`
-		Role   *string `json:"role"`
-		IsRoot *bool   `json:"is_root"`
+		Name       *string `json:"name"`
+		Role       *string `json:"role"`
+		IsRoot     *bool   `json:"is_root"`
+		TenantID   *string `json:"tenant_id"`
+		TenantRole *string `json:"tenant_role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
@@ -430,12 +453,31 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID := current.TenantID
+	tenantRole := current.TenantRole
+	if req.TenantID != nil {
+		trimmed := strings.TrimSpace(*req.TenantID)
+		if trimmed == "" {
+			tenantID = nil
+		} else if parsed, err := uuid.Parse(trimmed); err == nil {
+			tenantID = &parsed
+		}
+	}
+	if req.TenantRole != nil {
+		tenantRole = *req.TenantRole
+	}
+	if req.TenantID != nil || req.TenantRole != nil {
+		_ = h.pg.UpdateUserTenant(id, tenantID, tenantRole)
+	}
+
 	h.logAudit(r, "admin", "user.update", "user", id.String(), req)
 
 	updated := *current
 	updated.Name = name
 	updated.Role = role
 	updated.IsRoot = isRoot
+	updated.TenantID = tenantID
+	updated.TenantRole = tenantRole
 	updated.UpdatedAt = time.Now()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -924,10 +966,11 @@ func (h *AdminHandler) UpsertModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Provider             string  `json:"provider"`
-		ModelName            string  `json:"model_name"`
-		PromptPricePer1M     float64 `json:"prompt_price_per_1m"`
-		CompletionPricePer1M float64 `json:"completion_price_per_1m"`
+		Provider             string   `json:"provider"`
+		ModelName            string   `json:"model_name"`
+		PromptPricePer1M     float64  `json:"prompt_price_per_1m"`
+		CompletionPricePer1M float64  `json:"completion_price_per_1m"`
+		CacheReadPricePer1M  *float64 `json:"cache_read_price_per_1m,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -945,6 +988,7 @@ func (h *AdminHandler) UpsertModel(w http.ResponseWriter, r *http.Request) {
 		ModelName:            req.ModelName,
 		PromptPricePer1M:     req.PromptPricePer1M,
 		CompletionPricePer1M: req.CompletionPricePer1M,
+		CacheReadPricePer1M:  req.CacheReadPricePer1M,
 	}
 
 	if err := h.pg.UpsertModelPricing(modelPricing); err != nil {

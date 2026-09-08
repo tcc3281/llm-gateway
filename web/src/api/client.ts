@@ -12,6 +12,11 @@ import type {
   ModelPricing,
   ProviderKey,
   SystemInfo,
+  Tenant,
+  TenantCreditTransaction,
+  TenantPatch,
+  TenantTransactionsPage,
+  TopUpCreditRequest,
   UsageLogDetail,
   UsageLogsPage,
   User,
@@ -98,9 +103,9 @@ export interface CreateKeyResult {
 export const api = {
   // Users
   listUsers: () => request<User[]>("/admin/users"),
-  createUser: (u: { email: string; name: string; role?: string; is_root?: boolean }) =>
+  createUser: (u: { email: string; name: string; role?: string; is_root?: boolean; tenant_id?: string | null; tenant_role?: string }) =>
     request<User>("/admin/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: { name?: string; role?: string; is_root?: boolean }) =>
+  updateUser: (id: string, patch: { name?: string; role?: string; is_root?: boolean; tenant_id?: string | null; tenant_role?: string }) =>
     request<User>(`/admin/users?id=${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -169,6 +174,7 @@ export const api = {
     model_name: string;
     prompt_price_per_1m: number;
     completion_price_per_1m: number;
+    cache_read_price_per_1m?: number | null;
   }) =>
     request<ModelPricing>("/admin/models", {
       method: "POST",
@@ -340,6 +346,40 @@ export const api = {
   getMemberDetail: (userId: string, params?: { from?: string; to?: string }) =>
     request<MemberDetailResponse>(
       `/admin/analytics/members/${userId}${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+
+  // Tenants (Multi-Tenant B2B & Pre-paid Credits)
+  listTenants: () => request<Tenant[]>("/admin/tenants"),
+  createTenant: (data: {
+    name: string;
+    type?: "internal" | "external";
+    billing_mode?: "prepaid" | "postpaid";
+    budget_limit_monthly?: number;
+    allowed_models?: string[];
+    is_active?: boolean;
+  }) =>
+    request<Tenant>("/admin/tenants", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getTenant: (id: string) => request<Tenant>(`/admin/tenants/${id}`),
+  updateTenant: (id: string, patch: TenantPatch) =>
+    request<Tenant>(`/admin/tenants/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteTenant: (id: string) =>
+    request<{ status: string }>(`/admin/tenants/${id}`, {
+      method: "DELETE",
+    }),
+  topUpTenantCredit: (id: string, req: TopUpCreditRequest) =>
+    request<TenantCreditTransaction>(`/admin/tenants/${id}/topup`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+  listTenantTransactions: (id: string, params?: { limit?: number; offset?: number }) =>
+    request<TenantTransactionsPage>(
+      `/admin/tenants/${id}/transactions${qs(params as Record<string, string | number | undefined>)}`,
     ),
 
   // System

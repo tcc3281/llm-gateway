@@ -87,17 +87,20 @@ func (p *PostgresDB) CreateUser(user *model.User) error {
 	if !user.IsActive {
 		user.IsActive = true
 	}
+	if user.TenantRole == "" {
+		user.TenantRole = "member"
+	}
 	query := `
-		INSERT INTO users (id, email, name, role, is_root, is_active, password_hash)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO users (id, email, name, role, is_root, is_active, password_hash, tenant_id, tenant_role)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING created_at, updated_at`
-	return p.QueryRow(query, user.ID, user.Email, user.Name, user.Role, user.IsRoot, user.IsActive, user.PasswordHash).Scan(&user.CreatedAt, &user.UpdatedAt)
+	return p.QueryRow(query, user.ID, user.Email, user.Name, user.Role, user.IsRoot, user.IsActive, user.PasswordHash, user.TenantID, user.TenantRole).Scan(&user.CreatedAt, &user.UpdatedAt)
 }
 
 func (p *PostgresDB) GetUserByID(id uuid.UUID) (*model.User, error) {
 	u := &model.User{}
-	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at FROM users WHERE id = $1`
-	err := p.QueryRow(query, id).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users WHERE id = $1`
+	err := p.QueryRow(query, id).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +109,8 @@ func (p *PostgresDB) GetUserByID(id uuid.UUID) (*model.User, error) {
 
 func (p *PostgresDB) GetUserByEmail(email string) (*model.User, error) {
 	u := &model.User{}
-	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at FROM users WHERE LOWER(email) = LOWER($1)`
-	err := p.QueryRow(query, email).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users WHERE LOWER(email) = LOWER($1)`
+	err := p.QueryRow(query, email).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole)
 	if err != nil {
 		return nil, err
 	}
@@ -141,18 +144,18 @@ func (p *PostgresDB) UpdateUserStatus(id uuid.UUID, isActive bool) error {
 func (p *PostgresDB) CreateAPIKey(key *model.APIKey) error {
 	key.ID = uuid.New()
 	query := `
-		INSERT INTO api_keys (id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO api_keys (id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, tenant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at`
-	return p.QueryRow(query, key.ID, key.UserID, key.KeyPrefix, key.KeyHash, key.Name, key.BudgetLimit, key.RateLimitRPM, key.CacheTTLSeconds, key.IsActive, key.ExpiresAt).Scan(&key.CreatedAt)
+	return p.QueryRow(query, key.ID, key.UserID, key.KeyPrefix, key.KeyHash, key.Name, key.BudgetLimit, key.RateLimitRPM, key.CacheTTLSeconds, key.IsActive, key.ExpiresAt, key.TenantID).Scan(&key.CreatedAt)
 }
 
 func (p *PostgresDB) GetAPIKeyByHash(keyHash string) (*model.APIKey, error) {
 	k := &model.APIKey{}
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys WHERE key_hash = $1 AND is_active = TRUE`
-	err := p.QueryRow(query, keyHash).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
+	err := p.QueryRow(query, keyHash).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +164,7 @@ func (p *PostgresDB) GetAPIKeyByHash(keyHash string) (*model.APIKey, error) {
 
 // Model Pricing Repositories
 func (p *PostgresDB) GetPricings() (map[string]model.ModelPricing, error) {
-	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, updated_at FROM model_pricings`
+	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, cache_read_price_per_1m, updated_at FROM model_pricings`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -171,7 +174,7 @@ func (p *PostgresDB) GetPricings() (map[string]model.ModelPricing, error) {
 	pricings := make(map[string]model.ModelPricing)
 	for rows.Next() {
 		var pr model.ModelPricing
-		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.UpdatedAt); err != nil {
+		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.CacheReadPricePer1M, &pr.UpdatedAt); err != nil {
 			return nil, err
 		}
 		// Key format: provider:model_name (e.g., "openai:gpt-4o")
@@ -182,7 +185,7 @@ func (p *PostgresDB) GetPricings() (map[string]model.ModelPricing, error) {
 }
 
 func (p *PostgresDB) GetAllModelsList() ([]model.ModelPricing, error) {
-	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, updated_at FROM model_pricings ORDER BY provider, model_name`
+	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, cache_read_price_per_1m, updated_at FROM model_pricings ORDER BY provider, model_name`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -192,7 +195,7 @@ func (p *PostgresDB) GetAllModelsList() ([]model.ModelPricing, error) {
 	list := make([]model.ModelPricing, 0)
 	for rows.Next() {
 		var pr model.ModelPricing
-		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.UpdatedAt); err != nil {
+		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.CacheReadPricePer1M, &pr.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, pr)
@@ -205,14 +208,15 @@ func (p *PostgresDB) UpsertModelPricing(pr *model.ModelPricing) error {
 		pr.ID = uuid.New()
 	}
 	query := `
-		INSERT INTO model_pricings (id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, updated_at)
-		VALUES ($1, $2, $3, $4, $5, NOW())
+		INSERT INTO model_pricings (id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, cache_read_price_per_1m, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (provider, model_name) DO UPDATE SET
 			prompt_price_per_1m = EXCLUDED.prompt_price_per_1m,
 			completion_price_per_1m = EXCLUDED.completion_price_per_1m,
+			cache_read_price_per_1m = EXCLUDED.cache_read_price_per_1m,
 			updated_at = NOW()
 		RETURNING updated_at`
-	return p.QueryRow(query, pr.ID, pr.Provider, pr.ModelName, pr.PromptPricePer1M, pr.CompletionPricePer1M).Scan(&pr.UpdatedAt)
+	return p.QueryRow(query, pr.ID, pr.Provider, pr.ModelName, pr.PromptPricePer1M, pr.CompletionPricePer1M, pr.CacheReadPricePer1M).Scan(&pr.UpdatedAt)
 }
 
 func (p *PostgresDB) DeleteModelPricing(id uuid.UUID) error {
@@ -276,7 +280,7 @@ func (p *PostgresDB) GetSpentCostByKeyID(keyID uuid.UUID) (float64, error) {
 
 // User Management
 func (p *PostgresDB) ListUsers() ([]model.User, error) {
-	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at FROM users ORDER BY created_at DESC`
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users ORDER BY created_at DESC`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -286,7 +290,7 @@ func (p *PostgresDB) ListUsers() ([]model.User, error) {
 	var users []model.User
 	for rows.Next() {
 		var u model.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -298,9 +302,9 @@ func (p *PostgresDB) ListUsers() ([]model.User, error) {
 func (p *PostgresDB) GetAPIKeyByID(id uuid.UUID) (*model.APIKey, error) {
 	k := &model.APIKey{}
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys WHERE id = $1`
-	err := p.QueryRow(query, id).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
+	err := p.QueryRow(query, id).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +313,7 @@ func (p *PostgresDB) GetAPIKeyByID(id uuid.UUID) (*model.APIKey, error) {
 
 func (p *PostgresDB) ListAPIKeys() ([]model.APIKey, error) {
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys ORDER BY created_at DESC`
 	rows, err := p.Query(query)
 	if err != nil {
@@ -320,7 +324,7 @@ func (p *PostgresDB) ListAPIKeys() ([]model.APIKey, error) {
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -337,6 +341,11 @@ func (p *PostgresDB) DeactivateAPIKey(id uuid.UUID) error {
 // handler from the current record so unchanged fields are preserved.
 func (p *PostgresDB) UpdateUser(id uuid.UUID, name, role string, isRoot bool) error {
 	_, err := p.Exec(`UPDATE users SET name = $2, role = $3, is_root = $4, updated_at = NOW() WHERE id = $1`, id, name, role, isRoot)
+	return err
+}
+
+func (p *PostgresDB) UpdateUserTenant(id uuid.UUID, tenantID *uuid.UUID, tenantRole string) error {
+	_, err := p.Exec(`UPDATE users SET tenant_id = $2, tenant_role = $3, updated_at = NOW() WHERE id = $1`, id, tenantID, tenantRole)
 	return err
 }
 
@@ -359,7 +368,7 @@ func (p *PostgresDB) ReactivateAPIKey(id uuid.UUID) error {
 
 func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error) {
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`
 	rows, err := p.Query(query, userID)
 	if err != nil {
@@ -370,12 +379,31 @@ func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error)
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
 	}
 	return keys, nil
+}
+
+func (p *PostgresDB) ListTenantUsers(tenantID uuid.UUID) ([]model.User, error) {
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users WHERE tenant_id = $1 ORDER BY created_at DESC`
+	rows, err := p.Query(query, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []model.User
+	for rows.Next() {
+		var u model.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
 }
 
 // Provider Key Repositories (stateful provider credentials)
@@ -477,8 +505,8 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 		INSERT INTO usage_logs 
 		(created_at, user_id, key_id, inbound_format, provider, model, prompt_tokens, completion_tokens, total_tokens, 
 		 cached_input_tokens, reasoning_tokens, prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
-		 cost, ttft_ms, total_latency_ms, status_code, error_message, request_shape)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)`)
+		 cost, ttft_ms, total_latency_ms, status_code, error_message, request_shape, tenant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`)
 	if err != nil {
 		return err
 	}
@@ -496,7 +524,7 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 			l.CreatedAt, l.UserID, l.KeyID, l.InboundFormat, l.Provider, l.Model,
 			l.PromptTokens, l.CompletionTokens, l.TotalTokens,
 			l.CachedInputTokens, l.ReasoningTokens, l.PromptPriceUsed, l.CompletionPriceUsed, l.PricingSource, l.PricingFallback,
-			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage, shapeBytes,
+			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage, shapeBytes, l.TenantID,
 		)
 		if err != nil {
 			return err
@@ -1688,6 +1716,199 @@ func (p *PostgresDB) GetMemberDetail(userID uuid.UUID, from, to time.Time) (*mod
 	}
 
 	return resp, nil
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Tenant B2B Database Operations
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) CreateTenant(t *model.Tenant) error {
+	t.ID = uuid.New()
+	if t.AllowedModels == nil {
+		t.AllowedModels = []string{"*"}
+	}
+	if t.BillingMode == "" {
+		t.BillingMode = "prepaid"
+	}
+	if t.Type == "" {
+		t.Type = "external"
+	}
+
+	query := `
+		INSERT INTO tenants (id, name, type, billing_mode, credit_balance, budget_limit_monthly, allowed_models, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at, updated_at`
+	return p.QueryRow(query, t.ID, t.Name, t.Type, t.BillingMode, t.CreditBalance, t.BudgetLimitMonthly, pq.Array(t.AllowedModels), t.IsActive).
+		Scan(&t.CreatedAt, &t.UpdatedAt)
+}
+
+func (p *PostgresDB) GetTenantByID(id uuid.UUID) (*model.Tenant, error) {
+	query := `
+		SELECT id, name, type, billing_mode, credit_balance, budget_limit_monthly, allowed_models, is_active, created_at, updated_at
+		FROM tenants WHERE id = $1`
+	var t model.Tenant
+	err := p.QueryRow(query, id).Scan(
+		&t.ID, &t.Name, &t.Type, &t.BillingMode, &t.CreditBalance, &t.BudgetLimitMonthly, pq.Array(&t.AllowedModels), &t.IsActive, &t.CreatedAt, &t.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (p *PostgresDB) ListTenants() ([]model.Tenant, error) {
+	query := `
+		SELECT id, name, type, billing_mode, credit_balance, budget_limit_monthly, allowed_models, is_active, created_at, updated_at
+		FROM tenants ORDER BY created_at DESC`
+	rows, err := p.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tenants []model.Tenant
+	for rows.Next() {
+		var t model.Tenant
+		if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.BillingMode, &t.CreditBalance, &t.BudgetLimitMonthly, pq.Array(&t.AllowedModels), &t.IsActive, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tenants = append(tenants, t)
+	}
+	return tenants, nil
+}
+
+func (p *PostgresDB) UpdateTenant(id uuid.UUID, patch *model.TenantPatch) error {
+	sets := []string{"updated_at = NOW()"}
+	args := []interface{}{id}
+	idx := 2
+
+	if patch.Name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", idx))
+		args = append(args, *patch.Name)
+		idx++
+	}
+	if patch.Type != nil {
+		sets = append(sets, fmt.Sprintf("type = $%d", idx))
+		args = append(args, *patch.Type)
+		idx++
+	}
+	if patch.BillingMode != nil {
+		sets = append(sets, fmt.Sprintf("billing_mode = $%d", idx))
+		args = append(args, *patch.BillingMode)
+		idx++
+	}
+	if patch.BudgetLimitMonthly != nil {
+		sets = append(sets, fmt.Sprintf("budget_limit_monthly = $%d", idx))
+		args = append(args, *patch.BudgetLimitMonthly)
+		idx++
+	}
+	if patch.AllowedModels != nil {
+		sets = append(sets, fmt.Sprintf("allowed_models = $%d", idx))
+		args = append(args, pq.Array(*patch.AllowedModels))
+		idx++
+	}
+	if patch.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", idx))
+		args = append(args, *patch.IsActive)
+		idx++
+	}
+
+	query := fmt.Sprintf("UPDATE tenants SET %s WHERE id = $1", strings.Join(sets, ", "))
+	_, err := p.Exec(query, args...)
+	return err
+}
+
+func (p *PostgresDB) DeleteTenant(id uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM tenants WHERE id = $1`, id)
+	return err
+}
+
+func (p *PostgresDB) TopUpTenantCredit(tenantID uuid.UUID, amount float64, txType, contractRef, notes string, createdBy *uuid.UUID) (*model.TenantCreditTransaction, error) {
+	tx, err := p.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var newBalance float64
+	err = tx.QueryRow(`
+		UPDATE tenants
+		SET credit_balance = credit_balance + $1, updated_at = NOW()
+		WHERE id = $2
+		RETURNING credit_balance`, amount, tenantID).Scan(&newBalance)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update tenant balance: %w", err)
+	}
+
+	var transaction model.TenantCreditTransaction
+	transaction.TenantID = tenantID
+	transaction.Amount = amount
+	transaction.BalanceAfter = newBalance
+	transaction.Type = txType
+	transaction.ContractRef = contractRef
+	transaction.Notes = notes
+	transaction.CreatedBy = createdBy
+
+	err = tx.QueryRow(`
+		INSERT INTO tenant_credit_transactions (tenant_id, amount, balance_after, type, contract_ref, notes, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, created_at`,
+		tenantID, amount, newBalance, txType, contractRef, notes, createdBy,
+	).Scan(&transaction.ID, &transaction.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record credit transaction: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+func (p *PostgresDB) DeductTenantCredit(tenantID uuid.UUID, cost float64) (float64, error) {
+	var newBalance float64
+	err := p.QueryRow(`
+		UPDATE tenants
+		SET credit_balance = credit_balance - $1, updated_at = NOW()
+		WHERE id = $2
+		RETURNING credit_balance`, cost, tenantID).Scan(&newBalance)
+	if err != nil {
+		return 0, err
+	}
+	return newBalance, nil
+}
+
+func (p *PostgresDB) ListTenantTransactions(tenantID uuid.UUID, limit, offset int) ([]model.TenantCreditTransaction, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var total int
+	err := p.QueryRow(`SELECT COUNT(*) FROM tenant_credit_transactions WHERE tenant_id = $1`, tenantID).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT id, tenant_id, amount, balance_after, type, COALESCE(contract_ref, ''), COALESCE(notes, ''), created_by, created_at
+		FROM tenant_credit_transactions
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := p.Query(query, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var txs []model.TenantCreditTransaction
+	for rows.Next() {
+		var tx model.TenantCreditTransaction
+		if err := rows.Scan(&tx.ID, &tx.TenantID, &tx.Amount, &tx.BalanceAfter, &tx.Type, &tx.ContractRef, &tx.Notes, &tx.CreatedBy, &tx.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		txs = append(txs, tx)
+	}
+	return txs, total, nil
 }
 
 

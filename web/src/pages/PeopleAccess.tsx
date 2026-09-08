@@ -1,9 +1,10 @@
 import { useSearchParams } from "react-router-dom";
 import Users from "./Users";
 import Groups from "./Groups";
+import Tenants from "./Tenants";
 import MemberAnalytics from "./MemberAnalytics";
 
-type TabKey = "users" | "groups" | "analytics";
+type TabKey = "users" | "groups" | "tenants" | "analytics";
 
 interface TabItem {
   key: TabKey;
@@ -24,6 +25,12 @@ const TABS: TabItem[] = [
     label: "IAM Groups & Policies",
     icon: "shield_person",
     desc: "Organize teams, assign monthly budgets, and configure IAM permission policies",
+  },
+  {
+    key: "tenants",
+    label: "Tenants & B2B Billing",
+    icon: "domain",
+    desc: "Manage multi-tenant SaaS clients, system boundary models, and prepaid credit escrows",
   },
   {
     key: "analytics",
@@ -114,6 +121,7 @@ export default function PeopleAccess() {
       <div style={{ padding: "0 8px" }}>
         {currentTab === "users" && <Users />}
         {currentTab === "groups" && <Groups />}
+        {currentTab === "tenants" && <Tenants />}
         {currentTab === "analytics" && <MemberAnalytics />}
       </div>
     </div>

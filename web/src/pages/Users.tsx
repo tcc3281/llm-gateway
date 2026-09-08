@@ -1,25 +1,31 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { User } from "../api/types";
+import type { Tenant, User } from "../api/types";
 import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
+import UserDetailModal from "../components/UserDetailModal";
 
 interface UserForm {
   name: string;
   email: string;
   role: string;
   is_root: boolean;
+  tenant_id: string;
+  tenant_role: string;
 }
 
-const empty: UserForm = { name: "", email: "", role: "user", is_root: false };
+const empty: UserForm = { name: "", email: "", role: "user", is_root: false, tenant_id: "", tenant_role: "member" };
 
 export default function Users() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<UserForm>(empty);
 
@@ -32,10 +38,24 @@ export default function Users() {
 
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
+  const userIdParam = searchParams.get("user_id");
+
+  useEffect(() => {
+    if (userIdParam && users.length > 0) {
+      const match = users.find((u) => u.id === userIdParam);
+      if (match) setSelectedUser(match);
+    }
+  }, [userIdParam, users]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
-      setUsers(await api.listUsers());
+      const [uList, tList] = await Promise.all([
+        api.listUsers(),
+        api.listTenants().catch(() => []),
+      ]);
+      setUsers(uList);
+      setTenants(tList);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load users");
     }
@@ -51,7 +71,14 @@ export default function Users() {
     setBusy(true);
     setError(null);
     try {
-      await api.createUser(form);
+      await api.createUser({
+        name: form.name,
+        email: form.email,
+        role: form.role,
+        is_root: form.is_root,
+        tenant_id: form.tenant_id ? form.tenant_id : null,
+        tenant_role: form.tenant_role || "member",
+      });
       setCreateOpen(false);
       setForm(empty);
       await load();
@@ -72,6 +99,8 @@ export default function Users() {
         name: editForm.name,
         role: editForm.role,
         is_root: editForm.is_root,
+        tenant_id: editForm.tenant_id ? editForm.tenant_id : null,
+        tenant_role: editForm.tenant_role || "member",
       });
       setEditTarget(null);
       await load();
@@ -150,79 +179,164 @@ export default function Users() {
             <tr>
               <th>Name</th>
               <th>Email</th>
+              <th>Tenant</th>
               <th>Role</th>
               <th>Created</th>
               <th style={{ textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.name || "—"}</td>
-                <td className="mono" style={{ fontSize: 12 }}>
-                  {u.email}
-                </td>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    {u.role === "admin" ? (
-                      <span className="badge badge--violet">admin</span>
+            {users.map((u) => {
+              const matchedTenant = tenants.find((t) => t.id === u.tenant_id);
+              return (
+                <tr key={u.id}>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      style={{
+                        padding: 0,
+                        minHeight: "unset",
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 13,
+                      }}
+                      onClick={() => setSelectedUser(u)}
+                      title="View user details & analytics"
+                    >
+                      {u.name || "—"}
+                    </button>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>
+                    <button
+                      type="button"
+                      className="btn btn--ghost mono"
+                      style={{
+                        padding: 0,
+                        minHeight: "unset",
+                        color: "var(--primary)",
+                        cursor: "pointer",
+                        fontSize: 12,
+                      }}
+                      onClick={() => setSelectedUser(u)}
+                      title="View user details & analytics"
+                    >
+                      {u.email}
+                    </button>
+                  </td>
+                  <td>
+                    {matchedTenant ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 8px",
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            background: matchedTenant.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
+                            color: matchedTenant.type === "internal" ? "#818cf8" : "#34d399",
+                          }}
+                        >
+                          {matchedTenant.name}
+                        </span>
+                        <span className="muted mono" style={{ fontSize: 10, textTransform: "uppercase" }}>
+                          ({u.tenant_role || "member"})
+                        </span>
+                      </div>
                     ) : (
-                      <span className="badge">user</span>
+                      <span className="muted" style={{ fontSize: 12 }}>Global</span>
                     )}
-                    {u.is_root && (
-                      <span
-                        className="mono"
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {u.role === "admin" ? (
+                        <span className="badge badge--violet">admin</span>
+                      ) : (
+                        <span className="badge">user</span>
+                      )}
+                      {u.is_root && (
+                        <span
+                          className="mono"
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 5px",
+                            borderRadius: 3,
+                            background: "rgba(245, 158, 11, 0.15)",
+                            color: "var(--amber)",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                          }}
+                        >
+                          ROOT
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="muted">{fmtDate(u.created_at)}</td>
+                  <td>
+                    <div className="table__actions">
+                      <button
+                        className="btn btn--sm"
                         style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "1px 5px",
-                          borderRadius: 3,
-                          background: "rgba(245, 158, 11, 0.15)",
-                          color: "var(--amber)",
-                          border: "1px solid rgba(245, 158, 11, 0.3)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                          color: "#22d3ee",
+                          background: "rgba(34, 211, 238, 0.1)",
+                          border: "1px solid rgba(34, 211, 238, 0.3)",
+                          fontWeight: 600,
+                        }}
+                        onClick={() => setSelectedUser(u)}
+                        title="View user dashboard, keys, and logs"
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                          insights
+                        </span>
+                        Details
+                      </button>
+                      <button
+                        className="btn btn--sm"
+                        onClick={() => {
+                          setPasswordTarget(u);
+                          setNewPassword("");
+                          setPasswordSuccess(null);
                         }}
                       >
-                        ROOT
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="muted">{fmtDate(u.created_at)}</td>
-                <td>
-                  <div className="table__actions">
-                    <button
-                      className="btn btn--sm"
-                      style={{ color: "#22d3ee" }}
-                      onClick={() => {
-                        setPasswordTarget(u);
-                        setNewPassword("");
-                        setPasswordSuccess(null);
-                      }}
-                    >
-                      Password
-                    </button>
-                    <button
-                      className="btn btn--sm"
-                      onClick={() => {
-                        setEditTarget(u);
-                        setEditForm({ name: u.name, email: u.email, role: u.role, is_root: Boolean(u.is_root) });
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn btn--sm btn--danger"
-                      onClick={() => setDeleteTarget(u)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                        Password
+                      </button>
+                      <button
+                        className="btn btn--sm"
+                        onClick={() => {
+                          setEditTarget(u);
+                          setEditForm({
+                            name: u.name,
+                            email: u.email,
+                            role: u.role,
+                            is_root: Boolean(u.is_root),
+                            tenant_id: u.tenant_id || "",
+                            tenant_role: u.tenant_role || "member",
+                          });
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn--sm btn--danger"
+                        onClick={() => setDeleteTarget(u)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {!users.length && (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <div className="empty">No users yet</div>
                 </td>
               </tr>
@@ -250,7 +364,7 @@ export default function Users() {
             </>
           }
         >
-          <UserFields form={form} setForm={setForm} />
+          <UserFields form={form} setForm={setForm} tenants={tenants} />
         </Modal>
       )}
 
@@ -273,7 +387,7 @@ export default function Users() {
             </>
           }
         >
-          <UserFields form={editForm} setForm={setEditForm} emailDisabled />
+          <UserFields form={editForm} setForm={setEditForm} tenants={tenants} emailDisabled />
         </Modal>
       )}
 
@@ -339,6 +453,21 @@ export default function Users() {
           </p>
         </Modal>
       )}
+
+      {selectedUser && (
+        <UserDetailModal
+          user={selectedUser}
+          tenant={tenants.find((t) => t.id === selectedUser.tenant_id)}
+          onClose={() => {
+            setSelectedUser(null);
+            if (searchParams.has("user_id")) {
+              searchParams.delete("user_id");
+              setSearchParams(searchParams);
+            }
+          }}
+          onUserUpdated={load}
+        />
+      )}
     </div>
   );
 }
@@ -346,10 +475,12 @@ export default function Users() {
 function UserFields({
   form,
   setForm,
+  tenants,
   emailDisabled,
 }: {
   form: UserForm;
   setForm: (f: UserForm) => void;
+  tenants: Tenant[];
   emailDisabled?: boolean;
 }) {
   return (
@@ -375,7 +506,7 @@ function UserFields({
         />
       </div>
       <div className="field">
-        <label className="field__label">Role</label>
+        <label className="field__label">System Role</label>
         <select
           className="select"
           value={form.role}
@@ -385,6 +516,37 @@ function UserFields({
           <option value="admin">admin</option>
         </select>
       </div>
+
+      <div className="field">
+        <label className="field__label">Tenant Organization</label>
+        <select
+          className="select"
+          value={form.tenant_id}
+          onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}
+        >
+          <option value="">None (Global Access)</option>
+          {tenants.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name} ({t.type === "internal" ? "Internal" : "B2B Client"})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {form.tenant_id && (
+        <div className="field">
+          <label className="field__label">Tenant Role</label>
+          <select
+            className="select"
+            value={form.tenant_role}
+            onChange={(e) => setForm({ ...form, tenant_role: e.target.value })}
+          >
+            <option value="member">Member</option>
+            <option value="tenant_admin">Tenant Admin (Manager)</option>
+          </select>
+        </div>
+      )}
+
       <div className="field" style={{ marginTop: 12 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input
