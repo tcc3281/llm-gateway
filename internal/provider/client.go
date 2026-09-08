@@ -263,6 +263,11 @@ type UpstreamRequest struct {
 	Model   string
 	Stream  bool
 	Payload []byte
+
+	// ExtraHeaders injected by plugins (e.g. header-transform)
+	ExtraHeaders map[string]string
+	// RemoveHeaders stripped by plugins
+	RemoveHeaders []string
 }
 
 type UpstreamResponse struct {
@@ -291,6 +296,12 @@ func (c *ProviderClient) SendRequest(ctx context.Context, req UpstreamRequest, a
 
 	for k, v := range headers {
 		httpReq.Header.Set(k, v)
+	}
+	for k, v := range req.ExtraHeaders {
+		httpReq.Header.Set(k, v)
+	}
+	for _, r := range req.RemoveHeaders {
+		httpReq.Header.Del(r)
 	}
 
 	resp, err := c.httpClient.Do(httpReq)

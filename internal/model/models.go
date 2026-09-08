@@ -571,7 +571,60 @@ type UpdateVirtualModelRequest struct {
 	Targets         []VirtualModelTargetInput `json:"targets,omitempty"`
 }
 
+// Plugin represents an available plugin in the catalog.
+type Plugin struct {
+	ID           uuid.UUID       `json:"id"`
+	Name         string          `json:"name"`
+	DisplayName  string          `json:"display_name"`
+	Description  string          `json:"description"`
+	Category     string          `json:"category"` // "traffic", "security", "performance", "observability"
+	Hooks        []string        `json:"hooks"`
+	ConfigSchema json.RawMessage `json:"config_schema"`
+	IsBuiltin    bool            `json:"is_builtin"`
+	Version      string          `json:"version"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+}
 
+// PluginBinding represents a configured assignment of a plugin at a specific scope.
+type PluginBinding struct {
+	ID                uuid.UUID       `json:"id"`
+	PluginName        string          `json:"plugin_name"`
+	ScopeLevel        string          `json:"scope_level"` // "global", "provider", "model", "tenant", "role", "user", "api_key"
+	ScopeProvider     *string         `json:"scope_provider,omitempty"`
+	ScopeModel        *string         `json:"scope_model,omitempty"`
+	ScopeTenantID     *uuid.UUID      `json:"scope_tenant_id,omitempty"`
+	ScopeRole         *string         `json:"scope_role,omitempty"`
+	ScopeUserID       *uuid.UUID      `json:"scope_user_id,omitempty"`
+	ScopeKeyID        *uuid.UUID      `json:"scope_key_id,omitempty"`
+	Config            json.RawMessage `json:"config"`
+	IsActive          bool            `json:"is_active"`
+	Priority          int             `json:"priority"`
+	CreatedBy         *uuid.UUID      `json:"created_by,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+	PluginDisplayName string          `json:"plugin_display_name,omitempty"`
+	Category          string          `json:"category,omitempty"`
+}
 
+// CreatePluginBindingRequest is the payload for creating a new binding.
+type CreatePluginBindingRequest struct {
+	PluginName    string          `json:"plugin_name"`
+	ScopeLevel    string          `json:"scope_level"`
+	ScopeProvider *string         `json:"scope_provider,omitempty"`
+	ScopeModel    *string         `json:"scope_model,omitempty"`
+	ScopeTenantID *uuid.UUID      `json:"scope_tenant_id,omitempty"`
+	ScopeRole     *string         `json:"scope_role,omitempty"`
+	ScopeUserID   *uuid.UUID      `json:"scope_user_id,omitempty"`
+	ScopeKeyID    *uuid.UUID      `json:"scope_key_id,omitempty"`
+	Config        json.RawMessage `json:"config"`
+	IsActive      *bool           `json:"is_active,omitempty"`
+	Priority      *int            `json:"priority,omitempty"`
+}
 
-
+// UpdatePluginBindingRequest is the payload for updating an existing binding.
+type UpdatePluginBindingRequest struct {
+	Config   *json.RawMessage `json:"config,omitempty"`
+	IsActive *bool            `json:"is_active,omitempty"`
+	Priority *int             `json:"priority,omitempty"`
+}

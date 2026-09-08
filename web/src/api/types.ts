@@ -571,5 +571,56 @@ export interface UpdateVirtualModelRequest {
   }>;
 }
 
+export interface Plugin {
+  id: string;
+  name: string;
+  display_name: string;
+  description: string;
+  category: "traffic" | "security" | "performance" | "observability" | string;
+  hooks: string[];
+  config_schema: Record<string, any>;
+  is_builtin: boolean;
+  version: string;
+  created_at: string;
+  updated_at: string;
+}
 
+export interface PluginBinding {
+  id: string;
+  plugin_name: string;
+  scope_level: "global" | "provider" | "model" | "tenant" | "role" | "user" | "api_key";
+  scope_provider?: string | null;
+  scope_model?: string | null;
+  scope_tenant_id?: string | null;
+  scope_role?: string | null;
+  scope_user_id?: string | null;
+  scope_key_id?: string | null;
+  config: Record<string, any>;
+  is_active: boolean;
+  priority: number;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  plugin_display_name?: string;
+  category?: string;
+}
 
+export interface CreatePluginBindingRequest {
+  plugin_name: string;
+  scope_level: "global" | "provider" | "model" | "tenant" | "role" | "user" | "api_key";
+  scope_provider?: string | null;
+  scope_model?: string | null;
+  scope_tenant_id?: string | null;
+  scope_role?: string | null;
+  scope_user_id?: string | null;
+  scope_key_id?: string | null;
+  config: Record<string, any>;
+  is_active?: boolean;
+  priority?: number;
+}
+
+export interface UpdatePluginBindingRequest {
+  config?: Record<string, any>;
+  is_active?: boolean;
+  priority?: number;
+}
