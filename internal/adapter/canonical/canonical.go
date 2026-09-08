@@ -59,6 +59,7 @@ type ImageURL struct {
 type ChatMessage struct {
 	Role         string        `json:"role"` // "system" | "user" | "assistant" | "tool"
 	Content      string        `json:"content"`
+	Name         string        `json:"name,omitempty"`
 	ContentParts []ContentPart `json:"content_parts,omitempty"`
 	ToolCallID   string        `json:"tool_call_id,omitempty"`
 	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`

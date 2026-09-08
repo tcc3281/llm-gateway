@@ -3,7 +3,6 @@ package gemini
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 
 	"llm-gateway/internal/adapter/canonical"
@@ -177,10 +176,20 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 			// Canonical "tool" role → user content with a functionResponse part.
 			// Gemini has no tool_call_id, so the function name is recovered by
 			// scanning backward for the assistant call with the matching ID.
-			name := findToolCallName(canReq.Messages, msg.ToolCallID)
+			toolCallID := msg.ToolCallID
+			rawToolCallID := toolCallID
+			if idx := strings.Index(rawToolCallID, "__thought__"); idx != -1 {
+				rawToolCallID = rawToolCallID[:idx]
+			}
+			name := findToolCallName(canReq.Messages, toolCallID)
 			if name == "" {
-				log.Printf("gemini encoder: no assistant tool call found for tool_call_id %q; dropping tool result", msg.ToolCallID)
-				continue
+				name = msg.Name
+			}
+			if name == "" && rawToolCallID != "" {
+				name = rawToolCallID
+			}
+			if name == "" {
+				name = "function_response"
 			}
 			var respJSON json.RawMessage
 			trimmed := strings.TrimSpace(msg.Content)
@@ -191,7 +200,7 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 			}
 			content.Parts = append(content.Parts, GeminiPart{
 				FunctionResponse: &GeminiFunctionResponse{
-					ID:       msg.ToolCallID,
+					ID:       rawToolCallID,
 					Name:     name,
 					Response: respJSON,
 				},
@@ -202,17 +211,26 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 			}
 			for _, tc := range msg.ToolCalls {
 				var args json.RawMessage
-				if len(tc.Arguments) > 0 {
+				if len(tc.Arguments) > 0 && json.Valid([]byte(tc.Arguments)) {
 					args = json.RawMessage(tc.Arguments)
+				} else {
+					args = json.RawMessage("{}")
 				}
 				sig := tc.ThoughtSignature
+				rawID := tc.ID
+				if idx := strings.Index(rawID, "__thought__"); idx != -1 {
+					if sig == "" {
+						sig = rawID[idx+len("__thought__"):]
+					}
+					rawID = rawID[:idx]
+				}
 				if sig == "" && isGeminiThoughtSignatureRequired(canReq.Model) {
 					sig = GeminiDummyThoughtSignature
 				}
 				content.Parts = append(content.Parts, GeminiPart{
 					ThoughtSignature: sig,
 					FunctionCall: &GeminiFunctionCall{
-						ID:   tc.ID,
+						ID:   rawID,
 						Name: tc.Name,
 						Args: args,
 					},
@@ -235,6 +253,11 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 				content.Parts = append(content.Parts, GeminiPart{Text: msg.Content})
 			}
 		}
+
+		if len(content.Parts) == 0 {
+			continue
+		}
+
 		// Gemini rejects consecutive turns of the same role; merge parts into the
 		// previous content when roles match (common for multiple tool results).
 		if len(req.Contents) > 0 && req.Contents[len(req.Contents)-1].Role == content.Role {
@@ -242,6 +265,32 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 			continue
 		}
 		req.Contents = append(req.Contents, content)
+	}
+
+	// Ensure contents is not empty
+	if len(req.Contents) == 0 {
+		req.Contents = append(req.Contents, GeminiContent{
+			Role:  "user",
+			Parts: []GeminiPart{{Text: "Hello"}},
+		})
+	}
+
+	// Gemini constraint: The conversation must start with a user turn.
+	if len(req.Contents) > 0 && req.Contents[0].Role == "model" {
+		req.Contents = append([]GeminiContent{{
+			Role:  "user",
+			Parts: []GeminiPart{{Text: "Hello"}},
+		}}, req.Contents...)
+	}
+
+	// Gemini constraint: Requests ending with a model turn are not supported.
+	// If the conversation history ends with a model turn (e.g. assistant prefill in
+	// frameworks like OpenCode), append a user turn to continue.
+	if len(req.Contents) > 0 && req.Contents[len(req.Contents)-1].Role == "model" {
+		req.Contents = append(req.Contents, GeminiContent{
+			Role:  "user",
+			Parts: []GeminiPart{{Text: "Continue"}},
+		})
 	}
 
 	return json.Marshal(req)
@@ -365,16 +414,29 @@ func sanitizeSchemaValue(v interface{}) interface{} {
 }
 
 // findToolCallName scans the canonical messages backward for an assistant tool
-// call whose ID matches toolCallID, returning its function name.
+// call whose ID matches toolCallID, returning its function name. If not found by ID,
+// it falls back to looking for the most recent assistant message with a tool call.
 func findToolCallName(messages []canonical.ChatMessage, toolCallID string) string {
-	if toolCallID == "" {
-		return ""
+	stripID := func(id string) string {
+		if idx := strings.Index(id, "__thought__"); idx != -1 {
+			return id[:idx]
+		}
+		return id
 	}
-	for i := len(messages) - 1; i >= 0; i-- {
-		for _, tc := range messages[i].ToolCalls {
-			if tc.ID == toolCallID {
-				return tc.Name
+	rawTarget := stripID(toolCallID)
+	if rawTarget != "" {
+		for i := len(messages) - 1; i >= 0; i-- {
+			for _, tc := range messages[i].ToolCalls {
+				if tc.ID == toolCallID || stripID(tc.ID) == rawTarget {
+					return tc.Name
+				}
 			}
+		}
+	}
+	// Fallback: look backward for the most recent assistant message with tool calls
+	for i := len(messages) - 1; i >= 0; i-- {
+		if (messages[i].Role == "assistant" || messages[i].Role == "model") && len(messages[i].ToolCalls) > 0 {
+			return messages[i].ToolCalls[len(messages[i].ToolCalls)-1].Name
 		}
 	}
 	return ""
@@ -410,11 +472,15 @@ func DecodeUpstreamResponse(body []byte, model string) (*canonical.CanonicalResp
 				if id == "" {
 					id = fmt.Sprintf("call_%d", i)
 				}
+				sig := p.GetThoughtSignature()
+				if sig != "" && !strings.Contains(id, "__thought__") {
+					id = id + "__thought__" + sig
+				}
 				toolCalls = append(toolCalls, canonical.ToolCall{
 					ID:               id,
 					Name:             p.FunctionCall.Name,
 					Arguments:        string(args),
-					ThoughtSignature: p.GetThoughtSignature(),
+					ThoughtSignature: sig,
 				})
 			case p.Thought:
 				thoughtParts = append(thoughtParts, p.Text)
@@ -468,12 +534,16 @@ func DecodeStreamChunk(chunkBytes []byte, model string) (*canonical.CanonicalStr
 				if id == "" {
 					id = fmt.Sprintf("call_%d", i)
 				}
+				sig := p.GetThoughtSignature()
+				if sig != "" && !strings.Contains(id, "__thought__") {
+					id = id + "__thought__" + sig
+				}
 				chunk.DeltaToolCalls = append(chunk.DeltaToolCalls, canonical.ToolCallDelta{
 					Index:            i,
 					ID:               id,
 					Name:             p.FunctionCall.Name,
 					Arguments:        string(args),
-					ThoughtSignature: p.GetThoughtSignature(),
+					ThoughtSignature: sig,
 				})
 			case p.Thought:
 				thoughtParts = append(thoughtParts, p.Text)

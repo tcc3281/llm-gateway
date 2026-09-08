@@ -128,6 +128,7 @@ func (c OpenAIMsgContent) TextValue() string {
 
 type OpenAIMessage struct {
 	Role             string           `json:"role"`
+	Name             string           `json:"name,omitempty"`
 	Content          OpenAIMsgContent `json:"content"`
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
@@ -242,8 +243,13 @@ func DecodeInboundRequest(body []byte) (*canonical.CanonicalRequest, error) {
 			canReq.SystemPrompt = msg.Content.TextValue()
 			continue
 		}
+		role := msg.Role
+		if role == "function" {
+			role = "tool"
+		}
 		cm := canonical.ChatMessage{
-			Role:       msg.Role,
+			Role:       role,
+			Name:       msg.Name,
 			Content:    msg.Content.TextValue(),
 			ToolCallID: msg.ToolCallID,
 		}
@@ -273,10 +279,16 @@ func DecodeInboundRequest(body []byte) (*canonical.CanonicalRequest, error) {
 			})
 		}
 		for _, tc := range msg.ToolCalls {
+			tcID := tc.ID
+			sig := ""
+			if idx := strings.Index(tcID, "__thought__"); idx != -1 {
+				sig = tcID[idx+len("__thought__"):]
+			}
 			cm.ToolCalls = append(cm.ToolCalls, canonical.ToolCall{
-				ID:        tc.ID,
-				Name:      tc.Function.Name,
-				Arguments: tc.Function.Arguments,
+				ID:               tcID,
+				Name:             tc.Function.Name,
+				Arguments:        tc.Function.Arguments,
+				ThoughtSignature: sig,
 			})
 		}
 		canReq.Messages = append(canReq.Messages, cm)
@@ -441,6 +453,7 @@ func EncodeCanonicalRequest(canReq *canonical.CanonicalRequest) ([]byte, error) 
 	for _, msg := range canReq.Messages {
 		om := OpenAIMessage{
 			Role:       msg.Role,
+			Name:       msg.Name,
 			ToolCallID: msg.ToolCallID,
 		}
 		if len(msg.ContentParts) > 0 {
@@ -538,14 +551,9 @@ func FormatCanonicalToOpenAIResponse(canResp *canonical.CanonicalResponse) ([]by
 			},
 		})
 	}
-	finishReason := canResp.FinishReason
-	// Gemini reports finish_reason "STOP"; OpenAI clients expect "stop" for a
-	// normal completion and "tool_calls" for a tool-call response.
-	switch {
-	case len(canResp.ToolCalls) > 0:
+	finishReason := mapToOpenAIFinishReason(canResp.FinishReason)
+	if len(canResp.ToolCalls) > 0 {
 		finishReason = "tool_calls"
-	case finishReason == "STOP":
-		finishReason = "stop"
 	}
 	resp := OpenAIResponse{
 		ID:      canResp.ID,
@@ -631,7 +639,7 @@ func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, 
 	}
 
 	if chunk.FinishReason != "" {
-		fr := chunk.FinishReason
+		fr := mapToOpenAIFinishReason(chunk.FinishReason)
 		streamChunk.Choices[0].FinishReason = &fr
 	}
 
@@ -686,3 +694,22 @@ func FormatOpenAIToolCallSSE(toolCalls []canonical.ToolCall, model, id string, c
 	}
 	return sb.String(), nil
 }
+
+// mapToOpenAIFinishReason translates provider-specific finish reasons (such as
+// Gemini's "STOP", "MAX_TOKENS" or Anthropic's "end_turn") into standard OpenAI
+// vocabulary ("stop", "length", "tool_calls", "content_filter").
+func mapToOpenAIFinishReason(raw string) string {
+	switch strings.ToLower(raw) {
+	case "stop", "end_turn", "stop_sequence":
+		return "stop"
+	case "max_tokens", "length":
+		return "length"
+	case "tool_calls", "tool_use":
+		return "tool_calls"
+	case "content_filter", "safety", "recitation":
+		return "content_filter"
+	default:
+		return raw
+	}
+}
+

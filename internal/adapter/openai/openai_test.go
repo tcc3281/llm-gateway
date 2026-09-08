@@ -43,6 +43,28 @@ func TestFormatCanonicalToOpenAISSE(t *testing.T) {
 	}
 }
 
+func TestFormatCanonicalToOpenAISSE_ProviderNormalization(t *testing.T) {
+	// Upstream sends "STOP" (Gemini) -> must map to "stop"
+	chunk := &canonical.CanonicalStreamChunk{
+		ID:           "chatcmpl-gemini",
+		Model:        "gemini-3.5-flash-lite",
+		FinishReason: "STOP",
+	}
+
+	formatted, err := FormatCanonicalToOpenAISSE(chunk)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	raw := strings.TrimSuffix(strings.TrimPrefix(formatted, "data: "), "\n\n")
+	var parsed OpenAIStreamChunk
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("failed to decode chunk JSON: %v", err)
+	}
+	if parsed.Choices[0].FinishReason == nil || *parsed.Choices[0].FinishReason != "stop" {
+		t.Errorf("expected mapped finish_reason 'stop', got %v", parsed.Choices[0].FinishReason)
+	}
+}
+
 func TestClampMaxTokens(t *testing.T) {
 	// GPT-4o clamp to 16,384
 	if clamped := clampMaxTokens("gpt-4o", 32000); clamped != 16384 {

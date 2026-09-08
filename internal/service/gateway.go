@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -765,6 +766,8 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		if primaryTarget.TargetModel != "" {
 			targetModelName = primaryTarget.TargetModel
 		}
+		log.Printf("[virtual-model] %q matched virtual model alias (strategy=%s) -> primary: %s/%s (pool size: %d)",
+			canReq.Model, vm.RoutingStrategy, primaryTarget.Name, targetModelName, len(targets))
 	} else {
 		resolved, err := g.resolveTarget(ctx, canReq.Model)
 		if err != nil {
@@ -772,6 +775,7 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		}
 		primaryTarget = resolved
 		targets = g.resolveFallbackChain(ctx, primaryTarget)
+		log.Printf("[routing] %q resolved from catalog -> %s (fallback targets: %d)", canReq.Model, primaryTarget.Name, len(targets))
 	}
 
 	// 3b. Multi-Tenant Hold & Settle: Reserve worst-case cost against prepaid credit balance
@@ -941,6 +945,7 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	var totalCachedInputTokens, totalReasoningTokens int
 	var lastFinishReason string
 	isFirstChunk := true
+	var chunkCount int
 	var streamContent strings.Builder
 
 	// emitAnthropicMessageStart lazily writes the message_start opener once,
@@ -993,10 +998,11 @@ func (g *GatewayService) handleStreamResponse(ctx context.Context, params ProxyP
 	// streamed incrementally because fragments arrive split across chunks; the
 	// client receives the full calls in one terminal block.
 	type pendingToolCall struct {
-		key  string
-		id   string
-		name string
-		args strings.Builder
+		key              string
+		id               string
+		name             string
+		thoughtSignature string
+		args             strings.Builder
 	}
 	acc := map[string]*pendingToolCall{}
 	order := []string{} // insertion order → stable call ordering
@@ -1092,6 +1098,7 @@ relayLoop:
 			ttftMs = time.Since(startTime).Milliseconds()
 			isFirstChunk = false
 		}
+		chunkCount++
 
 		// Convert SSE event to Canonical Stream Chunk
 		var chunk *canonical.CanonicalStreamChunk
@@ -1184,6 +1191,12 @@ relayLoop:
 			if p.name == "" {
 				p.name = dtc.Name
 			}
+			if p.thoughtSignature == "" && dtc.ThoughtSignature != "" {
+				p.thoughtSignature = dtc.ThoughtSignature
+				if !strings.Contains(p.id, "__thought__") {
+					p.id = p.id + "__thought__" + dtc.ThoughtSignature
+				}
+			}
 			if dtc.Arguments != "" {
 				p.args.WriteString(dtc.Arguments)
 			}
@@ -1199,10 +1212,15 @@ relayLoop:
 			if len(chunk.DeltaToolCalls) > 0 && chunk.DeltaContent == "" && chunk.DeltaReasoning == "" {
 				continue
 			}
-			// The upstream's own finish_reason:"tool_calls" chunk is replaced by
-			// the reconstructed terminal block (which carries its own finish).
-			if chunk.FinishReason == "tool_calls" && len(acc) > 0 {
-				continue
+			// Any upstream finish_reason chunk is suppressed while tool calls are
+			// being accumulated; the reconstructed terminal block carries the authoritative finish.
+			if chunk.FinishReason != "" && len(acc) > 0 {
+				if chunk.DeltaContent == "" {
+					continue
+				}
+				chunkCopy := *chunk
+				chunkCopy.FinishReason = ""
+				chunk = &chunkCopy
 			}
 			sseFormatted, fErr := openai.FormatCanonicalToOpenAISSE(chunk)
 			if fErr == nil && sseFormatted != "" {
@@ -1244,9 +1262,10 @@ relayLoop:
 			continue
 		}
 		toolCalls = append(toolCalls, canonical.ToolCall{
-			ID:        p.id,
-			Name:      p.name,
-			Arguments: p.args.String(),
+			ID:               p.id,
+			Name:             p.name,
+			Arguments:        p.args.String(),
+			ThoughtSignature: p.thoughtSignature,
 		})
 	}
 	hasToolCalls := len(toolCalls) > 0
@@ -1404,6 +1423,9 @@ relayLoop:
 	telemetry.RecordDurationMetric(ctx, target.Name, canReq.Model, "chat", totalDurationSec, http.StatusOK)
 	telemetry.RecordTokenMetrics(ctx, target.Name, canReq.Model, keyID, userID, totalPromptTokens, totalCompletionTokens, totalCachedInputTokens)
 	telemetry.RecordCostMetric(ctx, target.Name, canReq.Model, keyID, userID, costResult.Cost)
+
+	log.Printf("[stream] finished %s/%s (%s): ttft=%dms chunks=%d prompt_tokens=%d completion_tokens=%d duration=%s",
+		target.Name, canReq.Model, params.InboundFormat, ttftMs, chunkCount, totalPromptTokens, totalCompletionTokens, time.Since(startTime).Round(time.Millisecond))
 
 	return nil
 }
