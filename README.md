@@ -1,5 +1,10 @@
 # LLM Gateway (Go + Docker)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
+[![i18n: vi/en](https://img.shields.io/badge/i18n-VI%20%7C%20EN-blue)](web/src/i18n)
+
 Một **LLM Gateway** hiệu năng cao được phát triển bằng ngôn ngữ **Go**, hỗ trợ Proxy & Protocol Adapter cho 3 nhà cung cấp LLM chính: **OpenAI**, **Anthropic**, và **Google Gemini**. Gateway cung cấp chuẩn đầu vào/đầu ra tương thích với cả **OpenAI API** (`/v1/chat/completions`) và **Anthropic API** (`/v1/messages`).
 
 ---
@@ -513,21 +518,48 @@ curl http://localhost:8080/v1/chat/completions \
 ```text
 .
 ├── cmd/
-│   ├── cli/                      # Mã nguồn bộ công cụ llmgw CLI
-│   └── gateway/                  # Entrypoint khởi tạo 2 HTTP Servers
+│   ├── all-in-one/               # Monolithic runtime (tất cả dịch vụ trong 1 binary)
+│   ├── control-plane/            # Microservice quản trị IAM, Admin API & Web UI
+│   ├── gateway/                  # Gateway server chính
+│   ├── proxy/                    # Microservice Proxy hiệu năng cao chuyên biệt cho AI traffic
+│   └── worker/                   # Asynchronous background worker (Alerting, Webhooks, Log aggregation)
+├── cli/                          # Bộ công cụ dòng lệnh llmgw (Python/uv)
 ├── internal/
 │   ├── adapter/                  # Protocol translation (OpenAI, Anthropic, Gemini)
+│   ├── alert/                    # Alerting Engine & multi-channel webhook dispatchers
 │   ├── analytics/                # Token counter, cost calculator, async logger
-│   ├── auth/                     # API Key validation & hashing
+│   ├── auth/                     # Authentication & API Key hashing
 │   ├── config/                   # Env configuration loader
 │   ├── db/                       # Postgres & Redis repositories
-│   ├── handler/                  # HTTP route handlers (Gateway & Admin)
+│   ├── handler/                  # HTTP route handlers (Gateway, Admin, IAM, Tenants, Groups, Alerts)
+│   ├── iam/                      # IAM unified orchestration service
 │   ├── model/                    # Domain data structs
+│   ├── permission/               # AWS IAM-style statement policy evaluation engine
 │   ├── provider/                 # Upstream HTTP transport client
-│   └── service/                  # Core gateway orchestration logic
-├── migrations/                   # SQL migration scripts
+│   ├── service/                  # Core gateway orchestration logic
+│   └── telemetry/                # Modality inspection & zero-leak structural shape tracing
+├── migrations/                   # SQL migration scripts (000001 -> 000015)
 ├── pkg/sse/                      # Server-Sent Events parser
+├── web/                          # Giao diện quản trị Admin Web UI (React + Vite + TS + i18n)
 ├── Dockerfile                    # Multi-stage Docker build
-├── docker-compose.yml            # Services orchestration (Gateway, Postgres, Redis)
+├── docker-compose.yml            # Khởi chạy chế độ All-in-One
+├── docker-compose.distributed.yml# Khởi chạy chế độ phân tán (Proxy, Control-Plane, Worker)
+├── CONTRIBUTING.md               # Quy chuẩn và hướng dẫn đóng góp mã nguồn
+├── LICENSE                       # Giấy phép bản quyền mã nguồn mở MIT
 └── README.md
 ```
+
+---
+
+## 🤝 Đóng Góp (Contributing)
+
+Dự án hoan nghênh và trân trọng mọi đóng góp từ cộng đồng open-source! Dù là báo lỗi (bug report), đóng góp tính năng mới, tối ưu hiệu năng hay hoàn thiện tài liệu:
+
+- Vui lòng tham khảo tài liệu [CONTRIBUTING.md](CONTRIBUTING.md) để nắm rõ quy trình phát triển, quy chuẩn commit và hướng dẫn gửi Pull Request.
+- Kiểm tra các tiêu chuẩn kiểm thử tự động của dự án thông qua CI Pipeline trước khi gửi PR.
+
+---
+
+## 📄 Bản Quyền (License)
+
+Dự án được phát hành theo giấy phép mã nguồn mở **[MIT License](LICENSE)**. Bạn hoàn toàn tự do sử dụng, sao chép, sửa đổi, phân phối và tích hợp vào các sản phẩm thương mại hoặc nội bộ. Xem chi tiết tại file [LICENSE](LICENSE).
