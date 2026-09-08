@@ -1,0 +1,34 @@
+name: "💡 Feature Request"
+description: "Suggest an idea or new capability for LLM Gateway"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We appreciate your feedback and ideas for improving LLM Gateway!
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem Statement"
+      description: "Is your feature request related to a specific problem or limitation? (e.g. 'I want to route requests based on latency...')"
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Proposed Solution / Implementation Idea"
+      description: "Describe the solution you'd like to see, API endpoints, or user experience."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Any alternative solutions or workarounds you have considered."
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: "Are you willing to contribute?"
+      options:
+        - label: "Yes, I can submit a PR to implement this feature!"
