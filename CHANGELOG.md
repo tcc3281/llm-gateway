@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v0.3.1] - 2026-09-09
 
+### Fixed
+- Fixed missing `model` package import in `internal/plugin/builtin/builtin_test.go` causing `go vet` failure during GitHub Actions CI.
+
+### Changed
+- Synchronized version references across Web Admin UI (`web`), CLI tool (`llmgw-cli`), and Security Documentation to `v0.3.1`.
+
+---
+
+## [v0.3.0] - 2026-09-09
+
 ### Added
 - **Kong-like Multi-Level Plugin Architecture**:
   - Pluggable request lifecycle pipeline with 4 interception hooks: `PreAuth`, `PostAuth`, `PreRouting`, and `PostUpstream`.
@@ -38,9 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Refactored `GatewayService` request pipeline to invoke plugin hooks seamlessly around authentication, IAM evaluation, and upstream calls.
 - Updated Gemini and OpenAI adapter streaming protocols to support thought-signature roundtrips and OpenCode SSE `finish_reason` mappings.
-
-### Fixed
-- Fixed missing `model` package import in `internal/plugin/builtin/builtin_test.go` causing `go vet` failure in CI.
 
 ---
 
