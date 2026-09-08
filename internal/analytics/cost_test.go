@@ -139,27 +139,42 @@ func TestCalculateCost_ReasoningTokens(t *testing.T) {
 }
 
 func TestEstimateMaxCost(t *testing.T) {
-	pricing := model.ModelPricing{
-		Provider:             "openai",
-		ModelName:            "gpt-4o",
-		PromptPricePer1M:     2.50,
-		CompletionPricePer1M: 10.00,
+	calc := &CostCalculator{
+		pricings: map[string]model.ModelPricing{
+			"openai:gpt-4o": {
+				Provider:             "openai",
+				ModelName:            "gpt-4o",
+				PromptPricePer1M:     2.50,
+				CompletionPricePer1M: 10.00,
+			},
+		},
 	}
 
 	// 1,000 prompt tokens, 2,000 max output tokens
 	// Prompt: (1,000 / 1M) * 2.50 = 0.0025
 	// Output: (2,000 / 1M) * 10.00 = 0.02
 	// Total: 0.0225
-	est := EstimateMaxCost(pricing, 1_000, 2_000)
+	est := calc.EstimateMaxCost("openai", "gpt-4o", 1_000, 2_000)
 	expected := 0.0025 + 0.02
 	if math.Abs(est-expected) > 1e-6 {
 		t.Errorf("expected max cost %f, got %f", expected, est)
 	}
 
-	// Default tokens when zero
-	estZero := EstimateMaxCost(pricing, 0, 0)
-	// Default prompt=500 -> 0.00125, Default output=2048 -> 0.02048 -> 0.02173
-	if estZero <= 0 {
-		t.Errorf("expected positive cost estimate with default tokens, got %f", estZero)
+	// Default tokens when zero (0 input, maxOutputTokens clamps to 256)
+	// Output: (256 / 1M) * 10.00 = 0.00256
+	estZero := calc.EstimateMaxCost("openai", "gpt-4o", 0, 0)
+	expectedZero := 0.00256
+	if math.Abs(estZero-expectedZero) > 1e-6 {
+		t.Errorf("expected default cost %f, got %f", expectedZero, estZero)
+	}
+
+	// Fallback pricing for unknown model (prompt=1.0, completion=3.0)
+	// 10,000 prompt tokens -> 0.01
+	// 1,000 output tokens -> 0.003
+	// Total = 0.013
+	estFallback := calc.EstimateMaxCost("unknown", "unknown-model", 10_000, 1_000)
+	expectedFallback := 0.013
+	if math.Abs(estFallback-expectedFallback) > 1e-6 {
+		t.Errorf("expected fallback cost %f, got %f", expectedFallback, estFallback)
 	}
 }
