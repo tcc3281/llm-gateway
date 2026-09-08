@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"llm-gateway/internal/alert"
 	"llm-gateway/internal/analytics"
 	"llm-gateway/internal/auth"
 	"llm-gateway/internal/config"
@@ -36,9 +37,10 @@ type AdminHandler struct {
 	cfg         *config.Config
 	gwService   *service.GatewayService // model discovery (optional — may be nil)
 	permEngine  *permission.PermissionEngine
+	alertEngine *alert.Engine
 }
 
-func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore *provider.KeyStore, costCalc *analytics.CostCalculator, redis *db.RedisClient, allowedIPsStr string, cfg *config.Config, gwService *service.GatewayService, permEngine *permission.PermissionEngine) *AdminHandler {
+func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore *provider.KeyStore, costCalc *analytics.CostCalculator, redis *db.RedisClient, allowedIPsStr string, cfg *config.Config, gwService *service.GatewayService, permEngine *permission.PermissionEngine, alertEngine *alert.Engine) *AdminHandler {
 	var allowedIPs []string
 	if allowedIPsStr != "" {
 		parts := strings.Split(allowedIPsStr, ",")
@@ -60,6 +62,7 @@ func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore 
 		cfg:         cfg,
 		gwService:   gwService,
 		permEngine:  permEngine,
+		alertEngine: alertEngine,
 	}
 }
 
@@ -1593,5 +1596,250 @@ func (h *AdminHandler) GetIAMActions(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(permission.AllActions)
+}
+
+// ---------------------------------------------------------------------------
+// Alerting & Webhook Management
+// ---------------------------------------------------------------------------
+
+// GET /admin/alerts/rules -> List alert rules
+func (h *AdminHandler) ListAlertRules(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	var tenantID *uuid.UUID
+	if tidStr := r.URL.Query().Get("tenant_id"); tidStr != "" {
+		if tid, err := uuid.Parse(tidStr); err == nil {
+			tenantID = &tid
+		}
+	}
+	eventType := r.URL.Query().Get("event_type")
+
+	rules, err := h.pg.ListAlertRules(tenantID, eventType)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	if rules == nil {
+		rules = []model.AlertRule{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rules)
+}
+
+// POST /admin/alerts/rules -> Create an alert rule
+func (h *AdminHandler) CreateAlertRule(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	var rule model.AlertRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if rule.Name == "" || rule.EventType == "" {
+		http.Error(w, `{"error": "name and event_type are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(rule.Channels) > 0 && rule.WebhookURL == "" {
+		rule.WebhookURL = rule.Channels[0].WebhookURL
+		rule.WebhookSecret = rule.Channels[0].WebhookSecret
+		rule.ChannelType = rule.Channels[0].ChannelType
+	} else if len(rule.Channels) == 0 && rule.WebhookURL != "" {
+		if rule.ChannelType == "" {
+			rule.ChannelType = "generic"
+		}
+		rule.Channels = []model.AlertChannelConfig{
+			{
+				ChannelType:   rule.ChannelType,
+				ChannelName:   rule.ChannelType,
+				WebhookURL:    rule.WebhookURL,
+				WebhookSecret: rule.WebhookSecret,
+				IsEnabled:     true,
+			},
+		}
+	} else if len(rule.Channels) == 0 && rule.WebhookURL == "" {
+		http.Error(w, `{"error": "at least one destination channel or webhook_url is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if rule.ChannelType == "" {
+		rule.ChannelType = "generic"
+	}
+	if rule.Severity == "" {
+		rule.Severity = "warning"
+	}
+
+	if rule.CooldownSeconds <= 0 {
+		rule.CooldownSeconds = 900 // 15 minutes default anti-spam cooldown
+	}
+	if rule.WindowSeconds <= 0 {
+		rule.WindowSeconds = 60
+	}
+	rule.IsActive = true
+
+	if err := h.pg.CreateAlertRule(&rule); err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.logAudit(r, "admin", "alert_rule.create", "alert_rule", rule.ID.String(), map[string]interface{}{
+		"name":         rule.Name,
+		"event_type":   rule.EventType,
+		"channel_type": rule.ChannelType,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(rule)
+}
+
+// PATCH /admin/alerts/rules/{id} -> Update an alert rule
+func (h *AdminHandler) UpdateAlertRule(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.URL.Query().Get("id")
+	}
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid alert rule ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	var patch model.AlertRulePatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.pg.UpdateAlertRule(id, &patch)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.logAudit(r, "admin", "alert_rule.update", "alert_rule", id.String(), patch)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updated)
+}
+
+// DELETE /admin/alerts/rules/{id} -> Delete an alert rule
+func (h *AdminHandler) DeleteAlertRule(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.URL.Query().Get("id")
+	}
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid alert rule ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.pg.DeleteAlertRule(id); err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.logAudit(r, "admin", "alert_rule.delete", "alert_rule", id.String(), nil)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Alert rule deleted successfully"})
+}
+
+// GET /admin/alerts/history -> Query trigger history
+func (h *AdminHandler) ListAlertHistory(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 && l <= 500 {
+			limit = l
+		}
+	}
+
+	offset := 0
+	if oStr := r.URL.Query().Get("offset"); oStr != "" {
+		if o, err := strconv.Atoi(oStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	history, total, err := h.pg.ListAlertHistory(limit, offset, status)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	if history == nil {
+		history = []model.AlertHistory{}
+	}
+
+	var dropped int64
+	if h.alertEngine != nil {
+		dropped = h.alertEngine.DroppedCount()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"history":        history,
+		"total":          total,
+		"dropped_events": dropped,
+	})
+}
+
+// POST /admin/alerts/test -> Test fire a webhook payload
+func (h *AdminHandler) TestAlertWebhook(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	var req model.TestWebhookRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.WebhookURL == "" {
+		http.Error(w, `{"error": "webhook_url is required"}`, http.StatusBadRequest)
+		return
+	}
+	if req.ChannelType == "" {
+		req.ChannelType = "generic"
+	}
+
+	if h.alertEngine == nil {
+		http.Error(w, `{"error": "Alert engine is not initialized"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	code, err := h.alertEngine.TestWebhook(req.WebhookURL, req.ChannelType, req.WebhookSecret)
+	resp := map[string]interface{}{
+		"status_code": code,
+		"success":     err == nil,
+	}
+	if err != nil {
+		resp["error"] = err.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 

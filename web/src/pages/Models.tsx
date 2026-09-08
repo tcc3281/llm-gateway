@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { ModelPricing } from "../api/types";
 import { fmtDate, fmtNum } from "../lib/format";
 import Modal from "../components/Modal";
+import { useLanguage } from "../i18n";
 
 const KNOWN = ["openai", "anthropic", "gemini"] as const;
 
@@ -231,24 +232,26 @@ export default function Models() {
     }
   });
 
+  const { t } = useLanguage();
+
   return (
     <div>
       <div className="page__header">
         <div>
-          <h1 className="page__title">Models &amp; Pricing</h1>
+          <h1 className="page__title">{t("models.title", "Models & Pricing")}</h1>
           <p className="page__sub">
-            Showing {filteredModels.length} of {models.length} model(s). Prices are USD per 1M tokens.
+            {filteredModels.length} / {models.length} {t("models.subtitle", "model(s). Prices are USD per 1M tokens.")}
           </p>
         </div>
         <div className="row">
           <button className="btn" onClick={runDiscover} disabled={discovering}>
-            {discovering ? "Discovering…" : "🔎 Discover models"}
+            {discovering ? t("common.loading", "Discovering…") : t("models.discover_btn", "🔎 Discover models")}
           </button>
           <button className="btn" onClick={runSync} disabled={syncing}>
-            {syncing ? "Syncing…" : "↻ Sync from catalog"}
+            {syncing ? t("common.loading", "Syncing…") : t("models.sync_btn", "↻ Sync from catalog")}
           </button>
           <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
-            + Add model
+            {t("models.register_btn", "+ Add model")}
           </button>
         </div>
       </div>
@@ -257,7 +260,7 @@ export default function Models() {
         <input
           className="input"
           style={{ width: 220 }}
-          placeholder="Search model name…"
+          placeholder={t("models.filter_search", "Search model name…")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -267,8 +270,8 @@ export default function Models() {
           value={providerFilter}
           onChange={(e) => setProviderFilter(e.target.value)}
         >
-          <option value="">All Providers</option>
-          <option value="configured">Only Configured Keys</option>
+          <option value="">{t("models.filter_all_providers", "All Providers")}</option>
+          <option value="configured">{t("models.filter_configured", "Only Configured Keys")}</option>
           {providerOptions.map((p) => (
             <option key={p} value={p}>
               {p}
@@ -281,9 +284,9 @@ export default function Models() {
           value={priceFilter}
           onChange={(e) => setPriceFilter(e.target.value)}
         >
-          <option value="all">Any Price</option>
-          <option value="priced">Priced (&gt; $0)</option>
-          <option value="free">No Price ($0)</option>
+          <option value="all">{t("models.filter_all_prices", "Any Price")}</option>
+          <option value="priced">{t("models.filter_priced", "Priced (> $0)")}</option>
+          <option value="free">{t("models.filter_free", "No Price ($0)")}</option>
         </select>
         <select
           className="select"
@@ -291,13 +294,13 @@ export default function Models() {
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
         >
-          <option value="model_asc">Sort by Name (A-Z)</option>
-          <option value="model_desc">Sort by Name (Z-A)</option>
-          <option value="provider_asc">Sort by Provider (A-Z)</option>
-          <option value="provider_desc">Sort by Provider (Z-A)</option>
-          <option value="prompt_asc">Prompt Price (Low-High)</option>
-          <option value="prompt_desc">Prompt Price (High-Low)</option>
-          <option value="updated_desc">Recently Updated</option>
+          <option value="model_asc">{t("models.sort_model_asc", "Sort by Name (A-Z)")}</option>
+          <option value="model_desc">{t("models.sort_model_desc", "Sort by Name (Z-A)")}</option>
+          <option value="provider_asc">{t("models.sort_provider_asc", "Sort by Provider (A-Z)")}</option>
+          <option value="provider_desc">{t("models.sort_provider_desc", "Sort by Provider (Z-A)")}</option>
+          <option value="prompt_asc">{t("models.sort_prompt_asc", "Prompt Price (Low-High)")}</option>
+          <option value="prompt_desc">{t("models.sort_prompt_desc", "Prompt Price (High-Low)")}</option>
+          <option value="updated_desc">{t("models.sort_updated_desc", "Recently Updated")}</option>
         </select>
         {(search !== "" || providerFilter !== "configured" || priceFilter !== "all" || sortBy !== "model_asc") && (
           <button
@@ -310,7 +313,7 @@ export default function Models() {
               setSortBy("model_asc");
             }}
           >
-            Clear filters
+            {t("common.clear_filters", "Clear filters")}
           </button>
         )}
       </div>
@@ -322,13 +325,13 @@ export default function Models() {
         <table className="table">
           <thead>
             <tr>
-              <th>Provider</th>
-              <th>Model</th>
-              <th className="num">Prompt /1M</th>
-              <th className="num">Cache Read /1M</th>
-              <th className="num">Completion /1M</th>
-              <th>Updated</th>
-              <th style={{ textAlign: "right" }}>Actions</th>
+              <th>{t("models.col_provider", "Provider")}</th>
+              <th>{t("models.col_model", "Model")}</th>
+              <th className="num">{t("models.col_input", "Prompt /1M")}</th>
+              <th className="num">{t("models.col_cached", "Cache Read /1M")}</th>
+              <th className="num">{t("models.col_output", "Completion /1M")}</th>
+              <th>{t("models.col_updated", "Updated")}</th>
+              <th style={{ textAlign: "right" }}>{t("models.col_actions", "Actions")}</th>
             </tr>
           </thead>
           <tbody>

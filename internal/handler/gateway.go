@@ -262,6 +262,21 @@ func (h *GatewayHandler) authenticate(r *http.Request) (*model.APIKey, *GateErr)
 	if h.redis != nil && apiKey.RateLimitRPM > 0 {
 		allowed, err := h.redis.AllowRequest(r.Context(), apiKey.ID.String(), apiKey.RateLimitRPM)
 		if err == nil && !allowed {
+			if h.gwService != nil && h.gwService.AlertEngine() != nil {
+				h.gwService.AlertEngine().Emit(model.AlertEvent{
+					EventType: "rate_limit_surge",
+					TenantID:  apiKey.TenantID,
+					Value:     1.0,
+					Message:   fmt.Sprintf("Rate limit exceeded (%d RPM) on API key %s (%s)", apiKey.RateLimitRPM, apiKey.Name, apiKey.KeyPrefix),
+					Metadata: map[string]interface{}{
+						"key_id":     apiKey.ID.String(),
+						"key_name":   apiKey.Name,
+						"key_prefix": apiKey.KeyPrefix,
+						"rpm":        apiKey.RateLimitRPM,
+					},
+					Timestamp: time.Now(),
+				})
+			}
 			return nil, &GateErr{
 				StatusCode: http.StatusTooManyRequests,
 				Message:    fmt.Sprintf("Rate limit exceeded (%d RPM). Please slow down your requests.", apiKey.RateLimitRPM),
@@ -315,6 +330,17 @@ func (h *GatewayHandler) writeServiceError(w http.ResponseWriter, inboundFormat 
 		return
 	}
 	if service.IsPermissionDeniedError(err) {
+		if h.gwService != nil && h.gwService.AlertEngine() != nil {
+			h.gwService.AlertEngine().Emit(model.AlertEvent{
+				EventType: "iam_deny_surge",
+				Value:     1.0,
+				Message:   fmt.Sprintf("IAM policy permission denied: %s", err.Error()),
+				Metadata: map[string]interface{}{
+					"error": err.Error(),
+				},
+				Timestamp: time.Now(),
+			})
+		}
 		WriteErrorResponse(w, inboundFormat, http.StatusForbidden, err.Error(), "permission_error", "forbidden")
 		return
 	}

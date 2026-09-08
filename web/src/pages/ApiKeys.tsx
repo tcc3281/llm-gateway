@@ -3,6 +3,8 @@ import { api } from "../api/client";
 import type { APIKey, KeyModelPolicy, User } from "../api/types";
 import { fmtDate, fmtMoney, fmtNum } from "../lib/format";
 import Modal from "../components/Modal";
+import { useToast } from "../components/Toast";
+import { useLanguage } from "../i18n";
 
 interface KeyForm {
   user_id: string;
@@ -23,6 +25,7 @@ const empty: KeyForm = {
 };
 
 export default function ApiKeys() {
+  const toast = useToast();
   const [keys, setKeys] = useState<APIKey[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [userFilter, setUserFilter] = useState("");
@@ -56,7 +59,8 @@ export default function ApiKeys() {
       const res = await api.listKeyModelPolicies(k.id);
       setModelPolicies(res);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to load model rules");
+      const msg = err instanceof Error ? err.message : "Failed to load model rules";
+      toast.error(msg, "[RULES ERROR]");
     } finally {
       setModelPolicyLoading(false);
     }
@@ -70,11 +74,13 @@ export default function ApiKeys() {
         model_pattern: newModelPattern.trim(),
         is_allowlist: newIsAllowlist,
       });
+      toast.success(`Model policy "${newModelPattern.trim()}" added`, "[200 OK]");
       setNewModelPattern("");
       const res = await api.listKeyModelPolicies(modelTarget.id);
       setModelPolicies(res);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add model rule");
+      const msg = err instanceof Error ? err.message : "Failed to add model rule";
+      toast.error(msg, "[POLICY ERROR]");
     }
   };
 
@@ -82,10 +88,12 @@ export default function ApiKeys() {
     if (!modelTarget) return;
     try {
       await api.deleteKeyModelPolicy(modelTarget.id, policyId);
+      toast.info("Model rule removed", "[200 OK]");
       const res = await api.listKeyModelPolicies(modelTarget.id);
       setModelPolicies(res);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to remove model rule");
+      const msg = err instanceof Error ? err.message : "Failed to remove model rule";
+      toast.error(msg, "[DELETE ERROR]");
     }
   };
 
@@ -98,13 +106,18 @@ export default function ApiKeys() {
     }
   }, [userFilter]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const loadUsers = useCallback(async () => {
+    try {
+      setUsers(await api.listUsers());
+    } catch (e) {
+      console.error("Failed to load users", e);
+    }
+  }, []);
 
   useEffect(() => {
-    api.listUsers().then(setUsers).catch(() => {});
-  }, []);
+    load();
+    loadUsers();
+  }, [load, loadUsers]);
 
   const submitCreate = async (e: FormEvent) => {
     e.preventDefault();
@@ -120,10 +133,13 @@ export default function ApiKeys() {
         cache_ttl_seconds: parseInt(form.cache_ttl_seconds, 10) ?? 0,
       });
       setCreatedSecret(res.api_key);
+      toast.success(`Virtual API key "${form.name}" created`, "[200 OK]");
       setForm(empty);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      const msg = err instanceof Error ? err.message : "Create failed";
+      setError(msg);
+      toast.error(msg, "[CREATE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -149,10 +165,13 @@ export default function ApiKeys() {
           ? `${editForm.expires_at}:00Z`
           : null,
       });
+      toast.success("API key settings updated", "[200 OK]");
       setEditTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      const msg = err instanceof Error ? err.message : "Update failed";
+      setError(msg);
+      toast.error(msg, "[UPDATE ERROR]");
     } finally {
       setBusy(false);
     }
@@ -165,25 +184,31 @@ export default function ApiKeys() {
     try {
       if (confirmTarget.action === "revoke") {
         await api.revokeKey(confirmTarget.key.id);
+        toast.info(`Key ${confirmTarget.key.name} revoked`, "[200 OK]");
       } else {
         await api.reactivateKey(confirmTarget.key.id);
+        toast.success(`Key ${confirmTarget.key.name} reactivated`, "[200 OK]");
       }
       setConfirmTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Operation failed");
+      const msg = err instanceof Error ? err.message : "Operation failed";
+      setError(msg);
+      toast.error(msg, "[OPERATION ERROR]");
     } finally {
       setBusy(false);
     }
   };
 
+  const { t } = useLanguage();
+
   return (
     <div>
       <div className="page__header">
         <div>
-          <h1 className="page__title">API Keys</h1>
+          <h1 className="page__title">{t("keys.title", "API Keys")}</h1>
           <p className="page__sub">
-            {keys.length} key(s). The full secret is shown only once, at creation.
+            {keys.length} {t("keys.subtitle", "Manage gateway client credentials, RPM limits, and model access policies")}
           </p>
         </div>
         <div className="row">
@@ -193,7 +218,7 @@ export default function ApiKeys() {
             value={userFilter}
             onChange={(e) => setUserFilter(e.target.value)}
           >
-            <option value="">All users</option>
+            <option value="">{t("keys.filter_all_users", "All users")}</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.email}
@@ -201,7 +226,7 @@ export default function ApiKeys() {
             ))}
           </select>
           <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
-            + New key
+            {t("keys.create_btn", "+ New key")}
           </button>
         </div>
       </div>
@@ -212,15 +237,15 @@ export default function ApiKeys() {
         <table className="table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Prefix</th>
-              <th>User</th>
-              <th className="num">Budget</th>
-              <th className="num">RPM</th>
-              <th>Cache</th>
-              <th>Status</th>
-              <th>Expires</th>
-              <th style={{ textAlign: "right" }}>Actions</th>
+              <th>{t("keys.col_name", "Name")}</th>
+              <th>{t("keys.col_prefix", "Prefix")}</th>
+              <th>{t("keys.col_user", "User")}</th>
+              <th className="num">{t("keys.col_budget", "Budget")}</th>
+              <th className="num">{t("keys.col_rpm", "RPM")}</th>
+              <th>{t("keys.col_cache", "Cache")}</th>
+              <th>{t("keys.col_status", "Status")}</th>
+              <th>{t("keys.col_expires", "Expires")}</th>
+              <th style={{ textAlign: "right" }}>{t("keys.col_actions", "Actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -228,7 +253,21 @@ export default function ApiKeys() {
               <tr key={k.id}>
                 <td>{k.name || "—"}</td>
                 <td className="mono" style={{ fontSize: 11 }}>
-                  {k.key_prefix}…
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>{k.key_prefix}…</span>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--sm"
+                      style={{ padding: "0 4px", minHeight: 20, fontSize: 11 }}
+                      title="Copy key prefix"
+                      onClick={() => {
+                        navigator.clipboard.writeText(k.key_prefix);
+                        toast.info(`Key prefix ${k.key_prefix} copied`, "[COPIED]");
+                      }}
+                    >
+                      {t("common.copy", "copy")}
+                    </button>
+                  </div>
                 </td>
                 <td className="muted">{userLabel(k.user_id, users)}</td>
                 <td className="num">{fmtMoney(k.budget_limit, 2)}</td>
@@ -240,9 +279,9 @@ export default function ApiKeys() {
                 </td>
                 <td>
                   {k.is_active ? (
-                    <span className="badge badge--success">active</span>
+                    <span className="badge badge--success">{t("common.active", "active")}</span>
                   ) : (
-                    <span className="badge badge--error">revoked</span>
+                    <span className="badge badge--error">{t("keys.revoke", "revoked")}</span>
                   )}
                 </td>
                 <td className="muted">{fmtDate(k.expires_at)}</td>
@@ -252,7 +291,7 @@ export default function ApiKeys() {
                       className="btn btn--sm"
                       onClick={() => openModelRules(k)}
                     >
-                      Models
+                      {t("keys.models_btn", "Models")}
                     </button>
                     <button
                       className="btn btn--sm"
@@ -270,14 +309,14 @@ export default function ApiKeys() {
                         });
                       }}
                     >
-                      Edit
+                      {t("common.edit", "Edit")}
                     </button>
                     {k.is_active ? (
                       <button
                         className="btn btn--sm btn--danger"
                         onClick={() => setConfirmTarget({ key: k, action: "revoke" })}
                       >
-                        Revoke
+                        {t("keys.revoke", "Revoke")}
                       </button>
                     ) : (
                       <button
@@ -286,7 +325,7 @@ export default function ApiKeys() {
                           setConfirmTarget({ key: k, action: "reactivate" })
                         }
                       >
-                        Re-enable
+                        {t("keys.reactivate", "Re-enable")}
                       </button>
                     )}
                   </div>
@@ -296,7 +335,7 @@ export default function ApiKeys() {
             {!keys.length && (
               <tr>
                 <td colSpan={8}>
-                  <div className="empty">No API keys yet</div>
+                  <div className="empty">{t("keys.empty", "No API keys yet")}</div>
                 </td>
               </tr>
             )}
@@ -306,24 +345,24 @@ export default function ApiKeys() {
 
       {createOpen && (
         <Modal
-          title={createdSecret ? "Key created — copy it now" : "New API key"}
+          title={createdSecret ? t("keys.modal_created_title", "Key created — copy it now") : t("keys.modal_create_title", "New API key")}
           onClose={closeCreate}
           footer={
             createdSecret ? (
               <button className="btn btn--primary" onClick={closeCreate}>
-                Done
+                {t("common.done", "Done")}
               </button>
             ) : (
               <>
                 <button className="btn btn--ghost" onClick={closeCreate}>
-                  Cancel
+                  {t("common.cancel", "Cancel")}
                 </button>
                 <button
                   className="btn btn--primary"
                   onClick={submitCreate}
                   disabled={busy || !form.user_id || !form.name.trim()}
                 >
-                  {busy ? "Creating…" : "Create key"}
+                  {busy ? t("common.creating", "Creating…") : t("common.create", "Create key")}
                 </button>
               </>
             )
@@ -332,9 +371,22 @@ export default function ApiKeys() {
           {createdSecret ? (
             <div className="field">
               <label className="field__label">
-                Secret key (shown once — store it securely)
+                {t("keys.secret_warning", "Secret key (shown once — store it securely)")}
               </label>
-              <div className="secret-box">{createdSecret}</div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <div className="secret-box" style={{ flex: 1, wordBreak: "break-all" }}>{createdSecret}</div>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdSecret);
+                    toast.info("Virtual API key copied to clipboard", "[COPIED]");
+                  }}
+                >
+                  {t("common.copy", "Copy")}
+                </button>
+              </div>
             </div>
           ) : (
             <KeyFields form={form} setForm={setForm} users={users} withUser />
@@ -344,19 +396,19 @@ export default function ApiKeys() {
 
       {editTarget && (
         <Modal
-          title="Edit key"
+          title={t("keys.modal_edit_title", "Edit key")}
           onClose={() => setEditTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setEditTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitEdit}
                 disabled={busy}
               >
-                {busy ? "Saving…" : "Save"}
+                {busy ? t("common.saving", "Saving…") : t("common.save", "Save")}
               </button>
             </>
           }
@@ -367,12 +419,12 @@ export default function ApiKeys() {
 
       {confirmTarget && (
         <Modal
-          title={confirmTarget.action === "revoke" ? "Revoke key" : "Re-enable key"}
+          title={confirmTarget.action === "revoke" ? t("keys.revoke", "Revoke key") : t("keys.reactivate", "Re-enable key")}
           onClose={() => setConfirmTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setConfirmTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className={
@@ -384,10 +436,10 @@ export default function ApiKeys() {
                 disabled={busy}
               >
                 {busy
-                  ? "Working…"
+                  ? t("common.loading", "Working…")
                   : confirmTarget.action === "revoke"
-                    ? "Revoke"
-                    : "Re-enable"}
+                    ? t("keys.revoke", "Revoke")
+                    : t("keys.reactivate", "Re-enable")}
               </button>
             </>
           }

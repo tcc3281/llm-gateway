@@ -302,6 +302,7 @@ export interface UserModelUsage {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  tokens?: number;
 }
 
 export interface MemberUsageSummary {
@@ -396,8 +397,8 @@ export interface TenantTransactionsPage {
 
 export interface TopUpCreditRequest {
   amount: number;
-  contract_ref: string;
-  notes: string;
+  contract_ref?: string;
+  notes?: string;
 }
 
 export interface TenantPatch {
@@ -407,6 +408,109 @@ export interface TenantPatch {
   budget_limit_monthly?: number;
   allowed_models?: string[];
   is_active?: boolean;
+}
+
+export type AlertEventType = 
+  | "budget_threshold"
+  | "rate_limit_surge"
+  | "error_rate_surge"
+  | "latency_anomaly"
+  | "iam_deny_surge";
+
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export type AlertChannelType = "generic" | "slack" | "discord" | "pagerduty";
+
+export interface AlertChannelConfig {
+  channel_type: AlertChannelType;
+  channel_name?: string;
+  webhook_url: string;
+  webhook_secret?: string;
+  is_enabled: boolean;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  event_type: AlertEventType;
+  severity?: AlertSeverity;
+  channel_type: AlertChannelType;
+  webhook_url: string;
+  webhook_secret?: string;
+  channels?: AlertChannelConfig[];
+  threshold_value: number;
+  window_seconds?: number;
+  threshold_window_sec?: number;
+  cooldown_seconds: number;
+  cooldown_sec?: number;
+  tenant_id?: string;
+  tenant_name?: string;
+  filter_provider?: string;
+  filter_model?: string;
+  is_active: boolean;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AlertRulePatch {
+  name?: string;
+  event_type?: AlertEventType;
+  severity?: AlertSeverity;
+  channel_type?: AlertChannelType;
+  webhook_url?: string;
+  webhook_secret?: string;
+  channels?: AlertChannelConfig[];
+  threshold_value?: number;
+  window_seconds?: number;
+  threshold_window_sec?: number;
+  cooldown_seconds?: number;
+  cooldown_sec?: number;
+  tenant_id?: string | null;
+  filter_provider?: string;
+  filter_model?: string;
+  is_active?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AlertHistory {
+  id: string | number;
+  rule_id?: string;
+  rule_name?: string;
+  event_type: string;
+  tenant_id?: string;
+  tenant_name?: string;
+  title?: string;
+  message?: string;
+  triggered_at: string;
+  status: "delivered" | "failed" | "suppressed_cooldown";
+  payload?: Record<string, unknown>;
+  payload_sent?: Record<string, unknown>;
+  status_code?: number;
+  response_code?: number;
+  response_body?: string;
+  error_message?: string;
+  latency_ms?: number;
+  retry_count?: number;
+}
+
+export interface AlertHistoryResponse {
+  history: AlertHistory[];
+  total?: number;
+  dropped_events: number;
+}
+
+export interface TestWebhookRequest {
+  webhook_url: string;
+  channel_type: AlertChannelType;
+  webhook_secret?: string;
+  secret?: string;
+}
+
+export interface TestWebhookResponse {
+  status_code: number;
+  success: boolean;
+  error?: string;
 }
 
 

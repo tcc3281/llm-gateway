@@ -4,6 +4,8 @@ import type { APIKey, MemberDetailResponse, Tenant, UsageLog, User } from "../ap
 import { fmtDate, fmtMoney, fmtNum, shortTs } from "../lib/format";
 import Modal from "./Modal";
 import LogDetailDrawer, { getStatusInfo } from "./LogDetailDrawer";
+import { useToast } from "./Toast";
+import { useLanguage } from "../i18n";
 
 interface UserDetailModalProps {
   user: User;
@@ -21,6 +23,8 @@ export default function UserDetailModal({
   onClose,
   onUserUpdated,
 }: UserDetailModalProps) {
+  const { t } = useLanguage();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<SubTab>("dashboard");
   const [timeRange, setTimeRange] = useState<TimeRange>("7d");
 
@@ -51,6 +55,7 @@ export default function UserDetailModal({
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(label);
+    toast.info(`${label} copied to clipboard`, "[COPIED]");
     setTimeout(() => setCopiedText(null), 2000);
   };
 
@@ -131,6 +136,7 @@ export default function UserDetailModal({
         cache_ttl_seconds: parseInt(newKeyCacheTtl, 10) || 0,
       });
       setCreatedKeyResult(res);
+      toast.success(`Virtual key "${res.key_info?.name || newKeyName.trim()}" generated`, "[200 OK]");
       setNewKeyName("");
       setNewKeyBudget("");
       setNewKeyRate("");
@@ -138,7 +144,9 @@ export default function UserDetailModal({
       await loadKeys();
       if (onUserUpdated) onUserUpdated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create API key");
+      const msg = err instanceof Error ? err.message : "Failed to create API key";
+      setError(msg);
+      toast.error(msg, "[KEY GEN ERROR]");
     } finally {
       setSavingKey(false);
     }
@@ -148,9 +156,12 @@ export default function UserDetailModal({
     if (!window.confirm("Are you sure you want to revoke this API key?")) return;
     try {
       await api.revokeKey(keyId);
+      toast.info("Virtual API key revoked", "[200 OK]");
       await loadKeys();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to revoke key");
+      const msg = err instanceof Error ? err.message : "Failed to revoke key";
+      setError(msg);
+      toast.error(msg, "[REVOKE ERROR]");
     }
   };
 
@@ -180,41 +191,26 @@ export default function UserDetailModal({
               {(user.name || user.email).charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 16, fontWeight: 700 }}>{user.name || "Unnamed User"}</span>
-                {user.role === "admin" ? (
-                  <span className="badge badge--violet">Admin</span>
+                {user.is_root ? (
+                  <span className="terminal-badge terminal-badge--root glow-amber">
+                    [ROOT ADMIN]
+                  </span>
+                ) : user.role === "admin" ? (
+                  <span className="terminal-badge terminal-badge--admin">
+                    [ADMIN]
+                  </span>
                 ) : (
-                  <span className="badge">User</span>
-                )}
-                {user.is_root && (
-                  <span
-                    className="mono"
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "1px 5px",
-                      borderRadius: 3,
-                      background: "rgba(245, 158, 11, 0.15)",
-                      color: "var(--amber)",
-                      border: "1px solid rgba(245, 158, 11, 0.3)",
-                    }}
-                  >
-                    ROOT
+                  <span className="terminal-badge terminal-badge--user">
+                    [USER]
                   </span>
                 )}
                 {tenant && (
                   <span
-                    style={{
-                      fontSize: 11,
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      background: tenant.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
-                      color: tenant.type === "internal" ? "#818cf8" : "#34d399",
-                      fontWeight: 600,
-                    }}
+                    className={`terminal-badge ${tenant.type === "internal" ? "terminal-badge--internal" : "terminal-badge--external"}`}
                   >
-                    {tenant.name} ({user.tenant_role || "member"})
+                    [{tenant.type.toUpperCase()}] {tenant.name} ({user.tenant_role || "member"})
                   </span>
                 )}
               </div>
@@ -232,7 +228,7 @@ export default function UserDetailModal({
               User ID: {user.id}
             </span>
             <button className="btn" onClick={onClose}>
-              Close
+              {t("common.close", "Close")}
             </button>
           </div>
         }
@@ -258,76 +254,80 @@ export default function UserDetailModal({
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "dashboard" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "dashboard" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "dashboard" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "dashboard" ? 600 : 400,
+                  fontWeight: activeTab === "dashboard" ? 700 : 400,
+                  boxShadow: activeTab === "dashboard" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("dashboard")}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                   insights
                 </span>
-                Dashboard &amp; Models
+                {t("user_detail.tab_dashboard", "Dashboard & Models")}
               </button>
               <button
                 type="button"
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "keys" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "keys" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "keys" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "keys" ? 600 : 400,
+                  fontWeight: activeTab === "keys" ? 700 : 400,
+                  boxShadow: activeTab === "keys" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("keys")}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                   key
                 </span>
-                API Keys {keys.length > 0 && `(${keys.length})`}
+                {t("user_detail.tab_keys", "API Keys")} {keys.length > 0 && `(${keys.length})`}
               </button>
               <button
                 type="button"
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "logs" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "logs" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "logs" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "logs" ? 600 : 400,
+                  fontWeight: activeTab === "logs" ? 700 : 400,
+                  boxShadow: activeTab === "logs" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("logs")}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                   receipt_long
                 </span>
-                Usage Logs
+                {t("user_detail.tab_logs", "Usage Logs")}
               </button>
               <button
                 type="button"
                 className="btn btn--sm"
                 style={{
                   background: activeTab === "profile" ? "var(--primary)" : "var(--surface)",
-                  color: activeTab === "profile" ? "#fff" : "var(--text-muted)",
+                  color: activeTab === "profile" ? "#06282d" : "var(--text-muted)",
                   border: "1px solid var(--border)",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  fontWeight: activeTab === "profile" ? 600 : 400,
+                  fontWeight: activeTab === "profile" ? 700 : 400,
+                  boxShadow: activeTab === "profile" ? "0 0 10px rgba(34, 211, 238, 0.3)" : "none",
                 }}
                 onClick={() => setActiveTab("profile")}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                   badge
                 </span>
-                Profile &amp; IAM
+                {t("user_detail.tab_profile", "Profile & IAM")}
               </button>
             </div>
 
@@ -362,7 +362,7 @@ export default function UserDetailModal({
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {loadingDetail ? (
                 <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
-                  Loading member analytics &amp; model telemetry…
+                  {t("common.loading", "Loading member analytics & model telemetry…")}
                 </div>
               ) : (
                 <>
@@ -384,18 +384,18 @@ export default function UserDetailModal({
                       }}
                     >
                       <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 600 }}>
-                        Total Spend ({timeRange.toUpperCase()})
+                        {t("user_detail.total_spend", "Total Spend")} ({timeRange.toUpperCase()})
                       </div>
                       <div style={{ fontSize: 22, fontWeight: 700, color: "var(--emerald)", marginTop: 4 }}>
                         {fmtMoney(memberSummary?.cost_usd || 0)}
                       </div>
                       <div style={{ marginTop: 8 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }} className="muted">
-                          <span>Budget Limit</span>
+                          <span>{t("user_detail.budget_limit", "Budget Limit")}</span>
                           <span>
                             {memberSummary?.budget_limit && memberSummary.budget_limit > 0
                               ? fmtMoney(memberSummary.budget_limit, 2)
-                              : "No limit"}
+                              : t("user_detail.no_limit", "No limit")}
                           </span>
                         </div>
                         {memberSummary?.budget_limit && memberSummary.budget_limit > 0 ? (
@@ -436,13 +436,13 @@ export default function UserDetailModal({
                       }}
                     >
                       <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 600 }}>
-                        Total Requests
+                        {t("user_detail.total_requests", "Total Requests")}
                       </div>
                       <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>
                         {fmtNum(memberSummary?.requests || 0)}
                       </div>
                       <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                        Prompt: {fmtNum(memberSummary?.prompt_tokens || 0)} tokens
+                        {t("user_detail.prompt_tokens", "Prompt Tokens")}: {fmtNum(memberSummary?.prompt_tokens || 0)}
                       </div>
                     </div>
 
@@ -456,7 +456,7 @@ export default function UserDetailModal({
                       }}
                     >
                       <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 600 }}>
-                        Output (Completion) Tokens
+                        {t("user_detail.completion_tokens", "Output (Completion) Tokens")}
                       </div>
                       <div style={{ fontSize: 22, fontWeight: 700, color: "var(--primary)", marginTop: 4 }}>
                         {fmtNum(memberSummary?.completion_tokens || 0)}
@@ -476,7 +476,7 @@ export default function UserDetailModal({
                       }}
                     >
                       <div className="muted" style={{ fontSize: 11, textTransform: "uppercase", fontWeight: 600 }}>
-                        Most Frequent Model
+                        {t("user_detail.top_model", "Most Frequent Model")}
                       </div>
                       <div className="mono" style={{ fontSize: 16, fontWeight: 700, marginTop: 6, color: "#f59e0b" }}>
                         {modelDetails.length > 0 ? modelDetails[0].model : "—"}
@@ -484,7 +484,7 @@ export default function UserDetailModal({
                       <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
                         {modelDetails.length > 0
                           ? `${fmtNum(modelDetails[0].requests)} reqs (${fmtMoney(modelDetails[0].cost_usd)})`
-                          : "No activity in period"}
+                          : t("user_detail.no_activity", "No activity in period")}
                       </div>
                     </div>
                   </div>
@@ -501,30 +501,30 @@ export default function UserDetailModal({
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                       <div>
                         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
-                          Model Breakdown &amp; Spending
+                          {t("user_detail.model_breakdown", "Model Breakdown & Spending")}
                         </h3>
                         <p className="muted" style={{ margin: "2px 0 0 0", fontSize: 12 }}>
-                          Models frequently used by {user.name || user.email} sorted by cost
+                          {t("user_detail.model_breakdown_sub", "Models frequently used sorted by cost")}
                         </p>
                       </div>
-                      <span className="badge badge--info">{modelDetails.length} model(s) used</span>
+                      <span className="badge badge--info">{modelDetails.length} {t("user_detail.models_used_badge", "model(s) used")}</span>
                     </div>
 
                     {modelDetails.length === 0 ? (
                       <div className="empty" style={{ padding: 24 }}>
-                        No models called by this user in the selected time range ({timeRange.toUpperCase()}).
+                        {t("user_detail.no_models_period", "No models called by this user in the selected time range")} ({timeRange.toUpperCase()}).
                       </div>
                     ) : (
                       <div className="table-wrap">
                         <table className="table">
                           <thead>
                             <tr>
-                              <th>Model Name</th>
-                              <th className="num">Requests</th>
-                              <th style={{ width: 140 }}>Activity Share</th>
-                              <th className="num">Prompt Tokens</th>
-                              <th className="num">Output Tokens</th>
-                              <th className="num">Cost (USD)</th>
+                              <th>{t("user_detail.col_model_name", "Model Name")}</th>
+                              <th className="num">{t("dash.total_requests", "Requests")}</th>
+                              <th style={{ width: 140 }}>{t("user_detail.col_activity_share", "Activity Share")}</th>
+                              <th className="num">{t("user_detail.col_prompt_tk", "Prompt Tokens")}</th>
+                              <th className="num">{t("user_detail.col_output_tk", "Output Tokens")}</th>
+                              <th className="num">{t("user_detail.col_cost", "Cost (USD)")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -586,17 +586,17 @@ export default function UserDetailModal({
                       }}
                     >
                       <h3 style={{ margin: "0 0 8px 0", fontSize: 14, fontWeight: 600 }}>
-                        Daily Request &amp; Spend Timeline
+                        {t("user_detail.timeline_title", "Daily Request & Spend Timeline")}
                       </h3>
                       <div className="table-wrap">
                         <table className="table">
                           <thead>
                             <tr>
-                              <th>Date</th>
-                              <th className="num">Requests</th>
-                              <th className="num">Cost</th>
-                              <th className="num">Avg Latency</th>
-                              <th className="num">Errors</th>
+                              <th>{t("user_detail.col_date", "Date")}</th>
+                              <th className="num">{t("dash.total_requests", "Requests")}</th>
+                              <th className="num">{t("dash.total_cost", "Cost")}</th>
+                              <th className="num">{t("user_detail.col_latency", "Avg Latency")}</th>
+                              <th className="num">{t("user_detail.col_errors", "Errors")}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -640,13 +640,15 @@ export default function UserDetailModal({
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>User Virtual Keys</h3>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+                    {t("user_detail.keys_title", "User Virtual Keys")}
+                  </h3>
                   <p className="muted" style={{ margin: "2px 0 0 0", fontSize: 12 }}>
-                    Active and revoked gateway API keys belonging to this account
+                    {t("user_detail.keys_sub", "Active and revoked gateway API keys belonging to this account")}
                   </p>
                 </div>
                 <button className="btn btn--primary btn--sm" onClick={() => setNewKeyModalOpen(true)}>
-                  + Generate key for user
+                  {t("user_detail.btn_generate_key", "+ Generate key for user")}
                 </button>
               </div>
 
@@ -660,10 +662,10 @@ export default function UserDetailModal({
                   }}
                 >
                   <div style={{ color: "var(--emerald)", fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
-                    New Key Created: {createdKeyResult.key_info.name}
+                    {t("user_detail.new_key_created", "New Key Created:")} {createdKeyResult.key_info.name}
                   </div>
                   <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                    Copy this API key now. For security reasons, you will not be able to see it again.
+                    {t("user_detail.copy_key_warning", "Copy this API key now. For security reasons, you will not be able to see it again.")}
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input
@@ -676,10 +678,10 @@ export default function UserDetailModal({
                       className="btn btn--sm"
                       onClick={() => copyToClipboard(createdKeyResult.api_key, "createdKey")}
                     >
-                      {copiedText === "createdKey" ? "Copied!" : "Copy Key"}
+                      {copiedText === "createdKey" ? t("common.copied", "Copied!") : t("user_detail.copy_key_btn", "Copy Key")}
                     </button>
                     <button className="btn btn--ghost btn--sm" onClick={() => setCreatedKeyResult(null)}>
-                      Dismiss
+                      {t("user_detail.dismiss", "Dismiss")}
                     </button>
                   </div>
                 </div>
@@ -687,13 +689,13 @@ export default function UserDetailModal({
 
               {loadingKeys ? (
                 <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
-                  Loading API keys…
+                  {t("common.loading", "Loading…")}
                 </div>
               ) : keys.length === 0 ? (
                 <div className="empty" style={{ padding: 32 }}>
-                  <p>This user has no API keys assigned yet.</p>
+                  <p>{t("user_detail.no_keys", "This user has no API keys assigned yet.")}</p>
                   <button className="btn btn--primary btn--sm" onClick={() => setNewKeyModalOpen(true)}>
-                    Generate First Key
+                    {t("user_detail.btn_first_key", "Generate First Key")}
                   </button>
                 </div>
               ) : (
@@ -701,14 +703,14 @@ export default function UserDetailModal({
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Key Name</th>
-                        <th>Prefix / Token</th>
-                        <th>Status</th>
-                        <th className="num">Rate Limit</th>
-                        <th className="num">Budget Limit</th>
-                        <th className="num">Cache TTL</th>
-                        <th>Created</th>
-                        <th style={{ textAlign: "right" }}>Actions</th>
+                        <th>{t("keys.col_name", "Key Name")}</th>
+                        <th>{t("user_detail.col_prefix", "Prefix / Token")}</th>
+                        <th>{t("common.status", "Status")}</th>
+                        <th className="num">{t("user_detail.col_rpm", "Rate Limit")}</th>
+                        <th className="num">{t("user_detail.col_budget", "Budget Limit")}</th>
+                        <th className="num">{t("user_detail.col_cache", "Cache TTL")}</th>
+                        <th>{t("keys.col_created", "Created")}</th>
+                        <th style={{ textAlign: "right" }}>{t("common.actions", "Actions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -723,25 +725,25 @@ export default function UserDetailModal({
                               <button
                                 className="btn btn--ghost btn--sm"
                                 style={{ padding: "0 4px", minHeight: 22 }}
-                                title="Copy key prefix"
+                                title={t("common.copy", "Copy")}
                                 onClick={() => copyToClipboard(k.key_prefix, k.id)}
                               >
-                                {copiedText === k.id ? "✓" : "copy"}
+                                {copiedText === k.id ? "✓" : t("common.copy", "copy")}
                               </button>
                             </div>
                           </td>
                           <td>
                             {k.is_active ? (
-                              <span className="badge badge--ok">Active</span>
+                              <span className="badge badge--ok">{t("keys.badge_active", "Active")}</span>
                             ) : (
-                              <span className="badge badge--danger">Revoked</span>
+                              <span className="badge badge--danger">{t("keys.badge_revoked", "Revoked")}</span>
                             )}
                           </td>
                           <td className="num muted">
-                            {k.rate_limit_rpm > 0 ? `${k.rate_limit_rpm} RPM` : "Unlimited"}
+                            {k.rate_limit_rpm > 0 ? `${k.rate_limit_rpm} RPM` : t("user_detail.no_limit", "Unlimited")}
                           </td>
                           <td className="num">
-                            {k.budget_limit > 0 ? fmtMoney(k.budget_limit, 2) : "No limit"}
+                            {k.budget_limit > 0 ? fmtMoney(k.budget_limit, 2) : t("user_detail.no_limit", "No limit")}
                           </td>
                           <td className="num muted">{k.cache_ttl_seconds}s</td>
                           <td className="muted">{fmtDate(k.created_at)}</td>
@@ -752,7 +754,7 @@ export default function UserDetailModal({
                                   className="btn btn--sm btn--danger"
                                   onClick={() => handleRevokeKey(k.id)}
                                 >
-                                  Revoke
+                                  {t("user_detail.revoke_btn", "Revoke")}
                                 </button>
                               )}
                             </div>
@@ -771,36 +773,38 @@ export default function UserDetailModal({
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>User Request Logs</h3>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+                    {t("user_detail.logs_title", "User Request Logs")}
+                  </h3>
                   <p className="muted" style={{ margin: "2px 0 0 0", fontSize: 12 }}>
-                    Showing recent requests executed by {user.name || user.email}
+                    {t("user_detail.logs_sub", "Showing recent requests executed")} {user.name || user.email}
                   </p>
                 </div>
                 <button className="btn btn--sm" onClick={loadLogs} disabled={loadingLogs}>
-                  {loadingLogs ? "Refreshing…" : "↻ Refresh"}
+                  {loadingLogs ? t("common.refreshing", "Refreshing…") : `↻ ${t("common.refresh", "Refresh")}`}
                 </button>
               </div>
 
               {loadingLogs ? (
                 <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
-                  Loading logs…
+                  {t("common.loading", "Loading…")}
                 </div>
               ) : logs.length === 0 ? (
                 <div className="empty" style={{ padding: 32 }}>
-                  No usage logs recorded for this user yet.
+                  {t("user_detail.no_logs", "No usage logs recorded for this user yet.")}
                 </div>
               ) : (
                 <div className="table-wrap">
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Time</th>
-                        <th>Model</th>
-                        <th>Status</th>
-                        <th className="num">Latency</th>
-                        <th className="num">Tokens (P / C / Cache)</th>
-                        <th className="num">Cost</th>
-                        <th style={{ textAlign: "right" }}>Inspect</th>
+                        <th>{t("common.time", "Time")}</th>
+                        <th>{t("common.model", "Model")}</th>
+                        <th>{t("common.status", "Status")}</th>
+                        <th className="num">{t("logs.col_latency", "Latency")}</th>
+                        <th className="num">{t("logs.col_tokens", "Tokens (P / C / Cache)")}</th>
+                        <th className="num">{t("logs.col_cost", "Cost")}</th>
+                        <th style={{ textAlign: "right" }}>{t("logs.inspect", "Inspect")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -866,7 +870,7 @@ export default function UserDetailModal({
                                   <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                                     visibility
                                   </span>
-                                  Inspect
+                                  {t("logs.inspect", "Inspect")}
                                 </button>
                               </div>
                             </td>
@@ -892,12 +896,12 @@ export default function UserDetailModal({
                 }}
               >
                 <h3 style={{ margin: "0 0 12px 0", fontSize: 15, fontWeight: 600 }}>
-                  Account &amp; IAM Properties
+                  {t("user_detail.account_props", "Account & IAM Properties")}
                 </h3>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                   <div>
                     <label className="muted" style={{ fontSize: 11, textTransform: "uppercase" }}>
-                      User ID
+                      {t("users.col_user", "User ID")}
                     </label>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                       <span className="mono" style={{ fontSize: 12 }}>{user.id}</span>
@@ -906,14 +910,14 @@ export default function UserDetailModal({
                         style={{ padding: "0 4px", minHeight: 20 }}
                         onClick={() => copyToClipboard(user.id, "uid")}
                       >
-                        {copiedText === "uid" ? "Copied" : "Copy"}
+                        {copiedText === "uid" ? t("common.copied", "Copied") : t("common.copy", "Copy")}
                       </button>
                     </div>
                   </div>
 
                   <div>
                     <label className="muted" style={{ fontSize: 11, textTransform: "uppercase" }}>
-                      Email Address
+                      {t("common.email", "Email Address")}
                     </label>
                     <div className="mono" style={{ fontSize: 13, marginTop: 2 }}>
                       {user.email}
@@ -922,7 +926,7 @@ export default function UserDetailModal({
 
                   <div>
                     <label className="muted" style={{ fontSize: 11, textTransform: "uppercase" }}>
-                      Display Name
+                      {t("users.col_name", "Display Name")}
                     </label>
                     <div style={{ fontSize: 13, marginTop: 2 }}>
                       {user.name || "—"}
@@ -931,7 +935,7 @@ export default function UserDetailModal({
 
                   <div>
                     <label className="muted" style={{ fontSize: 11, textTransform: "uppercase" }}>
-                      System Role
+                      {t("users.col_role", "System Role")}
                     </label>
                     <div style={{ marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}>
                       <span className={`badge ${user.role === "admin" ? "badge--violet" : ""}`}>
@@ -945,7 +949,7 @@ export default function UserDetailModal({
 
                   <div>
                     <label className="muted" style={{ fontSize: 11, textTransform: "uppercase" }}>
-                      Tenant / Organization
+                      {t("users.col_tenant", "Tenant / Organization")}
                     </label>
                     <div style={{ marginTop: 2 }}>
                       {tenant ? (
@@ -953,14 +957,14 @@ export default function UserDetailModal({
                           {tenant.name} ({tenant.type} / {user.tenant_role || "member"})
                         </span>
                       ) : (
-                        <span className="muted">Global (No specific tenant)</span>
+                        <span className="muted">{t("user_detail.global_no_tenant", "Global (No specific tenant)")}</span>
                       )}
                     </div>
                   </div>
 
                   <div>
                     <label className="muted" style={{ fontSize: 11, textTransform: "uppercase" }}>
-                      Account Created
+                      {t("keys.col_created", "Account Created")}
                     </label>
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
                       {fmtDate(user.created_at)}
@@ -976,66 +980,66 @@ export default function UserDetailModal({
       {/* Modal for creating a new key for this user */}
       {newKeyModalOpen && (
         <Modal
-          title={`Create API Key for ${user.name || user.email}`}
+          title={`${t("user_detail.create_modal_title", "Create API Key for")} ${user.name || user.email}`}
           onClose={() => setNewKeyModalOpen(false)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setNewKeyModalOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={handleCreateKey}
                 disabled={savingKey || !newKeyName.trim()}
               >
-                {savingKey ? "Generating…" : "Generate Key"}
+                {savingKey ? t("user_detail.btn_generating", "Generating…") : t("user_detail.btn_gen_key", "Generate Key")}
               </button>
             </>
           }
         >
           <form onSubmit={handleCreateKey}>
             <div className="field">
-              <label className="field__label">Key Name / Description</label>
+              <label className="field__label">{t("user_detail.key_name_label", "Key Name / Description")}</label>
               <input
                 className="input"
                 required
-                placeholder="e.g. CLI Production Key"
+                placeholder={t("user_detail.key_name_placeholder", "e.g. CLI Production Key")}
                 value={newKeyName}
                 onChange={(e) => setNewKeyName(e.target.value)}
               />
             </div>
             <div className="row">
               <div className="field" style={{ flex: 1 }}>
-                <label className="field__label">Monthly Budget Limit ($ USD)</label>
+                <label className="field__label">{t("user_detail.budget_label", "Monthly Budget Limit ($ USD)")}</label>
                 <input
                   className="input"
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="0 = Unlimited"
+                  placeholder={t("user_detail.unlimited_hint", "0 = Unlimited")}
                   value={newKeyBudget}
                   onChange={(e) => setNewKeyBudget(e.target.value)}
                 />
               </div>
               <div className="field" style={{ flex: 1 }}>
-                <label className="field__label">Rate Limit (RPM)</label>
+                <label className="field__label">{t("user_detail.rate_label", "Rate Limit (RPM)")}</label>
                 <input
                   className="input"
                   type="number"
                   min="0"
-                  placeholder="0 = Unlimited"
+                  placeholder={t("user_detail.unlimited_hint", "0 = Unlimited")}
                   value={newKeyRate}
                   onChange={(e) => setNewKeyRate(e.target.value)}
                 />
               </div>
             </div>
             <div className="field">
-              <label className="field__label">Cache TTL (seconds)</label>
+              <label className="field__label">{t("user_detail.cache_ttl_label", "Cache TTL (seconds)")}</label>
               <input
                 className="input"
                 type="number"
                 min="0"
-                placeholder="0 = Use gateway default"
+                placeholder={t("user_detail.default_cache_hint", "0 = Use gateway default")}
                 value={newKeyCacheTtl}
                 onChange={(e) => setNewKeyCacheTtl(e.target.value)}
               />

@@ -5,6 +5,8 @@ import type { Tenant, User } from "../api/types";
 import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
 import UserDetailModal from "../components/UserDetailModal";
+import { useToast } from "../components/Toast";
+import { useLanguage } from "../i18n";
 
 interface UserForm {
   name: string;
@@ -18,12 +20,19 @@ interface UserForm {
 const empty: UserForm = { name: "", email: "", role: "user", is_root: false, tenant_id: "", tenant_role: "member" };
 
 export default function Users() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [users, setUsers] = useState<User[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterTenant, setFilterTenant] = useState("all");
+  const [filterRole, setFilterRole] = useState("all");
 
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -79,11 +88,14 @@ export default function Users() {
         tenant_id: form.tenant_id ? form.tenant_id : null,
         tenant_role: form.tenant_role || "member",
       });
+      toast.success(`User ${form.email} created successfully`, "[200 OK]");
       setCreateOpen(false);
       setForm(empty);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      const msg = err instanceof Error ? err.message : "Create failed";
+      setError(msg);
+      toast.error(msg, "[CREATE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -102,10 +114,13 @@ export default function Users() {
         tenant_id: editForm.tenant_id ? editForm.tenant_id : null,
         tenant_role: editForm.tenant_role || "member",
       });
+      toast.success(`User ${editForm.email || editTarget.email} updated`, "[200 OK]");
       setEditTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Update failed");
+      const msg = err instanceof Error ? err.message : "Update failed";
+      setError(msg);
+      toast.error(msg, "[UPDATE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -117,10 +132,13 @@ export default function Users() {
     setError(null);
     try {
       await api.deleteUser(deleteTarget.id);
+      toast.info(`User ${deleteTarget.email} deleted`, "[200 OK]");
       setDeleteTarget(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      const msg = err instanceof Error ? err.message : "Delete failed";
+      setError(msg);
+      toast.error(msg, "[DELETE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -134,148 +152,221 @@ export default function Users() {
     setPasswordSuccess(null);
     try {
       await api.setPassword(passwordTarget.id, newPassword.trim());
-      setPasswordSuccess(`Password updated for ${passwordTarget.email}`);
+      const msg = `Password updated for ${passwordTarget.email}`;
+      setPasswordSuccess(msg);
+      toast.success(msg, "[200 OK]");
       setNewPassword("");
       setTimeout(() => {
         setPasswordTarget(null);
         setPasswordSuccess(null);
       }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update password");
+      const msg = err instanceof Error ? err.message : "Failed to update password";
+      setError(msg);
+      toast.error(msg, "[AUTH ERROR]");
     } finally {
       setBusy(false);
     }
   };
 
+  const filteredUsers = users.filter((u) => {
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = (u.name || "").toLowerCase().includes(q);
+      const matchEmail = u.email.toLowerCase().includes(q);
+      const matchId = u.id.toLowerCase().includes(q);
+      if (!matchName && !matchEmail && !matchId) return false;
+    }
+    if (filterTenant !== "all") {
+      if (filterTenant === "none" && u.tenant_id) return false;
+      if (filterTenant !== "none" && u.tenant_id !== filterTenant) return false;
+    }
+    if (filterRole !== "all") {
+      if (filterRole === "root" && !u.is_root) return false;
+      if (filterRole === "admin" && (u.role !== "admin" || u.is_root)) return false;
+      if (filterRole === "user" && (u.role !== "user" || u.is_root)) return false;
+    }
+    return true;
+  });
+
   return (
     <div>
       <div className="page__header">
         <div>
-          <h1 className="page__title">Users &amp; Members</h1>
+          <h1 className="page__title">{t("people.tab_users", "Users & Accounts")}</h1>
           <p className="page__sub">
-            {users.length} account(s). Manage team credentials, passwords, and roles.
+            {filteredUsers.length} / {users.length} {t("people.tab_users_desc")}
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             className="btn"
             style={{ backgroundColor: "#1a2122", border: "1px solid #2d3139", color: "#22d3ee", fontFamily: "JetBrains Mono, monospace", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
-            onClick={() => navigate("/analytics/members")}
+            onClick={() => navigate("/people?tab=analytics")}
           >
             <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>insights</span>
-            Member Analytics
+            {t("people.tab_analytics", "Member Analytics")}
           </button>
           <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
-            + New user
+            {t("users.create_btn", "+ Add User")}
           </button>
         </div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
 
+      {/* Toolbar Filter */}
+      <div className="filter-bar filter-bar--inline">
+        <div className="search-box">
+          <span className="material-symbols-outlined">search</span>
+          <input
+            type="text"
+            className="input"
+            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+            placeholder={t("users.search_placeholder", "Search members, emails, or IDs...")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <select
+          className="select"
+          style={{ width: "auto", minWidth: 170, fontFamily: "var(--font-mono)", fontSize: 12 }}
+          value={filterTenant}
+          onChange={(e) => setFilterTenant(e.target.value)}
+        >
+          <option value="all">{t("users.filter_all_tenants", "All Tenants")}</option>
+          <option value="none">{t("users.filter_global", "Global (No Tenant)")}</option>
+          {tenants.map((tItem) => (
+            <option key={tItem.id} value={tItem.id}>
+              {tItem.name} ({tItem.type.toUpperCase()})
+            </option>
+          ))}
+        </select>
+        <select
+          className="select"
+          style={{ width: "auto", minWidth: 140, fontFamily: "var(--font-mono)", fontSize: 12 }}
+          value={filterRole}
+          onChange={(e) => setFilterRole(e.target.value)}
+        >
+          <option value="all">{t("users.filter_all_roles", "All Roles")}</option>
+          <option value="root">{t("users.filter_root", "Root Admin")}</option>
+          <option value="admin">{t("users.filter_admin", "Tenant Admin")}</option>
+          <option value="user">{t("users.filter_user", "Standard User")}</option>
+        </select>
+      </div>
+
       <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Tenant</th>
-              <th>Role</th>
-              <th>Created</th>
-              <th style={{ textAlign: "right" }}>Actions</th>
+              <th>{t("users.col_name", "MEMBER")}</th>
+              <th>{t("users.col_tenant", "TENANT / ORG")}</th>
+              <th>{t("users.col_role", "SYSTEM ROLE")}</th>
+              <th>{t("users.col_created", "CREATED")}</th>
+              <th style={{ textAlign: "right" }}>{t("users.col_actions", "ACTIONS")}</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => {
-              const matchedTenant = tenants.find((t) => t.id === u.tenant_id);
-              return (
-                <tr key={u.id}>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      style={{
-                        padding: 0,
-                        minHeight: "unset",
-                        fontWeight: 600,
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: 13,
-                      }}
-                      onClick={() => setSelectedUser(u)}
-                      title="View user details & analytics"
-                    >
-                      {u.name || "—"}
-                    </button>
-                  </td>
-                  <td className="mono" style={{ fontSize: 12 }}>
-                    <button
-                      type="button"
-                      className="btn btn--ghost mono"
-                      style={{
-                        padding: 0,
-                        minHeight: "unset",
-                        color: "var(--primary)",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                      onClick={() => setSelectedUser(u)}
-                      title="View user details & analytics"
-                    >
-                      {u.email}
-                    </button>
-                  </td>
-                  <td>
-                    {matchedTenant ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
+                  {t("users.no_members", "No members match the selected search or filters.")}
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((u) => {
+                const matchedTenant = tenants.find((item) => item.id === u.tenant_id);
+                return (
+                  <tr key={u.id}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div
                           style={{
-                            display: "inline-block",
-                            padding: "2px 8px",
-                            borderRadius: 4,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            background: matchedTenant.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
-                            color: matchedTenant.type === "internal" ? "#818cf8" : "#34d399",
-                          }}
-                        >
-                          {matchedTenant.name}
-                        </span>
-                        <span className="muted mono" style={{ fontSize: 10, textTransform: "uppercase" }}>
-                          ({u.tenant_role || "member"})
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>Global</span>
-                    )}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {u.role === "admin" ? (
-                        <span className="badge badge--violet">admin</span>
-                      ) : (
-                        <span className="badge">user</span>
-                      )}
-                      {u.is_root && (
-                        <span
-                          className="mono"
-                          style={{
-                            fontSize: 10,
+                            width: 32,
+                            height: 32,
+                            borderRadius: "var(--radius-sm)",
+                            background: u.is_root
+                              ? "rgba(245, 158, 11, 0.15)"
+                              : u.role === "admin"
+                              ? "rgba(16, 185, 129, 0.15)"
+                              : "rgba(34, 211, 238, 0.15)",
+                            border: u.is_root
+                              ? "1px solid rgba(245, 158, 11, 0.4)"
+                              : u.role === "admin"
+                              ? "1px solid rgba(16, 185, 129, 0.4)"
+                              : "1px solid rgba(34, 211, 238, 0.4)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
                             fontWeight: 700,
-                            padding: "1px 5px",
-                            borderRadius: 3,
-                            background: "rgba(245, 158, 11, 0.15)",
-                            color: "var(--amber)",
-                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            fontSize: 13,
+                            fontFamily: "var(--font-mono)",
+                            color: u.is_root ? "var(--amber)" : u.role === "admin" ? "var(--emerald)" : "var(--primary)",
                           }}
                         >
-                          ROOT
+                          {(u.name || u.email).charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            className="btn btn--ghost"
+                            style={{
+                              padding: 0,
+                              minHeight: "unset",
+                              fontWeight: 600,
+                              color: "var(--text)",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: 13,
+                            }}
+                            onClick={() => setSelectedUser(u)}
+                            title="View member deep-dive"
+                          >
+                            {u.name || "—"}
+                          </button>
+                          <div className="mono muted" style={{ fontSize: 11 }}>
+                            {u.email}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {matchedTenant ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span
+                              className={`terminal-badge ${matchedTenant.type === "internal" ? "terminal-badge--internal" : "terminal-badge--external"}`}
+                            >
+                              [{matchedTenant.type.toUpperCase()}]
+                            </span>
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>{matchedTenant.name}</span>
+                          </div>
+                          <span className="muted mono" style={{ fontSize: 10 }}>
+                            ({u.tenant_role || "member"})
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="terminal-badge" style={{ color: "var(--text-muted)", borderColor: "var(--border)" }}>
+                          [GLOBAL]
                         </span>
                       )}
-                    </div>
-                  </td>
-                  <td className="muted">{fmtDate(u.created_at)}</td>
+                    </td>
+                    <td>
+                      {u.is_root ? (
+                        <span className="terminal-badge terminal-badge--root glow-amber">
+                          [ROOT]
+                        </span>
+                      ) : u.role === "admin" ? (
+                        <span className="terminal-badge terminal-badge--admin">
+                          [ADMIN]
+                        </span>
+                      ) : (
+                        <span className="terminal-badge terminal-badge--user">
+                          [USER]
+                        </span>
+                      )}
+                    </td>
+                    <td className="muted mono" style={{ fontSize: 11 }}>{fmtDate(u.created_at)}</td>
                   <td>
                     <div className="table__actions">
                       <button
@@ -295,7 +386,7 @@ export default function Users() {
                         <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                           insights
                         </span>
-                        Details
+                        {t("users.details_btn", "Details")}
                       </button>
                       <button
                         className="btn btn--sm"
@@ -305,7 +396,7 @@ export default function Users() {
                           setPasswordSuccess(null);
                         }}
                       >
-                        Password
+                        {t("users.password_btn", "Password")}
                       </button>
                       <button
                         className="btn btn--sm"
@@ -321,45 +412,39 @@ export default function Users() {
                           });
                         }}
                       >
-                        Edit
+                        {t("users.edit_btn", "Edit")}
                       </button>
                       <button
                         className="btn btn--sm btn--danger"
                         onClick={() => setDeleteTarget(u)}
                       >
-                        Delete
+                        {t("users.delete_btn", "Delete")}
                       </button>
                     </div>
                   </td>
                 </tr>
               );
-            })}
-            {!users.length && (
-              <tr>
-                <td colSpan={6}>
-                  <div className="empty">No users yet</div>
-                </td>
-              </tr>
-            )}
+            })
+          )}
           </tbody>
         </table>
       </div>
 
       {createOpen && (
         <Modal
-          title="New user"
+          title={t("users.create_title", "New user")}
           onClose={() => setCreateOpen(false)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setCreateOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitCreate}
                 disabled={busy || !form.name.trim() || !form.email.trim()}
               >
-                {busy ? "Creating…" : "Create"}
+                {busy ? t("common.creating", "Creating…") : t("common.create", "Create")}
               </button>
             </>
           }
@@ -370,19 +455,19 @@ export default function Users() {
 
       {editTarget && (
         <Modal
-          title="Edit user"
+          title={t("users.edit_title", "Edit user")}
           onClose={() => setEditTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setEditTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitEdit}
                 disabled={busy || !editForm.name.trim()}
               >
-                {busy ? "Saving…" : "Save"}
+                {busy ? t("common.saving", "Saving…") : t("common.save", "Save")}
               </button>
             </>
           }
@@ -393,19 +478,19 @@ export default function Users() {
 
       {passwordTarget && (
         <Modal
-          title={`Set Password: ${passwordTarget.email}`}
+          title={`${t("users.pwd_modal_title", "Set Password for")}: ${passwordTarget.email}`}
           onClose={() => setPasswordTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setPasswordTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitPassword}
                 disabled={busy || newPassword.length < 6}
               >
-                {busy ? "Updating…" : "Update Password"}
+                {busy ? t("common.saving", "Updating…") : t("users.reset_pwd", "Update Password")}
               </button>
             </>
           }
@@ -416,7 +501,7 @@ export default function Users() {
             </div>
           )}
           <div className="field">
-            <label className="field__label">New Password (min 6 characters)</label>
+            <label className="field__label">{t("users.pwd_field_label", "New Password (min 6 characters)")}</label>
             <input
               className="input"
               type="password"
@@ -427,29 +512,28 @@ export default function Users() {
             />
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Setting a password allows this member to authenticate directly via Member Login.
+            {t("users.pwd_field_hint", "Setting a password allows this member to authenticate directly via Member Login.")}
           </p>
         </Modal>
       )}
 
       {deleteTarget && (
         <Modal
-          title="Delete user"
+          title={t("users.delete_title", "Delete user")}
           onClose={() => setDeleteTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button className="btn btn--danger" onClick={confirmDelete} disabled={busy}>
-                {busy ? "Deleting…" : "Delete"}
+                {busy ? t("common.deleting", "Deleting…") : t("common.delete", "Delete")}
               </button>
             </>
           }
         >
           <p>
-            Delete <strong>{deleteTarget.email}</strong>? Their API keys are
-            revoked (cascade). Usage logs are kept.
+            {t("users.delete_confirm", "Delete")} <strong>{deleteTarget.email}</strong>? {t("users.delete_confirm_desc", "Their API keys will be revoked (cascade). Usage logs are kept.")}
           </p>
         </Modal>
       )}
@@ -457,7 +541,7 @@ export default function Users() {
       {selectedUser && (
         <UserDetailModal
           user={selectedUser}
-          tenant={tenants.find((t) => t.id === selectedUser.tenant_id)}
+          tenant={tenants.find((item) => item.id === selectedUser.tenant_id)}
           onClose={() => {
             setSelectedUser(null);
             if (searchParams.has("user_id")) {
@@ -483,10 +567,11 @@ function UserFields({
   tenants: Tenant[];
   emailDisabled?: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <>
       <div className="field">
-        <label className="field__label">Name</label>
+        <label className="field__label">{t("users.field_name", "Name")}</label>
         <input
           className="input"
           value={form.name}
@@ -495,7 +580,7 @@ function UserFields({
         />
       </div>
       <div className="field">
-        <label className="field__label">Email</label>
+        <label className="field__label">{t("users.field_email", "Email")}</label>
         <input
           className="input"
           type="email"
@@ -506,7 +591,7 @@ function UserFields({
         />
       </div>
       <div className="field">
-        <label className="field__label">System Role</label>
+        <label className="field__label">{t("users.field_role", "System Role")}</label>
         <select
           className="select"
           value={form.role}
@@ -518,16 +603,16 @@ function UserFields({
       </div>
 
       <div className="field">
-        <label className="field__label">Tenant Organization</label>
+        <label className="field__label">{t("users.field_tenant", "Tenant Organization")}</label>
         <select
           className="select"
           value={form.tenant_id}
           onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}
         >
-          <option value="">None (Global Access)</option>
-          {tenants.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.type === "internal" ? "Internal" : "B2B Client"})
+          <option value="">{t("users.global_access", "None (Global Access)")}</option>
+          {tenants.map((tItem) => (
+            <option key={tItem.id} value={tItem.id}>
+              {tItem.name} ({tItem.type === "internal" ? "Internal" : "B2B Client"})
             </option>
           ))}
         </select>
@@ -535,14 +620,14 @@ function UserFields({
 
       {form.tenant_id && (
         <div className="field">
-          <label className="field__label">Tenant Role</label>
+          <label className="field__label">{t("users.field_tenant_role", "Tenant Role")}</label>
           <select
             className="select"
             value={form.tenant_role}
             onChange={(e) => setForm({ ...form, tenant_role: e.target.value })}
           >
-            <option value="member">Member</option>
-            <option value="tenant_admin">Tenant Admin (Manager)</option>
+            <option value="member">{t("users.role_member", "Member")}</option>
+            <option value="tenant_admin">{t("users.role_manager", "Tenant Admin (Manager)")}</option>
           </select>
         </div>
       )}
@@ -555,11 +640,11 @@ function UserFields({
             onChange={(e) => setForm({ ...form, is_root: e.target.checked })}
           />
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-            Root Administrator (IAM Bypass)
+            {t("users.field_root", "Root Administrator (IAM Bypass)")}
           </span>
         </label>
         <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 22 }}>
-          Root users bypass all IAM group and model permission checks.
+          {t("users.field_root_hint", "Root users bypass all IAM group and model permission checks.")}
         </div>
       </div>
     </>

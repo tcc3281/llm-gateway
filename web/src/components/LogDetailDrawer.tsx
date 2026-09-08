@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { UsageLog, UsageLogDetail } from "../api/types";
 import { fmtBytes, fmtDate, fmtMoney, fmtNum } from "../lib/format";
+import { useLanguage } from "../i18n";
 
 export function getStatusInfo(code: number): { label: string; text: string; color: string; bg: string; border: string } {
   const map: Record<number, string> = {
@@ -66,6 +67,7 @@ interface LogDetailDrawerProps {
 }
 
 export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetailDrawerProps) {
+  const { t } = useLanguage();
   const [log, setLog] = useState<UsageLogDetail | UsageLog | null>(initialLog ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +145,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                 textTransform: "uppercase",
               }}
             >
-              INSPECT REQUEST
+              {t("drawer.inspect_request", "INSPECT REQUEST")}
             </span>
             <button className="drawer__close" onClick={onClose} aria-label="Close">
               <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
@@ -235,7 +237,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
         <div className="drawer__body">
           {loading && !log && (
             <div className="empty" style={{ padding: "40px 0" }}>
-              Loading request details…
+              {t("drawer.loading", "Loading request details…")}
             </div>
           )}
 
@@ -255,7 +257,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                     textTransform: "uppercase",
                   }}
                 >
-                  Telemetry Timeline
+                  {t("drawer.timeline", "Telemetry Timeline")}
                 </div>
 
                 <div
@@ -316,7 +318,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                     </>
                   ) : (
                     <>
-                      <span style={{ color: "var(--text-faint)" }}>NON-STREAMING</span>
+                      <span style={{ color: "var(--text-faint)" }}>{t("drawer.non_streaming", "NON-STREAMING")}</span>
                       <span style={{ color: "#dde4e5" }}>TOTAL {totalLatency}ms</span>
                     </>
                   )}
@@ -338,7 +340,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                     marginBottom: 12,
                   }}
                 >
-                  Token Composition
+                  {t("drawer.token_comp", "Token Composition")}
                 </div>
 
                 <div
@@ -351,7 +353,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                 >
                   <div style={{ background: "var(--surface-raised)", padding: "10px 12px", borderRadius: 4, border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 2 }}>
-                      Prompt Tokens
+                      {t("drawer.prompt_tokens", "Prompt Tokens")}
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
                       {fmtNum(log.prompt_tokens)}
@@ -360,7 +362,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
 
                   <div style={{ background: "var(--surface-raised)", padding: "10px 12px", borderRadius: 4, border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 2 }}>
-                      Completion Tokens
+                      {t("drawer.completion_tokens", "Completion Tokens")}
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
                       {fmtNum(log.completion_tokens)}
@@ -369,7 +371,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
 
                   <div style={{ background: "var(--surface-raised)", padding: "10px 12px", borderRadius: 4, border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 2 }}>
-                      Cached Input
+                      {t("drawer.cached_input", "Cached Input")}
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: log.cached_input_tokens > 0 ? "var(--emerald-soft)" : "var(--text)" }}>
                       {fmtNum(log.cached_input_tokens)}
@@ -378,7 +380,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
 
                   <div style={{ background: "var(--surface-raised)", padding: "10px 12px", borderRadius: 4, border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 2 }}>
-                      Reasoning Tokens
+                      {t("drawer.reasoning_tokens", "Reasoning Tokens")}
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: log.reasoning_tokens > 0 ? "var(--amber-soft)" : "var(--text)" }}>
                       {fmtNum(log.reasoning_tokens)}
@@ -400,12 +402,12 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Total Tokens</span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>{t("drawer.total_tokens", "Total Tokens")}</span>
                     <span style={{ fontSize: 16, fontWeight: 700, color: "var(--primary)" }}>{fmtNum(log.total_tokens)}</span>
                   </div>
                   {cacheSavings > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Cache Savings</span>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>{t("drawer.cache_savings", "Cache Savings")}</span>
                       <span style={{ fontSize: 14, fontWeight: 700, color: "var(--emerald)" }}>{fmtMoney(cacheSavings)}</span>
                     </div>
                   )}
@@ -435,7 +437,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       textTransform: "uppercase",
                     }}
                   >
-                    Financials & Cost Audit
+                    {t("drawer.financials", "Financials & Cost Audit")}
                   </span>
                   <span
                     className="mono"
@@ -462,14 +464,14 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                     paddingBottom: 10,
                   }}
                 >
-                  <span style={{ fontSize: 14, color: "var(--text)" }}>Total Request Cost</span>
+                  <span style={{ fontSize: 14, color: "var(--text)" }}>{t("drawer.total_cost", "Total Request Cost")}</span>
                   <span className="mono" style={{ fontSize: 20, fontWeight: 700, color: "var(--emerald)" }}>
                     {fmtMoney(log.cost)}
                   </span>
                 </div>
 
                 <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)" }}>
-                  <span>Pricing Applied</span>
+                  <span>{t("drawer.pricing_applied", "Pricing Applied")}</span>
                   <div style={{ textAlign: "right" }}>
                     <div>${log.prompt_price_used.toFixed(2)}/1M (prompt)</div>
                     <div>${log.completion_price_used.toFixed(2)}/1M (completion)</div>
@@ -507,7 +509,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       borderRadius: 4,
                     }}
                   >
-                    {log.error_message || "No error details recorded by upstream provider."}
+                    {log.error_message || t("drawer.no_error_upstream", "No error details recorded by upstream provider.")}
                   </div>
                 </div>
               )}
@@ -537,7 +539,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                           textTransform: "uppercase",
                         }}
                       >
-                        Structural Shape &amp; Modality
+                        {t("drawer.structural_shape", "Structural Shape & Modality")}
                       </span>
                       <span
                         className="mono"
@@ -583,7 +585,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                         shield
                       </span>
-                      Zero PII Stored
+                      {t("drawer.zero_pii", "Zero PII Stored")}
                     </span>
                   </div>
 
@@ -601,7 +603,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
-                        Signature Hash
+                        {t("drawer.signature_hash", "Signature Hash")}
                       </span>
                       <span className="mono" style={{ fontSize: 12, color: "var(--primary)", fontWeight: 600 }}>
                         {log.request_shape.structure_hash || "—"}
@@ -613,7 +615,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                         style={{ padding: "1px 6px", height: "auto", fontSize: 10, fontFamily: "var(--font-mono)" }}
                         onClick={() => handleCopy(log.request_shape!.structure_hash, "Hash")}
                       >
-                        {copied === "Hash" ? "Copied" : "Copy"}
+                        {copied === "Hash" ? t("drawer.copied", "Copied") : t("common.copy", "Copy")}
                       </button>
                     )}
                   </div>
@@ -621,25 +623,25 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                   {/* Metrics grid */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
                     <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Messages</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>{t("drawer.messages", "Messages")}</div>
                       <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
                         {log.request_shape.message_count}
                       </div>
                     </div>
                     <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Char Count</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>{t("drawer.char_count", "Char Count")}</div>
                       <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
                         {fmtNum(log.request_shape.char_count)}
                       </div>
                     </div>
                     <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Word Count</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>{t("drawer.word_count", "Word Count")}</div>
                       <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
                         {fmtNum(log.request_shape.word_count)}
                       </div>
                     </div>
                     <div style={{ background: "var(--surface-raised)", padding: "8px 10px", borderRadius: 4, border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>System Chars</div>
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>{t("drawer.system_chars", "System Chars")}</div>
                       <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
                         {fmtNum(log.request_shape.system_prompt_chars || 0)}
                       </div>
@@ -650,7 +652,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                   {log.request_shape.roles && log.request_shape.roles.length > 0 && (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
                       <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
-                        Roles:
+                        {t("drawer.roles", "Roles:")}
                       </span>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {log.request_shape.roles.map((r) => (
@@ -689,7 +691,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                             <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--primary)" }}>
                               image
                             </span>
-                            Vision Payload: <strong>{log.request_shape.image_count} image{log.request_shape.image_count > 1 ? "s" : ""}</strong>
+                            {t("drawer.vision_payload", "Vision Payload")}: <strong>{log.request_shape.image_count} {log.request_shape.image_count > 1 ? "images" : "image"}</strong>
                           </span>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <span className="mono" style={{ color: "var(--primary)", fontWeight: 600 }}>
@@ -710,7 +712,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                             <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--amber-soft)" }}>
                               mic
                             </span>
-                            Audio Payload: <strong>{log.request_shape.audio_count} clip{log.request_shape.audio_count > 1 ? "s" : ""}</strong>
+                            {t("drawer.audio_payload", "Audio Payload")}: <strong>{log.request_shape.audio_count} {log.request_shape.audio_count > 1 ? "clips" : "clip"}</strong>
                           </span>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <span className="mono" style={{ color: "var(--amber-soft)", fontWeight: 600 }}>
@@ -735,8 +737,8 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                           <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--violet)" }}>
                             build
                           </span>
-                          Tool Calling: <strong>{log.request_shape.tool_calls_count} call{log.request_shape.tool_calls_count > 1 ? "s" : ""}</strong>
-                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({log.request_shape.tools_count} offered)</span>
+                          {t("drawer.tool_calling", "Tool Calling")}: <strong>{log.request_shape.tool_calls_count} {log.request_shape.tool_calls_count > 1 ? "calls" : "call"}</strong>
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({log.request_shape.tools_count} {t("drawer.tools_offered", "offered")})</span>
                         </span>
                       </div>
 
@@ -797,7 +799,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                         <span className="material-symbols-outlined" style={{ fontSize: 16, color: "var(--amber-soft)" }}>
                           psychology
                         </span>
-                        Extended Thinking / Reasoning
+                        {t("drawer.extended_thinking", "Extended Thinking / Reasoning")}
                       </span>
                       <span className="mono" style={{ fontSize: 11, color: "var(--amber-soft)", fontWeight: 600 }}>
                         {log.request_shape.reasoning_effort || "active"}
@@ -820,7 +822,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                           tune
                         </span>
                         <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
-                          Hyperparameters &amp; Settings
+                          {t("drawer.hyperparams", "Hyperparameters & Settings")}
                         </span>
                       </div>
 
@@ -935,7 +937,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       {log.request_shape.stop_sequences && log.request_shape.stop_sequences.length > 0 && (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
                           <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
-                            Stop Sequences:
+                            {t("drawer.stop_sequences", "Stop Sequences:")}
                           </span>
                           {log.request_shape.stop_sequences.map((s, idx) => (
                             <span
@@ -973,7 +975,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                     marginBottom: 10,
                   }}
                 >
-                  Request Metadata
+                  {t("drawer.req_metadata", "Request Metadata")}
                 </div>
 
                 <ul
@@ -996,7 +998,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       paddingBottom: 6,
                     }}
                   >
-                    <span style={{ color: "var(--text-muted)" }}>User</span>
+                    <span style={{ color: "var(--text-muted)" }}>{t("drawer.user", "User")}</span>
                     <span style={{ color: "var(--text)", textAlign: "right" }}>
                       {"user_email" in log && log.user_email ? (
                         <>
@@ -1017,7 +1019,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       paddingBottom: 6,
                     }}
                   >
-                    <span style={{ color: "var(--text-muted)" }}>API Key</span>
+                    <span style={{ color: "var(--text-muted)" }}>{t("drawer.api_key", "API Key")}</span>
                     <span style={{ color: "var(--text)", textAlign: "right" }}>
                       {"key_name" in log && log.key_name ? (
                         <>
@@ -1038,7 +1040,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       paddingBottom: 6,
                     }}
                   >
-                    <span style={{ color: "var(--text-muted)" }}>Streaming</span>
+                    <span style={{ color: "var(--text-muted)" }}>{t("drawer.streaming", "Streaming")}</span>
                     <span style={{ color: isStreaming ? "var(--primary)" : "var(--text-muted)" }}>
                       {isStreaming ? "true" : "false"}
                     </span>
@@ -1052,7 +1054,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                       paddingBottom: 6,
                     }}
                   >
-                    <span style={{ color: "var(--text-muted)" }}>Created At</span>
+                    <span style={{ color: "var(--text-muted)" }}>{t("drawer.created_at", "Created At")}</span>
                     <span style={{ color: "var(--text)" }}>{fmtDate(log.created_at)}</span>
                   </li>
                 </ul>
@@ -1072,7 +1074,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
               content_copy
             </span>
-            {copied === "cURL" ? "Copied!" : "Copy cURL"}
+            {copied === "cURL" ? t("drawer.copied", "Copied!") : t("drawer.copy_curl", "Copy cURL")}
           </button>
 
           <button
@@ -1084,7 +1086,7 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
               data_object
             </span>
-            {copied === "JSON" ? "Copied!" : "Copy JSON"}
+            {copied === "JSON" ? t("drawer.copied", "Copied!") : t("drawer.copy_json", "Copy JSON")}
           </button>
         </div>
       </aside>

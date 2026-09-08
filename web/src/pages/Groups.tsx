@@ -4,8 +4,10 @@ import type { Group, GroupPolicy, User } from "../api/types";
 import { fmtDate, fmtMoney } from "../lib/format";
 import Modal from "../components/Modal";
 import PolicyBuilder from "../components/PolicyBuilder";
+import { useLanguage } from "../i18n";
 
 export default function Groups() {
+  const { t } = useLanguage();
   const [groups, setGroups] = useState<Group[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
@@ -162,53 +164,57 @@ export default function Groups() {
     setPolicyModalOpen(true);
   };
 
-  const availableUsersToAdd = allUsers.filter(
-    (u) => !members.some((m) => m.id === u.id)
-  );
+  const assignedMemberIds = new Set(members.map((m) => m.id));
+  const availableUsersToAdd = allUsers.filter((u) => !assignedMemberIds.has(u.id));
 
   return (
-    <div className="page__content">
-      <div className="page__head" style={{ marginBottom: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Top action header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h1 className="page__title">IAM Groups & Policies</h1>
-          <p className="page__desc">
-            Organize users into teams, pool monthly budgets, and evaluate AWS IAM-style JSON policies with Deny-overrides-Allow logic.
+          <h1 className="page__title">{t("groups.title", "IAM Groups & Policies")}</h1>
+          <p className="page__sub">
+            {t("people.tab_groups_desc", "Organize teams, assign monthly budgets, and configure IAM permission policies")}
           </p>
         </div>
         <button className="btn btn--primary" onClick={() => setCreateModalOpen(true)}>
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add</span>
-          New Group
+          {t("groups.create_btn", "+ Create IAM Group")}
         </button>
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div style={{ padding: "10px 16px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid var(--danger)", borderRadius: 6, color: "var(--danger)" }}>
+          {error}
+        </div>
+      )}
 
-      <div style={{ display: "grid", gridTemplateColumns: selectedGroup ? "1fr 1.3fr" : "1fr", gap: 20, alignItems: "start" }}>
-        {/* Groups List Table */}
-        <div className="card">
-          <div className="card__head">
-            <h2 className="card__title">Groups ({groups.length})</h2>
+      {/* Two-column layout: Groups List on left, Inspector / Editor on right */}
+      <div style={{ display: "grid", gridTemplateColumns: selectedGroup ? "1.1fr 1fr" : "1fr", gap: 20 }}>
+        {/* Groups Table Card */}
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div className="card__head" style={{ borderBottom: "1px solid var(--border)", padding: "14px 16px" }}>
+            <h2 className="card__title">{t("groups.title", "Groups")} ({groups.length})</h2>
           </div>
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Group Name</th>
-                  <th>Monthly Budget</th>
-                  <th>Members</th>
-                  <th>Policies</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: "right" }}>Actions</th>
+                  <th>{t("groups.col_name", "GROUP NAME")}</th>
+                  <th>{t("groups.col_budget", "MONTHLY BUDGET")}</th>
+                  <th>{t("groups.col_members", "MEMBERS")}</th>
+                  <th>{t("groups.col_policies", "POLICIES")}</th>
+                  <th>{t("groups.col_status", "STATUS")}</th>
+                  <th style={{ textAlign: "right" }}>{t("groups.col_actions", "ACTIONS")}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="empty">Loading IAM groups…</td>
+                    <td colSpan={6} className="empty">{t("common.loading", "Loading IAM groups…")}</td>
                   </tr>
                 ) : groups.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="empty">No IAM groups configured. Click "New Group" to create one.</td>
+                    <td colSpan={6} className="empty">{t("groups.empty", "No IAM groups configured. Click \"New Group\" to create one.")}</td>
                   </tr>
                 ) : (
                   groups.map((g) => {
@@ -230,7 +236,7 @@ export default function Groups() {
                           )}
                         </td>
                         <td className="mono">
-                          {g.budget_limit_monthly > 0 ? fmtMoney(g.budget_limit_monthly) : "Unlimited"}
+                          {g.budget_limit_monthly > 0 ? fmtMoney(g.budget_limit_monthly) : t("common.unlimited", "Unlimited")}
                         </td>
                         <td className="mono">{g.member_count ?? 0}</td>
                         <td className="mono">{g.policy_count ?? 0}</td>
@@ -246,7 +252,7 @@ export default function Groups() {
                               border: `1px solid ${g.is_active ? "rgba(16, 185, 129, 0.3)" : "rgba(248, 113, 113, 0.3)"}`,
                             }}
                           >
-                            {g.is_active ? "ACTIVE" : "INACTIVE"}
+                            {g.is_active ? t("common.active", "ACTIVE") : t("common.inactive", "INACTIVE")}
                           </span>
                         </td>
                         <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
@@ -255,7 +261,7 @@ export default function Groups() {
                             style={{ color: "var(--danger)" }}
                             onClick={() => handleDeleteGroup(g.id, g.name)}
                           >
-                            Delete
+                            {t("common.delete", "Delete")}
                           </button>
                         </td>
                       </tr>
@@ -275,25 +281,25 @@ export default function Groups() {
               <div className="card__head">
                 <div>
                   <span className="mono" style={{ fontSize: 11, color: "var(--primary)", textTransform: "uppercase" }}>
-                    Group Details
+                    {t("groups.details_title", "Group Details")}
                   </span>
                   <h2 className="card__title">{selectedGroup.name}</h2>
                 </div>
                 <button className="btn btn--ghost btn--sm" onClick={() => setSelectedGroup(null)}>
-                  Close
+                  {t("common.close", "Close")}
                 </button>
               </div>
               <div style={{ padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="mono text-sm">
                 <div>
-                  <span className="muted">Monthly Ceiling:</span>{" "}
-                  <strong>{selectedGroup.budget_limit_monthly > 0 ? fmtMoney(selectedGroup.budget_limit_monthly) : "Unlimited"}</strong>
+                  <span className="muted">{t("groups.monthly_ceiling", "Monthly Ceiling:")}</span>{" "}
+                  <strong>{selectedGroup.budget_limit_monthly > 0 ? fmtMoney(selectedGroup.budget_limit_monthly) : t("common.unlimited", "Unlimited")}</strong>
                 </div>
                 <div>
-                  <span className="muted">Rate Limit RPM:</span>{" "}
-                  <strong>{selectedGroup.rate_limit_rpm > 0 ? `${selectedGroup.rate_limit_rpm} RPM` : "Key Default"}</strong>
+                  <span className="muted">{t("groups.rpm_limit", "Rate Limit RPM:")}</span>{" "}
+                  <strong>{selectedGroup.rate_limit_rpm > 0 ? `${selectedGroup.rate_limit_rpm} RPM` : t("groups.key_default", "Key Default")}</strong>
                 </div>
                 <div>
-                  <span className="muted">Created:</span> {fmtDate(selectedGroup.created_at)}
+                  <span className="muted">{t("common.created_at", "Created:")}:</span> {fmtDate(selectedGroup.created_at)}
                 </div>
                 <div>
                   <span className="muted">ID:</span> <span style={{ fontSize: 11 }}>{selectedGroup.id}</span>
@@ -305,23 +311,23 @@ export default function Groups() {
             <div className="card">
               <div className="card__head">
                 <div>
-                  <h3 className="card__title" style={{ fontSize: 15 }}>Attached IAM Policies ({policies.length})</h3>
+                  <h3 className="card__title" style={{ fontSize: 15 }}>{t("groups.attached_policies", "Attached IAM Policies")} ({policies.length})</h3>
                   <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
-                    Statements are evaluated top-down; explicit Deny blocks access immediately.
+                    {t("groups.policy_eval_hint", "Statements are evaluated top-down; explicit Deny blocks access immediately.")}
                   </p>
                 </div>
                 <button className="btn btn--secondary btn--sm" onClick={openCreatePolicy}>
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
-                  Add Policy
+                  {t("groups.add_policy", "+ Add Policy")}
                 </button>
               </div>
 
               <div style={{ padding: 16 }}>
                 {detailLoading ? (
-                  <div className="empty">Loading policies…</div>
+                  <div className="empty">{t("common.loading", "Loading policies…")}</div>
                 ) : policies.length === 0 ? (
                   <div className="empty">
-                    No IAM policies attached. Users in this group will be denied model access (implicit deny).
+                    {t("groups.no_policies", "No IAM policies attached. Users in this group will be denied model access (implicit deny).")}
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -349,10 +355,10 @@ export default function Groups() {
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <button className="btn btn--ghost btn--sm" onClick={() => openEditPolicy(p)}>
-                                Edit Policy
+                                {t("groups.edit_policy", "Edit Policy")}
                               </button>
                               <button className="btn btn--ghost btn--sm" style={{ color: "var(--danger)" }} onClick={() => handleDeletePolicy(p.id)}>
-                                Remove
+                                {t("groups.remove_policy", "Remove")}
                               </button>
                             </div>
                           </div>
@@ -382,14 +388,14 @@ export default function Groups() {
             {/* Group Members Card */}
             <div className="card">
               <div className="card__head">
-                <h3 className="card__title" style={{ fontSize: 15 }}>Group Members ({members.length})</h3>
+                <h3 className="card__title" style={{ fontSize: 15 }}>{t("groups.group_members", "Group Members")} ({members.length})</h3>
                 <button
                   className="btn btn--secondary btn--sm"
                   onClick={() => setMemberModalOpen(true)}
                   disabled={availableUsersToAdd.length === 0}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>person_add</span>
-                  Add User
+                  {t("groups.add_member_btn", "+ Add Member")}
                 </button>
               </div>
 
@@ -397,16 +403,16 @@ export default function Groups() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>User</th>
-                      <th>System Role</th>
-                      <th>Group Role</th>
-                      <th style={{ textAlign: "right" }}>Actions</th>
+                      <th>{t("users.col_name", "USER")}</th>
+                      <th>{t("users.col_role", "SYSTEM ROLE")}</th>
+                      <th>{t("users.col_groups", "GROUP ROLE")}</th>
+                      <th style={{ textAlign: "right" }}>{t("users.col_actions", "ACTIONS")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {members.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="empty">No users assigned to this group.</td>
+                        <td colSpan={4} className="empty">{t("groups.no_members", "No users assigned to this group.")}</td>
                       </tr>
                     ) : (
                       members.map((m) => {
@@ -438,7 +444,7 @@ export default function Groups() {
                                   border: `1px solid ${isGroupAdmin ? "rgba(99, 102, 241, 0.3)" : "var(--border)"}`,
                                 }}
                               >
-                                {isGroupAdmin ? "★ GROUP ADMIN" : "MEMBER"}
+                                {isGroupAdmin ? t("groups.group_admin_badge", "★ GROUP ADMIN") : t("groups.member_badge", "MEMBER")}
                               </span>
                             </td>
                             <td style={{ textAlign: "right" }}>
@@ -449,7 +455,7 @@ export default function Groups() {
                                   onClick={() => handleToggleRole(m.id, isGroupAdmin ? "member" : "admin")}
                                   title={isGroupAdmin ? "Demote to standard group member" : "Promote to Group Admin (leader)"}
                                 >
-                                  {isGroupAdmin ? "Demote" : "Make Admin"}
+                                  {isGroupAdmin ? t("groups.demote", "Demote") : t("groups.make_admin", "Make Admin")}
                                 </button>
                                 <button
                                   type="button"
@@ -457,7 +463,7 @@ export default function Groups() {
                                   style={{ color: "var(--danger)" }}
                                   onClick={() => handleRemoveMember(m.id)}
                                 >
-                                  Remove
+                                  {t("groups.remove_member", "Remove")}
                                 </button>
                               </div>
                             </td>
@@ -475,10 +481,10 @@ export default function Groups() {
 
       {/* Create Group Modal */}
       {createModalOpen && (
-        <Modal title="Create New IAM Group" onClose={() => setCreateModalOpen(false)}>
+        <Modal title={t("groups.create_modal_title", "Create New IAM Group")} onClose={() => setCreateModalOpen(false)}>
           <form onSubmit={handleCreateGroup}>
             <div className="form-group">
-              <label className="form-label">Group Name *</label>
+              <label className="form-label">{t("groups.field_name", "Group Name")} *</label>
               <input
                 className="input"
                 required
@@ -488,7 +494,7 @@ export default function Groups() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Description</label>
+              <label className="form-label">{t("groups.field_desc", "Description")}</label>
               <input
                 className="input"
                 placeholder="e.g. Core product ML engineers and developers"
@@ -498,7 +504,7 @@ export default function Groups() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div className="form-group">
-                <label className="form-label">Monthly Budget Ceiling (USD)</label>
+                <label className="form-label">{t("groups.field_budget", "Monthly Budget Ceiling (USD)")}</label>
                 <input
                   className="input"
                   type="number"
@@ -509,7 +515,7 @@ export default function Groups() {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Rate Limit RPM Override</label>
+                <label className="form-label">{t("groups.field_rpm", "Rate Limit RPM Override")}</label>
                 <input
                   className="input"
                   type="number"
@@ -522,10 +528,10 @@ export default function Groups() {
 
             <div className="modal-actions" style={{ marginTop: 20 }}>
               <button type="button" className="btn btn--ghost" onClick={() => setCreateModalOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button type="submit" className="btn btn--primary">
-                Create Group
+                {t("common.create", "Create Group")}
               </button>
             </div>
           </form>
@@ -535,7 +541,7 @@ export default function Groups() {
       {/* Policy Editor Modal */}
       {policyModalOpen && selectedGroup && (
         <Modal
-          title={editingPolicy ? `Edit Policy: ${editingPolicy.name}` : `Attach Policy to ${selectedGroup.name}`}
+          title={editingPolicy ? `${t("groups.edit_policy", "Edit Policy")}: ${editingPolicy.name}` : `${t("groups.add_policy", "Attach Policy to")} ${selectedGroup.name}`}
           onClose={() => setPolicyModalOpen(false)}
         >
           <PolicyBuilder
@@ -570,17 +576,17 @@ export default function Groups() {
 
       {/* Add Member Modal */}
       {memberModalOpen && (
-        <Modal title={`Add User to ${selectedGroup?.name}`} onClose={() => setMemberModalOpen(false)}>
+        <Modal title={`${t("groups.add_member_btn", "Add User to")} ${selectedGroup?.name}`} onClose={() => setMemberModalOpen(false)}>
           <form onSubmit={handleAddMember}>
             <div className="form-group">
-              <label className="form-label">Select User to Assign:</label>
+              <label className="form-label">{t("users.col_name", "Select User to Assign:")}:</label>
               <select
                 className="input"
                 required
                 value={selectedUserId}
                 onChange={(e) => setSelectedUserId(e.target.value)}
               >
-                <option value="">-- Choose a user --</option>
+                <option value="">-- {t("common.search", "Choose a user")} --</option>
                 {availableUsersToAdd.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name} ({u.email}) - {u.role}
@@ -590,23 +596,23 @@ export default function Groups() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Role in Group:</label>
+              <label className="form-label">{t("users.col_role", "Role in Group:")}:</label>
               <select
                 className="input"
                 value={selectedMemberRole}
                 onChange={(e) => setSelectedMemberRole(e.target.value as "member" | "admin")}
               >
-                <option value="member">Regular Member (Subject to Group Policies)</option>
-                <option value="admin">Group Admin / Leader (Delegated group management)</option>
+                <option value="member">{t("groups.member_badge", "Regular Member (Subject to Group Policies)")}</option>
+                <option value="admin">{t("groups.group_admin_badge", "Group Admin / Leader (Delegated group management)")}</option>
               </select>
             </div>
 
             <div className="modal-actions" style={{ marginTop: 20 }}>
               <button type="button" className="btn btn--ghost" onClick={() => setMemberModalOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button type="submit" className="btn btn--primary" disabled={!selectedUserId}>
-                Add to Group
+                {t("groups.add_member_btn", "Add to Group")}
               </button>
             </div>
           </form>

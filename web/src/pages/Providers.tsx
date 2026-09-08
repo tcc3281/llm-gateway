@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { ProviderKey } from "../api/types";
 import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
+import { useLanguage } from "../i18n";
 
 const KNOWN = ["openai", "anthropic", "gemini"] as const;
 const CUSTOM = "__custom__";
@@ -126,19 +127,19 @@ export default function Providers() {
     }
   };
 
+  const { t } = useLanguage();
+
   return (
     <div>
       <div className="page__header">
         <div>
-          <h1 className="page__title">Providers</h1>
+          <h1 className="page__title">{t("providers.title", "Providers")}</h1>
           <p className="page__sub">
-            Upstream LLM credentials. Keys are stored encrypted and never returned
-            to the browser. Custom OpenAI/Anthropic-compatible providers call any
-            base_url and are routed by a <code>providername/</code> model prefix.
+            {t("providers.subtitle", "Upstream LLM credentials. Keys are stored encrypted and never returned to the browser.")}
           </p>
         </div>
         <button className="btn btn--primary" onClick={() => openSet()}>
-          + Set provider key
+          {t("providers.configure_btn", "+ Set provider key")}
         </button>
       </div>
 
@@ -147,7 +148,7 @@ export default function Providers() {
       {providers.length === 0 && !error && (
         <div className="card">
           <div className="empty">
-            No provider keys configured. Use "Set provider key" to add one.
+            {t("common.no_data", "No provider keys configured. Use \"Set provider key\" to add one.")}
           </div>
         </div>
       )}
@@ -170,7 +171,7 @@ export default function Providers() {
                   {p.provider}
                 </div>
                 <div className="muted" style={{ fontSize: 12 }}>
-                  {p.key_preview || "key not set"} · {fmtDate(p.updated_at)}
+                  {p.key_preview || t("common.not_set", "key not set")} · {fmtDate(p.updated_at)}
                 </div>
                 {p.base_url && (
                   <div
@@ -196,9 +197,9 @@ export default function Providers() {
                   </span>
                 )}
                 {p.is_active ? (
-                  <span className="badge badge--success">active</span>
+                  <span className="badge badge--success">{t("common.active", "active")}</span>
                 ) : (
-                  <span className="badge badge--error">inactive</span>
+                  <span className="badge badge--error">{t("common.disabled", "inactive")}</span>
                 )}
               </div>
             </div>
@@ -207,13 +208,13 @@ export default function Providers() {
               style={{ justifyContent: "flex-end", marginTop: 14 }}
             >
               <button className="btn btn--sm" onClick={() => openSet(p)}>
-                Edit / Rotate
+                {t("common.edit", "Edit / Rotate")}
               </button>
               <button
                 className="btn btn--sm btn--danger"
                 onClick={() => setDeleteTarget(p.provider)}
               >
-                Remove
+                {t("common.delete", "Remove")}
               </button>
             </div>
           </div>
@@ -222,19 +223,19 @@ export default function Providers() {
 
       {setOpen && (
         <Modal
-          title={isEditing ? "Edit Provider" : "Set Provider Key"}
+          title={isEditing ? t("common.edit", "Edit Provider") : t("providers.configure_title", "Set Provider Key")}
           onClose={() => setSetOpen(false)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setSetOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitSet}
                 disabled={busy || !canSubmit}
               >
-                {busy ? "Saving…" : isEditing ? "Save changes" : "Save key"}
+                {busy ? t("common.saving", "Saving…") : isEditing ? t("common.save", "Save changes") : t("common.save", "Save key")}
               </button>
             </>
           }

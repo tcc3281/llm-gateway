@@ -1,5 +1,8 @@
 import type {
   ActionDef,
+  AlertHistoryResponse,
+  AlertRule,
+  AlertRulePatch,
   AnalyticsMembersResponse,
   APIKey,
   AuditLogsPage,
@@ -16,6 +19,8 @@ import type {
   TenantCreditTransaction,
   TenantPatch,
   TenantTransactionsPage,
+  TestWebhookRequest,
+  TestWebhookResponse,
   TopUpCreditRequest,
   UsageLogDetail,
   UsageLogsPage,
@@ -381,6 +386,35 @@ export const api = {
     request<TenantTransactionsPage>(
       `/admin/tenants/${id}/transactions${qs(params as Record<string, string | number | undefined>)}`,
     ),
+
+  // Alerting & Webhooks
+  listAlertRules: (params?: { tenant_id?: string; event_type?: string }) =>
+    request<AlertRule[]>(
+      `/admin/alerts/rules${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+  createAlertRule: (data: Partial<AlertRule>) =>
+    request<AlertRule>("/admin/alerts/rules", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateAlertRule: (id: string, patch: AlertRulePatch) =>
+    request<AlertRule>(`/admin/alerts/rules/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteAlertRule: (id: string) =>
+    request<{ message: string }>(`/admin/alerts/rules/${id}`, {
+      method: "DELETE",
+    }),
+  listAlertHistory: (params?: { rule_id?: string; limit?: number; offset?: number }) =>
+    request<AlertHistoryResponse>(
+      `/admin/alerts/history${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+  testAlertWebhook: (data: TestWebhookRequest) =>
+    request<TestWebhookResponse>("/admin/alerts/test", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // System
   systemInfo: () => request<SystemInfo>("/admin/system/info"),

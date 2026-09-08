@@ -3,6 +3,8 @@ import { api } from "../api/client";
 import type { ModelPricing, Tenant, TenantCreditTransaction, TopUpCreditRequest } from "../api/types";
 import { fmtDate, fmtMoney } from "../lib/format";
 import Modal from "../components/Modal";
+import { useToast } from "../components/Toast";
+import { useLanguage } from "../i18n";
 
 interface TenantForm {
   name: string;
@@ -23,6 +25,8 @@ const emptyForm: TenantForm = {
 };
 
 export default function Tenants() {
+  const { t } = useLanguage();
+  const toast = useToast();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -110,25 +114,28 @@ export default function Tenants() {
         allowed_models: createForm.allowed_models,
         is_active: createForm.is_active,
       });
+      toast.success(`Tenant "${createForm.name}" created`, "[200 OK]");
       setCreateOpen(false);
       setCreateForm(emptyForm);
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create tenant");
+      const msg = err instanceof Error ? err.message : "Failed to create tenant";
+      setError(msg);
+      toast.error(msg, "[CREATE FAILED]");
     } finally {
       setBusy(false);
     }
   };
 
-  const startEdit = (t: Tenant) => {
-    setEditTarget(t);
+  const startEdit = (tenant: Tenant) => {
+    setEditTarget(tenant);
     setEditForm({
-      name: t.name,
-      type: t.type,
-      billing_mode: t.billing_mode,
-      budget_limit_monthly: t.budget_limit_monthly,
-      allowed_models: t.allowed_models || [],
-      is_active: t.is_active,
+      name: tenant.name,
+      type: tenant.type,
+      billing_mode: tenant.billing_mode,
+      budget_limit_monthly: tenant.budget_limit_monthly,
+      allowed_models: tenant.allowed_models || [],
+      is_active: tenant.is_active,
     });
   };
 
@@ -146,10 +153,13 @@ export default function Tenants() {
         allowed_models: editForm.allowed_models,
         is_active: editForm.is_active,
       });
+      toast.success(`Tenant "${editForm.name}" updated`, "[200 OK]");
       setEditTarget(null);
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update tenant");
+      const msg = err instanceof Error ? err.message : "Failed to update tenant";
+      setError(msg);
+      toast.error(msg, "[UPDATE FAILED]");
     } finally {
       setBusy(false);
     }
@@ -163,14 +173,20 @@ export default function Tenants() {
     try {
       await api.topUpTenantCredit(topUpTarget.id, {
         amount: Number(topUpForm.amount),
-        contract_ref: topUpForm.contract_ref.trim(),
-        notes: topUpForm.notes.trim(),
+        contract_ref: (topUpForm.contract_ref || "").trim() || undefined,
+        notes: (topUpForm.notes || "").trim() || undefined,
       });
+      toast.success(
+        `Deposited $${topUpForm.amount.toFixed(2)} to ${topUpTarget.name}`,
+        "[CREDIT UPDATED]"
+      );
       setTopUpTarget(null);
       setTopUpForm({ amount: 100, contract_ref: "", notes: "" });
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Top-up failed");
+      const msg = err instanceof Error ? err.message : "Failed to deposit credit";
+      setError(msg);
+      toast.error(msg, "[TOP UP FAILED]");
     } finally {
       setBusy(false);
     }
@@ -182,16 +198,18 @@ export default function Tenants() {
     setError(null);
     try {
       await api.deleteTenant(deleteTarget.id);
+      toast.info(`Tenant "${deleteTarget.name}" deleted`, "[200 OK]");
       setDeleteTarget(null);
       await loadTenants();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed");
+      const msg = err instanceof Error ? err.message : "Failed to delete tenant";
+      setError(msg);
+      toast.error(msg, "[DELETE FAILED]");
     } finally {
       setBusy(false);
     }
   };
 
-  // Toggle model in form
   const toggleModelSelection = (
     modelName: string,
     currentList: string[],
@@ -205,23 +223,23 @@ export default function Tenants() {
   };
 
   // Filtered tenants
-  const filteredTenants = tenants.filter((t) => {
+  const filteredTenants = tenants.filter((tItem) => {
     if (search.trim()) {
       const q = search.toLowerCase();
-      const matchName = t.name.toLowerCase().includes(q);
-      const matchModels = t.allowed_models?.some((m) => m.toLowerCase().includes(q));
+      const matchName = tItem.name.toLowerCase().includes(q);
+      const matchModels = tItem.allowed_models?.some((m) => m.toLowerCase().includes(q));
       if (!matchName && !matchModels) return false;
     }
-    if (typeFilter !== "all" && t.type !== typeFilter) return false;
-    if (billingFilter !== "all" && t.billing_mode !== billingFilter) return false;
+    if (typeFilter !== "all" && tItem.type !== typeFilter) return false;
+    if (billingFilter !== "all" && tItem.billing_mode !== billingFilter) return false;
     return true;
   });
 
   // Aggregated Stats
-  const totalInternal = tenants.filter((t) => t.type === "internal").length;
-  const totalExternal = tenants.filter((t) => t.type === "external").length;
-  const totalPrepaidBalance = tenants.reduce((acc, t) => acc + (t.billing_mode === "prepaid" ? t.credit_balance : 0), 0);
-  const activeCount = tenants.filter((t) => t.is_active).length;
+  const totalInternal = tenants.filter((tItem) => tItem.type === "internal").length;
+  const totalExternal = tenants.filter((tItem) => tItem.type === "external").length;
+  const totalPrepaidBalance = tenants.reduce((acc, tItem) => acc + (tItem.billing_mode === "prepaid" ? tItem.credit_balance : 0), 0);
+  const activeCount = tenants.filter((tItem) => tItem.is_active).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -229,37 +247,37 @@ export default function Tenants() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
         <div className="card" style={{ padding: 16 }}>
           <div className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase" }}>
-            Total Tenants
+            {t("tenants.kpi_total", "Total Tenants")}
           </div>
           <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>
             {tenants.length}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            {totalInternal} Internal &bull; {totalExternal} External B2B
+            {totalInternal} {t("tenants.kpi_internal", "Internal")} &bull; {totalExternal} {t("tenants.kpi_external", "External B2B")}
           </div>
         </div>
 
         <div className="card" style={{ padding: 16 }}>
           <div className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase" }}>
-            Prepaid Credit Balance
+            {t("tenants.kpi_balance", "Prepaid Credit Balance")}
           </div>
           <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4, color: totalPrepaidBalance > 0 ? "var(--success)" : "var(--text)" }}>
             {fmtMoney(totalPrepaidBalance, 2)}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            Held in escrow across prepaid clients
+            {t("tenants.kpi_escrow_desc", "Held in escrow across prepaid clients")}
           </div>
         </div>
 
         <div className="card" style={{ padding: 16 }}>
           <div className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase" }}>
-            Active Tenants
+            {t("tenants.kpi_active", "Active Tenants")}
           </div>
           <div style={{ fontSize: 24, fontWeight: 700, marginTop: 4, color: "var(--primary)" }}>
             {activeCount} / {tenants.length}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            Status enforcement active
+            {t("tenants.kpi_active_desc", "Status enforcement active")}
           </div>
         </div>
       </div>
@@ -292,7 +310,7 @@ export default function Tenants() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input
             type="text"
-            placeholder="Search tenant or model..."
+            placeholder={t("tenants.filter_search", "Search tenant or model...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
@@ -318,9 +336,9 @@ export default function Tenants() {
               fontSize: 13,
             }}
           >
-            <option value="all">All Types</option>
-            <option value="internal">Internal Teams</option>
-            <option value="external">External Clients</option>
+            <option value="all">{t("tenants.filter_all_types", "All Types")}</option>
+            <option value="internal">{t("tenants.filter_internal", "Internal Teams")}</option>
+            <option value="external">{t("tenants.filter_external", "External Clients")}</option>
           </select>
 
           <select
@@ -335,9 +353,9 @@ export default function Tenants() {
               fontSize: 13,
             }}
           >
-            <option value="all">All Billing Modes</option>
-            <option value="prepaid">Prepaid (Credit Ledger)</option>
-            <option value="postpaid">Postpaid (Monthly Invoiced)</option>
+            <option value="all">{t("tenants.filter_all_billing", "All Billing Modes")}</option>
+            <option value="prepaid">{t("tenants.filter_prepaid", "Prepaid (Credit Ledger)")}</option>
+            <option value="postpaid">{t("tenants.filter_postpaid", "Postpaid (Monthly Invoiced)")}</option>
           </select>
         </div>
 
@@ -350,7 +368,7 @@ export default function Tenants() {
           style={{ display: "flex", alignItems: "center", gap: 6 }}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add_business</span>
-          <span>Add Tenant</span>
+          <span>{t("tenants.create_btn", "+ Add Tenant")}</span>
         </button>
       </div>
 
@@ -359,54 +377,45 @@ export default function Tenants() {
         <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)" }}>
-              <th style={{ padding: "12px 16px" }}>Tenant</th>
-              <th style={{ padding: "12px 16px" }}>Type</th>
-              <th style={{ padding: "12px 16px" }}>Billing Mode</th>
-              <th style={{ padding: "12px 16px" }}>Credit Balance</th>
-              <th style={{ padding: "12px 16px" }}>Monthly Ceiling</th>
-              <th style={{ padding: "12px 16px" }}>Model Boundary (Layer 1)</th>
-              <th style={{ padding: "12px 16px" }}>Status</th>
-              <th style={{ padding: "12px 16px", textAlign: "right" }}>Actions</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_name", "Tenant")}</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_type", "Type")}</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_billing", "Billing Mode")}</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_balance", "Credit Balance")}</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_budget", "Monthly Ceiling")}</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_models", "Model Boundary (Layer 1)")}</th>
+              <th style={{ padding: "12px 16px" }}>{t("tenants.col_status", "Status")}</th>
+              <th style={{ padding: "12px 16px", textAlign: "right" }}>{t("tenants.col_actions", "Actions")}</th>
             </tr>
           </thead>
           <tbody>
             {filteredTenants.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ padding: 32, textAlign: "center" }} className="muted">
-                  No tenants found. Click &quot;Add Tenant&quot; to establish an internal department or external B2B client.
+                  {t("tenants.empty", "No tenants found. Click \"Add Tenant\" to establish an internal department or external B2B client.")}
                 </td>
               </tr>
             ) : (
-              filteredTenants.map((t) => {
-                const isPrepaid = t.billing_mode === "prepaid";
-                const isDepleted = isPrepaid && t.credit_balance <= 0;
+              filteredTenants.map((tItem) => {
+                const isPrepaid = tItem.billing_mode === "prepaid";
+                const isDepleted = isPrepaid && tItem.credit_balance <= 0;
                 return (
                   <tr
-                    key={t.id}
+                    key={tItem.id}
                     style={{
                       borderBottom: "1px solid var(--border)",
-                      opacity: t.is_active ? 1 : 0.6,
+                      opacity: tItem.is_active ? 1 : 0.6,
                     }}
                   >
                     <td style={{ padding: "12px 16px" }}>
-                      <div style={{ fontWeight: 600, color: "var(--text)" }}>{t.name}</div>
-                      <div className="muted mono" style={{ fontSize: 11 }}>{t.id.slice(0, 8)}...</div>
+                      <div style={{ fontWeight: 600, color: "var(--text)" }}>{tItem.name}</div>
+                      <div className="muted mono" style={{ fontSize: 11 }}>{tItem.id.slice(0, 8)}...</div>
                     </td>
 
                     <td style={{ padding: "12px 16px" }}>
                       <span
-                        style={{
-                          display: "inline-block",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          background: t.type === "internal" ? "rgba(99, 102, 241, 0.15)" : "rgba(16, 185, 129, 0.15)",
-                          color: t.type === "internal" ? "#818cf8" : "#34d399",
-                        }}
+                        className={`terminal-badge ${tItem.type === "internal" ? "terminal-badge--internal" : "terminal-badge--external"}`}
                       >
-                        {t.type}
+                        [{tItem.type.toUpperCase()}]
                       </span>
                     </td>
 
@@ -422,13 +431,13 @@ export default function Tenants() {
                           color: "var(--text-muted)",
                         }}
                       >
-                        {isPrepaid ? "Prepaid" : "Postpaid"}
+                        {isPrepaid ? t("tenants.prepaid", "Prepaid") : t("tenants.postpaid", "Postpaid")}
                       </span>
                     </td>
 
                     <td style={{ padding: "12px 16px" }}>
                       {isPrepaid ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                           <span
                             className="mono"
                             style={{
@@ -436,42 +445,37 @@ export default function Tenants() {
                               color: isDepleted ? "var(--danger)" : "var(--success)",
                             }}
                           >
-                            {fmtMoney(t.credit_balance, 2)}
+                            {fmtMoney(tItem.credit_balance, 2)}
                           </span>
-                          {isDepleted && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                background: "rgba(239, 68, 68, 0.2)",
-                                color: "var(--danger)",
-                                padding: "1px 5px",
-                                borderRadius: 3,
-                                fontWeight: 700,
-                              }}
-                            >
-                              DEPLETED
+                          {isDepleted ? (
+                            <span className="terminal-badge terminal-badge--root glow-amber">
+                              {t("tenants.depleted", "[402 DEPLETED]")}
                             </span>
-                          )}
+                          ) : tItem.credit_balance < 10 ? (
+                            <span className="terminal-badge" style={{ color: "var(--amber)", borderColor: "rgba(245, 158, 11, 0.4)" }}>
+                              {t("tenants.low_credits", "[LOW CREDITS]")}
+                            </span>
+                          ) : null}
                         </div>
                       ) : (
-                        <span className="muted mono">— (Postpaid)</span>
+                        <span className="muted mono">— ({t("tenants.postpaid", "Postpaid")})</span>
                       )}
                     </td>
 
                     <td style={{ padding: "12px 16px" }}>
                       <span className="mono">
-                        {t.budget_limit_monthly > 0 ? fmtMoney(t.budget_limit_monthly, 0) + " / mo" : "Unlimited"}
+                        {tItem.budget_limit_monthly > 0 ? fmtMoney(tItem.budget_limit_monthly, 0) + " / mo" : t("common.unlimited", "Unlimited")}
                       </span>
                     </td>
 
                     <td style={{ padding: "12px 16px", maxWidth: 260 }}>
-                      {!t.allowed_models || t.allowed_models.length === 0 ? (
+                      {!tItem.allowed_models || tItem.allowed_models.length === 0 ? (
                         <span className="muted" style={{ fontSize: 12 }}>
-                          All Models Allowed (Unrestricted)
+                          {t("tenants.all_models_allowed", "All Models Allowed (Unrestricted)")}
                         </span>
                       ) : (
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                          {t.allowed_models.map((m) => (
+                          {tItem.allowed_models.map((m) => (
                             <span
                               key={m}
                               className="mono"
@@ -479,8 +483,9 @@ export default function Tenants() {
                                 fontSize: 11,
                                 padding: "2px 6px",
                                 borderRadius: 4,
-                                background: "var(--surface-high)",
-                                border: "1px solid var(--border)",
+                                background: "rgba(34, 211, 238, 0.1)",
+                                color: "var(--primary)",
+                                border: "1px solid rgba(34, 211, 238, 0.2)",
                               }}
                             >
                               {m}
@@ -497,12 +502,12 @@ export default function Tenants() {
                           width: 8,
                           height: 8,
                           borderRadius: "50%",
-                          background: t.is_active ? "var(--success)" : "var(--text-muted)",
+                          background: tItem.is_active ? "var(--success)" : "var(--text-muted)",
                           marginRight: 6,
                         }}
                       />
-                      <span style={{ fontSize: 12, color: t.is_active ? "var(--text)" : "var(--text-muted)" }}>
-                        {t.is_active ? "Active" : "Disabled"}
+                      <span style={{ fontSize: 12, color: tItem.is_active ? "var(--text)" : "var(--text-muted)" }}>
+                        {tItem.is_active ? t("common.active", "Active") : t("common.disabled", "Disabled")}
                       </span>
                     </td>
 
@@ -512,7 +517,7 @@ export default function Tenants() {
                           <button
                             className="btn btn--sm"
                             onClick={() => {
-                              setTopUpTarget(t);
+                              setTopUpTarget(tItem);
                               setTopUpForm({ amount: 100, contract_ref: "", notes: "" });
                             }}
                             title="Top-up Contract Credit"
@@ -523,22 +528,22 @@ export default function Tenants() {
                             }}
                           >
                             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>payments</span>
-                            <span>Top Up</span>
+                            <span>{t("tenants.topup_btn", "Top Up")}</span>
                           </button>
                         )}
 
                         <button
                           className="btn btn--sm"
-                          onClick={() => openLedger(t)}
+                          onClick={() => openLedger(tItem)}
                           title="View Credit Ledger & Transactions"
                         >
                           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>receipt_long</span>
-                          <span>Ledger</span>
+                          <span>{t("tenants.ledger_btn", "Ledger")}</span>
                         </button>
 
                         <button
                           className="btn btn--sm"
-                          onClick={() => startEdit(t)}
+                          onClick={() => startEdit(tItem)}
                           title="Edit Tenant"
                         >
                           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>edit</span>
@@ -546,7 +551,7 @@ export default function Tenants() {
 
                         <button
                           className="btn btn--sm btn--danger"
-                          onClick={() => setDeleteTarget(t)}
+                          onClick={() => setDeleteTarget(tItem)}
                           title="Delete Tenant"
                         >
                           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete</span>
@@ -563,11 +568,11 @@ export default function Tenants() {
 
       {/* CREATE TENANT MODAL */}
       {createOpen && (
-        <Modal title="Create New Tenant" onClose={() => setCreateOpen(false)}>
+        <Modal title={t("tenants.create_modal_title", "Create New Tenant")} onClose={() => setCreateOpen(false)}>
           <form onSubmit={submitCreate} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                Tenant Organization / Department Name *
+                {t("tenants.col_name", "Tenant Organization / Department Name")} *
               </label>
               <input
                 type="text"
@@ -582,53 +587,53 @@ export default function Tenants() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Tenant Classification *
+                  {t("tenants.col_type", "Tenant Classification")} *
                 </label>
                 <select
                   value={createForm.type}
                   onChange={(e) => setCreateForm({ ...createForm, type: e.target.value as "internal" | "external" })}
                   style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
                 >
-                  <option value="external">External SaaS Client (Isolated Tenant)</option>
-                  <option value="internal">Internal Department (Engineering / Product)</option>
+                  <option value="external">{t("tenants.external", "External SaaS Client (Isolated Tenant)")}</option>
+                  <option value="internal">{t("tenants.internal", "Internal Department (Engineering / Product)")}</option>
                 </select>
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Billing Mode *
+                  {t("tenants.col_billing", "Billing Mode")} *
                 </label>
                 <select
                   value={createForm.billing_mode}
                   onChange={(e) => setCreateForm({ ...createForm, billing_mode: e.target.value as "prepaid" | "postpaid" })}
                   style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
                 >
-                  <option value="prepaid">Prepaid (Cut off when credit balance ≤ 0)</option>
-                  <option value="postpaid">Postpaid (Invoiced Monthly Ceiling)</option>
+                  <option value="prepaid">{t("tenants.prepaid", "Prepaid (Cut off when credit balance ≤ 0)")}</option>
+                  <option value="postpaid">{t("tenants.postpaid", "Postpaid (Invoiced Monthly Ceiling)")}</option>
                 </select>
               </div>
             </div>
 
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                Monthly Budget Ceiling ($ USD)
+                {t("tenants.col_budget", "Monthly Budget Ceiling ($ USD)")}
               </label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="0 for unlimited"
+                placeholder="0 = unlimited"
                 value={createForm.budget_limit_monthly || ""}
                 onChange={(e) => setCreateForm({ ...createForm, budget_limit_monthly: parseFloat(e.target.value) || 0 })}
                 style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
               />
-              <span className="muted" style={{ fontSize: 11 }}>0 means no monthly spend limit</span>
+              <span className="muted" style={{ fontSize: 11 }}>0 = {t("common.unlimited", "no monthly spend limit")}</span>
             </div>
 
             {/* Layer 1 Model Boundary Multi-Select */}
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                System Boundary: Allowed Models (Layer 1)
+                {t("tenants.col_models", "System Boundary: Allowed Models (Layer 1)")}
               </label>
               <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>
                 Contract-level restriction. Tenant IAM policies CANNOT grant models outside this set. Leave empty to allow all models.
@@ -648,7 +653,7 @@ export default function Tenants() {
                 }}
               >
                 {availableModels.length === 0 ? (
-                  <span className="muted" style={{ fontSize: 12 }}>No models registered in catalog</span>
+                  <span className="muted" style={{ fontSize: 12 }}>{t("common.no_data", "No models registered in catalog")}</span>
                 ) : (
                   availableModels.map((m) => {
                     const selected = createForm.allowed_models.includes(m);
@@ -673,10 +678,10 @@ export default function Tenants() {
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
               <button type="button" className="btn" onClick={() => setCreateOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button type="submit" className="btn btn--primary" disabled={busy}>
-                {busy ? "Creating..." : "Create Tenant"}
+                {busy ? t("common.creating", "Creating...") : t("tenants.create_btn", "Create Tenant")}
               </button>
             </div>
           </form>
@@ -685,11 +690,11 @@ export default function Tenants() {
 
       {/* EDIT TENANT MODAL */}
       {editTarget && (
-        <Modal title={`Edit Tenant: ${editTarget.name}`} onClose={() => setEditTarget(null)}>
+        <Modal title={`${t("tenants.edit_modal_title", "Edit Tenant")}: ${editTarget.name}`} onClose={() => setEditTarget(null)}>
           <form onSubmit={submitEdit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                Tenant Organization / Department Name *
+                {t("tenants.col_name", "Tenant Organization / Department Name")} *
               </label>
               <input
                 type="text"
@@ -703,36 +708,36 @@ export default function Tenants() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Tenant Classification *
+                  {t("tenants.col_type", "Tenant Classification")} *
                 </label>
                 <select
                   value={editForm.type}
                   onChange={(e) => setEditForm({ ...editForm, type: e.target.value as "internal" | "external" })}
                   style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
                 >
-                  <option value="external">External SaaS Client</option>
-                  <option value="internal">Internal Department</option>
+                  <option value="external">{t("tenants.external", "External SaaS Client")}</option>
+                  <option value="internal">{t("tenants.internal", "Internal Department")}</option>
                 </select>
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Billing Mode *
+                  {t("tenants.col_billing", "Billing Mode")} *
                 </label>
                 <select
                   value={editForm.billing_mode}
                   onChange={(e) => setEditForm({ ...editForm, billing_mode: e.target.value as "prepaid" | "postpaid" })}
                   style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
                 >
-                  <option value="prepaid">Prepaid (Credit Balance Check)</option>
-                  <option value="postpaid">Postpaid (Monthly Invoiced)</option>
+                  <option value="prepaid">{t("tenants.prepaid", "Prepaid (Credit Balance Check)")}</option>
+                  <option value="postpaid">{t("tenants.postpaid", "Postpaid (Monthly Invoiced)")}</option>
                 </select>
               </div>
             </div>
 
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                Monthly Budget Ceiling ($ USD)
+                {t("tenants.col_budget", "Monthly Budget Ceiling ($ USD)")}
               </label>
               <input
                 type="number"
@@ -746,7 +751,7 @@ export default function Tenants() {
 
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                System Boundary: Allowed Models (Layer 1)
+                {t("tenants.col_models", "System Boundary: Allowed Models (Layer 1)")}
               </label>
               <div
                 style={{
@@ -788,16 +793,16 @@ export default function Tenants() {
                   checked={editForm.is_active}
                   onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
                 />
-                <span style={{ fontWeight: 600 }}>Active Status</span>
+                <span style={{ fontWeight: 600 }}>{t("common.active", "Active Status")}</span>
               </label>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
               <button type="button" className="btn" onClick={() => setEditTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button type="submit" className="btn btn--primary" disabled={busy}>
-                {busy ? "Saving..." : "Save Changes"}
+                {busy ? t("common.saving", "Saving...") : t("common.save", "Save Changes")}
               </button>
             </div>
           </form>
@@ -806,7 +811,7 @@ export default function Tenants() {
 
       {/* TOP-UP CREDIT MODAL */}
       {topUpTarget && (
-        <Modal title={`Top-up Contract Credit: ${topUpTarget.name}`} onClose={() => setTopUpTarget(null)}>
+        <Modal title={`${t("tenants.topup_modal_title", "Top-up Contract Credit")}: ${topUpTarget.name}`} onClose={() => setTopUpTarget(null)}>
           <form onSubmit={submitTopUp} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div
               style={{
@@ -820,13 +825,13 @@ export default function Tenants() {
               }}
             >
               <div>
-                <div className="muted" style={{ fontSize: 11 }}>Current Credit Balance</div>
+                <div className="muted" style={{ fontSize: 11 }}>{t("tenants.col_balance", "Current Credit Balance")}</div>
                 <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: "var(--success)" }}>
                   {fmtMoney(topUpTarget.credit_balance, 2)}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div className="muted" style={{ fontSize: 11 }}>Billing Mode</div>
+                <div className="muted" style={{ fontSize: 11 }}>{t("tenants.col_billing", "Billing Mode")}</div>
                 <div style={{ fontWeight: 600, fontSize: 13, textTransform: "capitalize" }}>
                   {topUpTarget.billing_mode}
                 </div>
@@ -835,7 +840,7 @@ export default function Tenants() {
 
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                Credit Amount to Add ($ USD) *
+                {t("tenants.kpi_balance", "Credit Amount to Add ($ USD)")} *
               </label>
               <input
                 type="number"
@@ -855,7 +860,7 @@ export default function Tenants() {
               <input
                 type="text"
                 placeholder="e.g. HĐ-2026/AI-01, WIRE-TX-88219"
-                value={topUpForm.contract_ref}
+                value={topUpForm.contract_ref || ""}
                 onChange={(e) => setTopUpForm({ ...topUpForm, contract_ref: e.target.value })}
                 style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
               />
@@ -868,7 +873,7 @@ export default function Tenants() {
               <textarea
                 rows={2}
                 placeholder="e.g. Approved by CFO for Q2 AI consumption via bank wire"
-                value={topUpForm.notes}
+                value={topUpForm.notes || ""}
                 onChange={(e) => setTopUpForm({ ...topUpForm, notes: e.target.value })}
                 style={{ width: "100%", padding: 8, borderRadius: 6, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", resize: "vertical" }}
               />
@@ -876,10 +881,10 @@ export default function Tenants() {
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
               <button type="button" className="btn" onClick={() => setTopUpTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button type="submit" className="btn btn--primary" disabled={busy || topUpForm.amount <= 0}>
-                {busy ? "Processing..." : `Confirm Deposit of $${topUpForm.amount.toFixed(2)}`}
+                {busy ? t("common.saving", "Processing...") : `${t("common.confirm", "Confirm Deposit")} ($${topUpForm.amount.toFixed(2)})`}
               </button>
             </div>
           </form>
@@ -888,7 +893,7 @@ export default function Tenants() {
 
       {/* TRANSACTION HISTORY LEDGER MODAL */}
       {ledgerTarget && (
-        <Modal title={`Credit Ledger: ${ledgerTarget.name}`} onClose={() => setLedgerTarget(null)}>
+        <Modal title={`${t("tenants.ledger_modal_title", "Credit Ledger")}: ${ledgerTarget.name}`} onClose={() => setLedgerTarget(null)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div className="muted" style={{ fontSize: 12 }}>
@@ -903,7 +908,7 @@ export default function Tenants() {
                 disabled={ledgerLoading}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 14 }}>refresh</span>
-                <span>Refresh</span>
+                <span>{t("common.refresh", "Refresh")}</span>
               </button>
             </div>
 
@@ -911,8 +916,8 @@ export default function Tenants() {
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)" }}>
-                    <th style={{ padding: "8px 12px" }}>Date</th>
-                    <th style={{ padding: "8px 12px" }}>Type</th>
+                    <th style={{ padding: "8px 12px" }}>{t("common.created_at", "Date")}</th>
+                    <th style={{ padding: "8px 12px" }}>{t("common.role", "Type")}</th>
                     <th style={{ padding: "8px 12px" }}>Contract Ref</th>
                     <th style={{ padding: "8px 12px", textAlign: "right" }}>Amount</th>
                     <th style={{ padding: "8px 12px", textAlign: "right" }}>Balance After</th>
@@ -923,13 +928,13 @@ export default function Tenants() {
                   {ledgerLoading ? (
                     <tr>
                       <td colSpan={6} style={{ padding: 24, textAlign: "center" }} className="muted">
-                        Loading ledger transactions...
+                        {t("common.loading", "Loading ledger transactions...")}
                       </td>
                     </tr>
                   ) : ledgerTransactions.length === 0 ? (
                     <tr>
                       <td colSpan={6} style={{ padding: 24, textAlign: "center" }} className="muted">
-                        No transactions recorded yet for this tenant.
+                        {t("common.no_data", "No transactions recorded yet for this tenant.")}
                       </td>
                     </tr>
                   ) : (
@@ -986,7 +991,7 @@ export default function Tenants() {
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <button className="btn" onClick={() => setLedgerTarget(null)}>
-                Close
+                {t("common.close", "Close")}
               </button>
             </div>
           </div>
@@ -995,7 +1000,7 @@ export default function Tenants() {
 
       {/* DELETE CONFIRMATION MODAL */}
       {deleteTarget && (
-        <Modal title="Confirm Tenant Deletion" onClose={() => setDeleteTarget(null)}>
+        <Modal title={t("tenants.delete_modal_title", "Confirm Tenant Deletion")} onClose={() => setDeleteTarget(null)}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <p style={{ margin: 0, fontSize: 13 }}>
               Are you sure you want to delete tenant <strong>{deleteTarget.name}</strong>?
@@ -1005,10 +1010,10 @@ export default function Tenants() {
             </p>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
               <button className="btn" onClick={() => setDeleteTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button className="btn btn--danger" onClick={confirmDelete} disabled={busy}>
-                {busy ? "Deleting..." : "Delete Tenant"}
+                {busy ? t("common.deleting", "Deleting...") : t("common.delete", "Delete Tenant")}
               </button>
             </div>
           </div>
