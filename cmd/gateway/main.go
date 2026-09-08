@@ -16,6 +16,7 @@ import (
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/handler"
+	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/service"
 	"llm-gateway/internal/telemetry"
@@ -30,6 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	cfg.Validate()
 
 	// 1b. Initialize OpenTelemetry Tracing
 	otelShutdown, err := telemetry.Setup(context.Background(), "llm-gateway", cfg.OTelExporter, cfg.OTelEndpoint)
@@ -68,6 +70,8 @@ func main() {
 
 	globalCacheTTL := time.Duration(cfg.ResponseCacheTTL) * time.Second
 	responseCache := cache.NewResponseCache(redisClient, globalCacheTTL)
+	permEngine := permission.NewPermissionEngine(pg)
+
 	gwService := service.NewGatewayService(
 		providerClient,
 		keyStore,
@@ -76,6 +80,7 @@ func main() {
 		redisClient,
 		pg,
 		responseCache,
+		permEngine,
 		cfg.ContentCapturePolicy,
 		cfg.SLOMaxTTFTMs,
 		cfg.SLOMaxTBTMs,
@@ -88,7 +93,7 @@ func main() {
 
 	// 5. Initialize Handlers
 	gwHandler := handler.NewGatewayHandler(authService, gwService, redisClient, pg)
-	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient, cfg.AdminAllowedIPs, cfg, gwService)
+	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient, cfg.AdminAllowedIPs, cfg, gwService, permEngine)
 
 	// 6. Router Setup: Public Gateway Mux (Port 8080)
 	publicMux := http.NewServeMux()
@@ -108,7 +113,15 @@ func main() {
 	adminMux := http.NewServeMux()
 	// Only the /admin/* paths are registered as API routes: the bare paths
 	// (/users, /keys, /providers, /models, /analytics/*) are owned by the React
-	// SPA for client-side routing, so no alias is registered for them.
+	// Auth & Profile
+	adminMux.HandleFunc("POST /admin/auth/login", adminHandler.Login)
+	adminMux.HandleFunc("GET /admin/auth/me", adminHandler.GetCurrentUser)
+	adminMux.HandleFunc("POST /admin/auth/password", adminHandler.SetPassword)
+
+	// Member & Team Analytics ("ai dùng gì, dùng bao nhiêu")
+	adminMux.HandleFunc("GET /admin/analytics/members", adminHandler.GetMemberUsageAnalytics)
+	adminMux.HandleFunc("GET /admin/analytics/members/{id}", adminHandler.GetMemberDetail)
+
 	adminMux.HandleFunc("GET /admin/users", adminHandler.ListUsers)
 	adminMux.HandleFunc("POST /admin/users", adminHandler.CreateUser)
 	adminMux.HandleFunc("PATCH /admin/users", adminHandler.UpdateUser)
@@ -118,6 +131,31 @@ func main() {
 	adminMux.HandleFunc("PATCH /admin/keys", adminHandler.UpdateAPIKey)
 	adminMux.HandleFunc("DELETE /admin/keys", adminHandler.RevokeAPIKey)
 	adminMux.HandleFunc("POST /admin/keys/reactivate", adminHandler.ReactivateAPIKey)
+	adminMux.HandleFunc("GET /admin/keys/{id}/models", adminHandler.ListKeyModelPolicies)
+	adminMux.HandleFunc("POST /admin/keys/{id}/models", adminHandler.CreateKeyModelPolicy)
+	adminMux.HandleFunc("DELETE /admin/keys/{id}/models/{pid}", adminHandler.DeleteKeyModelPolicy)
+	adminMux.HandleFunc("GET /admin/groups", adminHandler.ListGroups)
+	adminMux.HandleFunc("POST /admin/groups", adminHandler.CreateGroup)
+	adminMux.HandleFunc("GET /admin/groups/{id}", adminHandler.GetGroup)
+	adminMux.HandleFunc("PATCH /admin/groups/{id}", adminHandler.UpdateGroup)
+	adminMux.HandleFunc("DELETE /admin/groups/{id}", adminHandler.DeleteGroup)
+	adminMux.HandleFunc("GET /admin/groups/{id}/policies", adminHandler.ListGroupPolicies)
+	adminMux.HandleFunc("POST /admin/groups/{id}/policies", adminHandler.CreateGroupPolicy)
+	adminMux.HandleFunc("PATCH /admin/groups/{id}/policies/{pid}", adminHandler.UpdateGroupPolicy)
+	adminMux.HandleFunc("DELETE /admin/groups/{id}/policies/{pid}", adminHandler.DeleteGroupPolicy)
+	adminMux.HandleFunc("GET /admin/iam/actions", adminHandler.GetIAMActions)
+	adminMux.HandleFunc("GET /admin/groups/{id}/members", adminHandler.ListGroupMembers)
+	adminMux.HandleFunc("POST /admin/groups/{id}/members", adminHandler.AddGroupMember)
+	adminMux.HandleFunc("PUT /admin/groups/{id}/members/{uid}/role", adminHandler.SetGroupMemberRole)
+	adminMux.HandleFunc("DELETE /admin/groups/{id}/members/{uid}", adminHandler.RemoveGroupMember)
+	adminMux.HandleFunc("GET /admin/tenants", adminHandler.ListTenants)
+	adminMux.HandleFunc("POST /admin/tenants", adminHandler.CreateTenant)
+	adminMux.HandleFunc("GET /admin/tenants/{id}", adminHandler.GetTenant)
+	adminMux.HandleFunc("PATCH /admin/tenants/{id}", adminHandler.UpdateTenant)
+	adminMux.HandleFunc("DELETE /admin/tenants/{id}", adminHandler.DeleteTenant)
+	adminMux.HandleFunc("POST /admin/tenants/{id}/topup", adminHandler.TopUpCredit)
+	adminMux.HandleFunc("GET /admin/tenants/{id}/transactions", adminHandler.ListTenantTransactions)
+	adminMux.HandleFunc("GET /admin/audit-logs", adminHandler.ListAuditLogs)
 	adminMux.HandleFunc("GET /admin/providers", adminHandler.ListProviderKeys)
 	adminMux.HandleFunc("POST /admin/providers", adminHandler.SetProviderKey)
 	adminMux.HandleFunc("DELETE /admin/providers", adminHandler.DeleteProviderKey)

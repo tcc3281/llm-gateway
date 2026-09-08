@@ -19,6 +19,7 @@ import (
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
+	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/service"
 
@@ -34,9 +35,10 @@ type AdminHandler struct {
 	allowedIPs  []string
 	cfg         *config.Config
 	gwService   *service.GatewayService // model discovery (optional — may be nil)
+	permEngine  *permission.PermissionEngine
 }
 
-func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore *provider.KeyStore, costCalc *analytics.CostCalculator, redis *db.RedisClient, allowedIPsStr string, cfg *config.Config, gwService *service.GatewayService) *AdminHandler {
+func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore *provider.KeyStore, costCalc *analytics.CostCalculator, redis *db.RedisClient, allowedIPsStr string, cfg *config.Config, gwService *service.GatewayService, permEngine *permission.PermissionEngine) *AdminHandler {
 	var allowedIPs []string
 	if allowedIPsStr != "" {
 		parts := strings.Split(allowedIPsStr, ",")
@@ -57,7 +59,50 @@ func NewAdminHandler(pg *db.PostgresDB, authService *auth.AuthService, keyStore 
 		allowedIPs:  allowedIPs,
 		cfg:         cfg,
 		gwService:   gwService,
+		permEngine:  permEngine,
 	}
+}
+
+type AuthContext struct {
+	UserID uuid.UUID `json:"user_id"`
+	Email  string    `json:"email"`
+	Name   string    `json:"name"`
+	Role   string    `json:"role"`
+	IsRoot bool      `json:"is_root"`
+}
+
+type authContextKey struct{}
+
+func (h *AdminHandler) logAudit(r *http.Request, actorType, action, targetType, targetID string, details interface{}) {
+	if h.pg == nil {
+		return
+	}
+	clientIP := h.getClientIP(r)
+	var rawDetails json.RawMessage
+	if details != nil {
+		if b, err := json.Marshal(details); err == nil {
+			rawDetails = b
+		}
+	}
+	var actorID *uuid.UUID
+	ac := h.getAuthContext(r)
+	if ac.UserID != uuid.Nil {
+		actorID = &ac.UserID
+	}
+	if ac.IsRoot {
+		actorType = "root"
+	} else if ac.Email != "" {
+		actorType = ac.Role
+	}
+	_ = h.pg.CreateAuditLog(&model.AuditLog{
+		ActorID:    actorID,
+		ActorType:  actorType,
+		ActorIP:    clientIP,
+		Action:     action,
+		TargetType: targetType,
+		TargetID:   targetID,
+		Details:    rawDetails,
+	})
 }
 
 func (h *AdminHandler) getClientIP(r *http.Request) string {
@@ -107,13 +152,54 @@ func (h *AdminHandler) checkAdminAuth(w http.ResponseWriter, r *http.Request) bo
 		return false
 	}
 
-	// 2. Secret Key check
+	// 2. Secret Key check (Break-glass Root Admin)
 	adminKey := r.Header.Get("X-Admin-API-Key")
-	if !h.authService.ValidateAdminKey(adminKey) {
-		http.Error(w, `{"error": "Unauthorized admin access"}`, http.StatusUnauthorized)
-		return false
+	if adminKey != "" && h.authService.ValidateAdminKey(adminKey) {
+		ctx := context.WithValue(r.Context(), authContextKey{}, &AuthContext{
+			Email:  "root",
+			Name:   "Root Administrator",
+			Role:   "admin",
+			IsRoot: true,
+		})
+		*r = *r.WithContext(ctx)
+		return true
 	}
-	return true
+
+	// 3. Bearer Session Token check
+	token := ""
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+	} else if sessHeader := r.Header.Get("X-Session-Token"); sessHeader != "" {
+		token = sessHeader
+	}
+
+	if token != "" {
+		claims, err := h.authService.VerifySessionToken(token)
+		if err == nil && claims != nil {
+			ctx := context.WithValue(r.Context(), authContextKey{}, &AuthContext{
+				UserID: claims.UserID,
+				Email:  claims.Email,
+				Name:   claims.Name,
+				Role:   claims.Role,
+				IsRoot: claims.IsRoot,
+			})
+			*r = *r.WithContext(ctx)
+			return true
+		}
+	}
+
+	http.Error(w, `{"error": "Unauthorized admin access"}`, http.StatusUnauthorized)
+	return false
+}
+
+func (h *AdminHandler) getAuthContext(r *http.Request) *AuthContext {
+	if val := r.Context().Value(authContextKey{}); val != nil {
+		if ac, ok := val.(*AuthContext); ok {
+			return ac
+		}
+	}
+	return &AuthContext{Role: "user"}
 }
 
 // POST /admin/users -> Create a new user
@@ -123,9 +209,12 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
-		Role  string `json:"role"`
+		Email      string  `json:"email"`
+		Name       string  `json:"name"`
+		Role       string  `json:"role"`
+		IsRoot     bool    `json:"is_root"`
+		TenantID   *string `json:"tenant_id"`
+		TenantRole string  `json:"tenant_role"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -137,16 +226,35 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Role = "user"
 	}
 
+	var tid *uuid.UUID
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" {
+		if parsed, err := uuid.Parse(strings.TrimSpace(*req.TenantID)); err == nil {
+			tid = &parsed
+		}
+	}
+
 	user := &model.User{
-		Email: req.Email,
-		Name:  req.Name,
-		Role:  req.Role,
+		Email:      req.Email,
+		Name:       req.Name,
+		Role:       req.Role,
+		IsRoot:     req.IsRoot,
+		TenantID:   tid,
+		TenantRole: req.TenantRole,
 	}
 
 	if err := h.pg.CreateUser(user); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logAudit(r, "admin", "user.create", "user", user.ID.String(), map[string]interface{}{
+		"email":       user.Email,
+		"name":        user.Name,
+		"role":        user.Role,
+		"is_root":     user.IsRoot,
+		"tenant_id":   user.TenantID,
+		"tenant_role": user.TenantRole,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -161,6 +269,7 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		UserID          string  `json:"user_id"`
+		TenantID        *string `json:"tenant_id"`
 		Name            string  `json:"name"`
 		BudgetLimit     float64 `json:"budget_limit"`
 		RateLimitRPM    int     `json:"rate_limit_rpm"`
@@ -178,6 +287,13 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var tid *uuid.UUID
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" {
+		if parsed, err := uuid.Parse(strings.TrimSpace(*req.TenantID)); err == nil {
+			tid = &parsed
+		}
+	}
+
 	if req.RateLimitRPM <= 0 {
 		req.RateLimitRPM = 60
 	}
@@ -187,7 +303,7 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		cacheTTL = *req.CacheTTLSeconds
 	}
 
-	plainKey, apiKey, err := h.authService.CreateAPIKey(r.Context(), userID, req.Name, req.BudgetLimit, req.RateLimitRPM, cacheTTL)
+	plainKey, apiKey, err := h.authService.CreateAPIKey(r.Context(), userID, req.Name, req.BudgetLimit, req.RateLimitRPM, cacheTTL, tid)
 	if err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -197,6 +313,13 @@ func (h *AdminHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		"api_key":  plainKey, // Secret returned only ONCE upon creation!
 		"key_info": apiKey,
 	}
+
+	h.logAudit(r, "admin", "key.create", "key", apiKey.ID.String(), map[string]interface{}{
+		"name":           apiKey.Name,
+		"user_id":        apiKey.UserID,
+		"budget_limit":   apiKey.BudgetLimit,
+		"rate_limit_rpm": apiKey.RateLimitRPM,
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -279,6 +402,8 @@ func (h *AdminHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logAudit(r, "admin", "key.revoke", "key", id.String(), nil)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "API key revoked successfully"})
 }
@@ -296,8 +421,11 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name *string `json:"name"`
-		Role *string `json:"role"`
+		Name       *string `json:"name"`
+		Role       *string `json:"role"`
+		IsRoot     *bool   `json:"is_root"`
+		TenantID   *string `json:"tenant_id"`
+		TenantRole *string `json:"tenant_role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
@@ -309,22 +437,47 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "user not found"}`, http.StatusNotFound)
 		return
 	}
-	name, role := current.Name, current.Role
+	name, role, isRoot := current.Name, current.Role, current.IsRoot
 	if req.Name != nil {
 		name = *req.Name
 	}
 	if req.Role != nil {
 		role = *req.Role
 	}
+	if req.IsRoot != nil {
+		isRoot = *req.IsRoot
+	}
 
-	if err := h.pg.UpdateUser(id, name, role); err != nil {
+	if err := h.pg.UpdateUser(id, name, role, isRoot); err != nil {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
 
+	tenantID := current.TenantID
+	tenantRole := current.TenantRole
+	if req.TenantID != nil {
+		trimmed := strings.TrimSpace(*req.TenantID)
+		if trimmed == "" {
+			tenantID = nil
+		} else if parsed, err := uuid.Parse(trimmed); err == nil {
+			tenantID = &parsed
+		}
+	}
+	if req.TenantRole != nil {
+		tenantRole = *req.TenantRole
+	}
+	if req.TenantID != nil || req.TenantRole != nil {
+		_ = h.pg.UpdateUserTenant(id, tenantID, tenantRole)
+	}
+
+	h.logAudit(r, "admin", "user.update", "user", id.String(), req)
+
 	updated := *current
 	updated.Name = name
 	updated.Role = role
+	updated.IsRoot = isRoot
+	updated.TenantID = tenantID
+	updated.TenantRole = tenantRole
 	updated.UpdatedAt = time.Now()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -347,6 +500,8 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logAudit(r, "admin", "user.delete", "user", id.String(), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
@@ -417,6 +572,8 @@ func (h *AdminHandler) UpdateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logAudit(r, "admin", "key.update", "key", id.String(), req)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "API key updated successfully"})
 }
@@ -436,6 +593,8 @@ func (h *AdminHandler) ReactivateAPIKey(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logAudit(r, "admin", "key.reactivate", "key", id.String(), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "API key reactivated successfully"})
@@ -476,6 +635,16 @@ func (h *AdminHandler) GetUsageLogs(w http.ResponseWriter, r *http.Request) {
 	f.Model = q.Get("model")
 	f.Status = q.Get("status")
 	f.InboundFormat = q.Get("inbound")
+	f.Modality = q.Get("modality")
+	f.StructureHash = q.Get("structure_hash")
+	if v := q.Get("has_images"); v != "" {
+		b := v == "true" || v == "1"
+		f.HasImages = &b
+	}
+	if v := q.Get("has_audio"); v != "" {
+		b := v == "true" || v == "1"
+		f.HasAudio = &b
+	}
 
 	limit := 50
 	if v := q.Get("limit"); v != "" {
@@ -726,18 +895,24 @@ func (h *AdminHandler) GetDashboardStats(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
+	modalityBreakdown, err := h.pg.GetModalityBreakdown(filter, from, to)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"from":             from.Format(time.RFC3339),
-		"to":               to.Format(time.RFC3339),
-		"interval":         interval,
-		"totals":           totals,
-		"time_series":      orEmpty(series),
-		"by_model":         orEmpty(byModel),
-		"by_user":          orEmpty(byUser),
-		"recent":           orEmpty(recent),
-		"status_breakdown": statusBreakdown,
+		"from":               from.Format(time.RFC3339),
+		"to":                 to.Format(time.RFC3339),
+		"interval":           interval,
+		"totals":             totals,
+		"time_series":        orEmpty(series),
+		"by_model":           orEmpty(byModel),
+		"by_user":            orEmpty(byUser),
+		"recent":             orEmpty(recent),
+		"status_breakdown":   statusBreakdown,
+		"modality_breakdown": modalityBreakdown,
 	})
 }
 
@@ -791,10 +966,11 @@ func (h *AdminHandler) UpsertModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Provider             string  `json:"provider"`
-		ModelName            string  `json:"model_name"`
-		PromptPricePer1M     float64 `json:"prompt_price_per_1m"`
-		CompletionPricePer1M float64 `json:"completion_price_per_1m"`
+		Provider             string   `json:"provider"`
+		ModelName            string   `json:"model_name"`
+		PromptPricePer1M     float64  `json:"prompt_price_per_1m"`
+		CompletionPricePer1M float64  `json:"completion_price_per_1m"`
+		CacheReadPricePer1M  *float64 `json:"cache_read_price_per_1m,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -812,6 +988,7 @@ func (h *AdminHandler) UpsertModel(w http.ResponseWriter, r *http.Request) {
 		ModelName:            req.ModelName,
 		PromptPricePer1M:     req.PromptPricePer1M,
 		CompletionPricePer1M: req.CompletionPricePer1M,
+		CacheReadPricePer1M:  req.CacheReadPricePer1M,
 	}
 
 	if err := h.pg.UpsertModelPricing(modelPricing); err != nil {
@@ -1099,6 +1276,12 @@ func (h *AdminHandler) SetProviderKey(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	h.logAudit(r, "admin", "provider.set", "provider", req.Provider, map[string]interface{}{
+		"provider": req.Provider,
+		"base_url": baseURL,
+		"protocol": protocol,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Provider API key saved successfully", "provider": req.Provider})
@@ -1128,6 +1311,8 @@ func (h *AdminHandler) DeleteProviderKey(w http.ResponseWriter, r *http.Request)
 		_ = h.costCalc.RefreshCatalog()
 	}
 
+	h.logAudit(r, "admin", "provider.delete", "provider", providerName, nil)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Provider key deleted successfully", "provider": providerName})
@@ -1140,3 +1325,273 @@ func (h *AdminHandler) invalidateModelsCache(ctx context.Context) {
 		_ = h.redis.InvalidateModelsCache(ctx)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Member Authentication & User Profile
+// ---------------------------------------------------------------------------
+
+// POST /admin/auth/login
+func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
+	clientIP := h.getClientIP(r)
+	if !h.isIPAllowed(clientIP) {
+		http.Error(w, `{"error": "Forbidden: Client IP `+clientIP+` is not allowed"}`, http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	req.Email = strings.TrimSpace(req.Email)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Email == "" || req.Password == "" {
+		http.Error(w, `{"error": "Email and password are required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var user *model.User
+	var err error
+
+	// Check if this is an emergency break-glass login using the admin key as password or master admin email
+	isEmergencyRoot := (req.Email == "root" || req.Email == "admin" || req.Email == "admin@llm-gateway.internal" || req.Email == "admin@llm-gateway.local") && h.authService.ValidateAdminKey(req.Password)
+
+	if isEmergencyRoot {
+		user, err = h.pg.GetUserByEmail(req.Email)
+		if err != nil {
+			user = &model.User{
+				Email:    req.Email,
+				Name:     "Root Administrator",
+				Role:     "admin",
+				IsRoot:   true,
+				IsActive: true,
+			}
+		}
+	} else {
+		user, err = h.pg.GetUserByEmail(req.Email)
+		if err != nil {
+			http.Error(w, `{"error": "Invalid email or password"}`, http.StatusUnauthorized)
+			return
+		}
+
+		if !user.IsActive {
+			http.Error(w, `{"error": "Account is inactive"}`, http.StatusForbidden)
+			return
+		}
+
+		valid := false
+		if user.PasswordHash == "" {
+			// If password hash not yet set, allow master admin key or default 'admin' if user is admin
+			if h.authService.ValidateAdminKey(req.Password) || (user.Role == "admin" && req.Password == "admin") {
+				valid = true
+			}
+		} else {
+			valid = h.authService.VerifyPassword(req.Password, user.PasswordHash)
+		}
+
+		if !valid {
+			http.Error(w, `{"error": "Invalid email or password"}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	token, err := h.authService.CreateSessionToken(user, 24*time.Hour)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to create session token"}`, http.StatusInternalServerError)
+		return
+	}
+
+	groups, _ := h.pg.GetUserGroups(user.ID)
+	groupNames := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupNames = append(groupNames, g.Name)
+	}
+
+	h.logAudit(r, "user", "auth.login", "user", user.ID.String(), map[string]interface{}{
+		"email": user.Email,
+		"role":  user.Role,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token": token,
+		"user": map[string]interface{}{
+			"id":      user.ID,
+			"email":   user.Email,
+			"name":    user.Name,
+			"role":    user.Role,
+			"is_root": user.IsRoot,
+			"groups":  groupNames,
+		},
+	})
+}
+
+// GET /admin/auth/me
+func (h *AdminHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+	ac := h.getAuthContext(r)
+	groups, _ := h.pg.GetUserGroups(ac.UserID)
+	groupNames := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupNames = append(groupNames, g.Name)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":      ac.UserID,
+		"email":   ac.Email,
+		"name":    ac.Name,
+		"role":    ac.Role,
+		"is_root": ac.IsRoot,
+		"groups":  groupNames,
+	})
+}
+
+// POST /admin/auth/password
+func (h *AdminHandler) SetPassword(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	var req struct {
+		UserID   string `json:"user_id"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Password) < 6 {
+		http.Error(w, `{"error": "Password must be at least 6 characters"}`, http.StatusBadRequest)
+		return
+	}
+
+	ac := h.getAuthContext(r)
+	targetID := ac.UserID
+	if req.UserID != "" {
+		parsed, err := uuid.Parse(req.UserID)
+		if err != nil {
+			http.Error(w, `{"error": "Invalid user_id"}`, http.StatusBadRequest)
+			return
+		}
+		// Non-root or non-admin can only change their own password
+		if parsed != ac.UserID && !ac.IsRoot && ac.Role != "admin" {
+			http.Error(w, `{"error": "Permission denied: cannot change another user's password"}`, http.StatusForbidden)
+			return
+		}
+		targetID = parsed
+	}
+
+	hash, err := h.authService.HashPassword(req.Password)
+	if err != nil {
+		http.Error(w, `{"error": "Failed to hash password"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.pg.SetUserPassword(targetID, hash); err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.logAudit(r, "user", "auth.password_update", "user", targetID.String(), nil)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "Password updated successfully"})
+}
+
+// ---------------------------------------------------------------------------
+// Member & Team Usage Analytics ("ai dùng gì, dùng bao nhiêu")
+// ---------------------------------------------------------------------------
+
+// GET /admin/analytics/members
+func (h *AdminHandler) GetMemberUsageAnalytics(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	query := r.URL.Query()
+	now := time.Now()
+	from := now.Add(-7 * 24 * time.Hour)
+	to := now
+	if fromStr := query.Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = t
+		}
+	}
+	if toStr := query.Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = t
+		}
+	}
+
+	groupID := query.Get("group_id")
+	search := query.Get("search")
+
+	analyticsResp, err := h.pg.GetMemberUsageAnalytics(from, to, groupID, search)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analyticsResp)
+}
+
+// GET /admin/analytics/members/{id}
+func (h *AdminHandler) GetMemberDetail(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.URL.Query().Get("id")
+	}
+	uid, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, `{"error": "Invalid member id"}`, http.StatusBadRequest)
+		return
+	}
+
+	query := r.URL.Query()
+	now := time.Now()
+	from := now.Add(-7 * 24 * time.Hour)
+	to := now
+	if fromStr := query.Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = t
+		}
+	}
+	if toStr := query.Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = t
+		}
+	}
+
+	detail, err := h.pg.GetMemberDetail(uid, from, to)
+	if err != nil {
+		http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(detail)
+}
+
+// GET /admin/iam/actions -> Return catalog of available IAM actions for policy builders
+func (h *AdminHandler) GetIAMActions(w http.ResponseWriter, r *http.Request) {
+	if !h.checkAdminAuth(w, r) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(permission.AllActions)
+}
+

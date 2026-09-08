@@ -7,14 +7,13 @@ on:
       - master
       - develop
       - 'feat/**'
+      - 'feature/**'
       - 'fix/**'
+      - 'chore/**'
+      - 'refactor/**'
   pull_request:
     branches:
-      - main
-      - master
-      - develop
-      - 'feat/**'
-      - 'fix/**'
+      - '**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,7 +44,7 @@ jobs:
         run: go vet ./...
 
       - name: Run Go Unit Tests with Race Detector & Coverage
-        run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
+        run: go test -v -race -timeout 10m -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Test Build Gateway Binary
         run: CGO_ENABLED=0 go build -ldflags="-w -s" -o /dev/null ./cmd/gateway
@@ -107,7 +106,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Validate Docker Compose Configuration
-        run: docker compose config
+        run: docker compose --profile all config
 
       - name: Build Docker Image with Buildx Cache
         uses: docker/build-push-action@v6

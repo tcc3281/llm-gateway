@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>LLM Gateway - Access Control Plane</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#005236",
+                        "surface-container-high": "#242b2d",
+                        "on-surface": "#dde4e5",
+                        "inverse-primary": "#006877",
+                        "background": "#0B0E14",
+                        "on-secondary-fixed": "#002113",
+                        "on-tertiary": "#462b00",
+                        "surface-container-lowest": "#090f11",
+                        "on-primary": "#00363e",
+                        "surface-container-highest": "#2f3638",
+                        "primary-fixed": "#a2eeff",
+                        "outline-variant": "#3c494c",
+                        "error-container": "#93000a",
+                        "tertiary-fixed": "#ffddb5",
+                        "surface": "#181A20",
+                        "surface-variant": "#2f3638",
+                        "on-surface-variant": "#bbc9cd",
+                        "tertiary-fixed-dim": "#ffb957",
+                        "surface-container": "#1a2122",
+                        "on-primary-container": "#005763",
+                        "on-error-container": "#ffdad6",
+                        "error": "#ffb4ab",
+                        "surface-container-low": "#161d1e",
+                        "primary-fixed-dim": "#2fd9f4",
+                        "tertiary-container": "#ffb13b",
+                        "inverse-on-surface": "#2b3233",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-background": "#dde4e5",
+                        "secondary-fixed": "#6ffbbe",
+                        "surface-bright": "#343a3c",
+                        "primary-container": "#22D3EE",
+                        "on-tertiary-container": "#6e4600",
+                        "on-secondary": "#003824",
+                        "on-primary-fixed-variant": "#004e5a",
+                        "secondary-container": "#00a572",
+                        "on-primary-fixed": "#001f25",
+                        "tertiary": "#ffd6a3",
+                        "primary": "#8aebff",
+                        "on-secondary-container": "#00311f",
+                        "inverse-surface": "#dde4e5",
+                        "surface-tint": "#2fd9f4",
+                        "on-tertiary-fixed-variant": "#643f00",
+                        "secondary": "#4edea3",
+                        "outline": "#859397",
+                        "on-error": "#690005",
+                        "surface-dim": "#0e1416",
+                        "on-tertiary-fixed": "#2a1800",
+                        "panel-border": "#2D3139",
+                        "emerald-custom": "#10B981",
+                        "amber-custom": "#F59E0B"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "standard-row": "48px",
+                        "card-gap": "20px",
+                        "container-padding": "24px",
+                        "sidebar-width": "240px",
+                        "gutter": "16px",
+                        "compact-row": "32px",
+                        "unit": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Inter", "sans-serif"],
+                        "body-lg": ["Inter", "sans-serif"],
+                        "display-lg-mobile": ["Inter", "sans-serif"],
+                        "headline-sm": ["Inter", "sans-serif"],
+                        "body-md": ["Inter", "sans-serif"],
+                        "display-lg": ["Inter", "sans-serif"],
+                        "data-mono": ["JetBrains Mono", "monospace"],
+                        "label-xs": ["JetBrains Mono", "monospace"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "display-lg-mobile": ["28px", {"lineHeight": "34px", "fontWeight": "700"}],
+                        "headline-sm": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "display-lg": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "data-mono": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.01em", "fontWeight": "500"}],
+                        "label-xs": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .input-glow:focus {
+            box-shadow: 0 0 5px 0.5px rgba(34, 211, 238, 0.5);
+            border-color: #22D3EE;
+            outline: none;
+        }
+        
+        /* Tab functionality */
+        #tab-member:checked ~ .tabs-container #content-member,
+        #tab-root:checked ~ .tabs-container #content-root {
+            display: block;
+        }
+        
+        #tab-member:checked ~ .tabs-container #content-root,
+        #tab-root:checked ~ .tabs-container #content-member {
+            display: none;
+        }
+        
+        #tab-member:checked ~ .tabs-headers label[for="tab-member"] {
+            border-bottom: 2px solid #22D3EE;
+            color: #22D3EE;
+        }
+        
+        #tab-root:checked ~ .tabs-headers label[for="tab-root"] {
+            border-bottom: 2px solid #22D3EE;
+            color: #22D3EE;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md h-screen flex flex-col antialiased selection:bg-primary-container selection:text-black">
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-container-padding h-standard-row bg-background border-b border-panel-border">
+<div class="flex items-center gap-4">
+<h1 class="font-display-lg text-headline-md text-primary tracking-tighter uppercase">LLM Gateway</h1>
+<span class="font-label-xs text-label-xs text-emerald-custom border border-emerald-custom/30 bg-emerald-custom/10 px-2 py-0.5 rounded-[2px]">[ENV: PRODUCTION / SECURE]</span>
+</div>
+<div class="flex items-center gap-4 text-outline hidden md:flex">
+<span class="material-symbols-outlined hover:text-primary-fixed-dim transition-colors cursor-pointer text-[18px]">security</span>
+<span class="material-symbols-outlined hover:text-primary-fixed-dim transition-colors cursor-pointer text-[18px]">monitor_heart</span>
+<span class="material-symbols-outlined hover:text-primary-fixed-dim transition-colors cursor-pointer text-[18px]">language</span>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow flex items-center justify-center p-4 mt-standard-row mb-compact-row relative z-10">
+<!-- Center Card -->
+<div class="w-full max-w-md bg-surface border border-panel-border rounded-lg shadow-2xl relative overflow-hidden">
+<!-- Header Section -->
+<div class="p-6 border-b border-panel-border flex flex-col items-center text-center">
+<div class="w-12 h-12 rounded-full border border-panel-border bg-surface-container-high flex items-center justify-center mb-4 text-primary">
+<span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">security</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface mb-2">Access Control Plane</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Sign in with your team credentials or emergency root token</p>
+</div>
+<!-- Tabs Input logic -->
+<input checked="" class="hidden" id="tab-member" name="auth_tabs" type="radio"/>
+<input class="hidden" id="tab-root" name="auth_tabs" type="radio"/>
+<!-- Tabs Headers -->
+<div class="tabs-headers flex border-b border-panel-border bg-surface-container-low font-data-mono text-data-mono">
+<label class="flex-1 py-3 text-center cursor-pointer text-outline hover:text-on-surface transition-colors border-b-2 border-transparent" for="tab-member">Member Login</label>
+<label class="flex-1 py-3 text-center cursor-pointer text-outline hover:text-on-surface transition-colors border-b-2 border-transparent" for="tab-root">Emergency Root Key</label>
+</div>
+<!-- Tabs Content -->
+<div class="tabs-container p-6">
+<!-- Tab 1: Member Login -->
+<div class="space-y-4" id="content-member">
+<div class="space-y-2">
+<label class="block font-label-xs text-label-xs text-on-surface-variant uppercase">Email Address</label>
+<input class="w-full bg-surface-container-highest border border-panel-border rounded-DEFAULT px-3 py-2 font-data-mono text-data-mono text-on-surface placeholder:text-outline input-glow transition-all" placeholder="admin@core-infra.sys" type="email"/>
+</div>
+<div class="space-y-2">
+<label class="block font-label-xs text-label-xs text-on-surface-variant uppercase">Master Password</label>
+<div class="relative">
+<input class="w-full bg-surface-container-highest border border-panel-border rounded-DEFAULT px-3 py-2 font-data-mono text-data-mono text-on-surface placeholder:text-outline input-glow transition-all" placeholder="••••••••••••••••" type="password"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 transform -translate-y-1/2 text-outline text-[16px] cursor-pointer">visibility_off</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-2">
+<label class="flex items-center gap-2 cursor-pointer group">
+<input class="rounded-[2px] bg-surface-container-highest border-panel-border text-primary-container focus:ring-primary-container focus:ring-offset-surface" type="checkbox"/>
+<span class="font-body-md text-body-md text-on-surface-variant group-hover:text-on-surface transition-colors">Remember Me</span>
+</label>
+</div>
+<button class="w-full bg-emerald-custom hover:bg-emerald-500 text-black font-data-mono text-data-mono py-2.5 rounded-DEFAULT transition-colors mt-2 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">login</span>
+                        Sign In
+                    </button>
+<div class="text-center mt-4">
+<a class="font-label-xs text-label-xs text-outline hover:text-primary-fixed-dim transition-colors uppercase" href="#">Forgot password / contact admin</a>
+</div>
+</div>
+<!-- Tab 2: Emergency Root Key -->
+<div class="space-y-4 hidden" id="content-root">
+<div class="mb-4 flex items-start gap-3 p-3 bg-error-container/20 border border-error-container/50 rounded-DEFAULT">
+<span class="material-symbols-outlined text-amber-custom" style="font-variation-settings: 'FILL' 1;">warning</span>
+<div>
+<span class="font-label-xs text-label-xs text-amber-custom uppercase block mb-1">[BREAK-GLASS ACCESS]</span>
+<p class="font-body-md text-[12px] leading-tight text-on-surface-variant">Use of root tokens is logged permanently and alerts all global administrators.</p>
+</div>
+</div>
+<div class="space-y-2">
+<label class="block font-label-xs text-label-xs text-on-surface-variant uppercase">X-Admin-API-Key</label>
+<input class="w-full bg-surface-container-highest border border-panel-border rounded-DEFAULT px-3 py-2 font-data-mono text-data-mono text-on-surface placeholder:text-outline input-glow transition-all" placeholder="rtk_..." type="password"/>
+</div>
+<button class="w-full bg-primary-container hover:bg-primary text-black font-data-mono text-data-mono py-2.5 rounded-DEFAULT transition-colors mt-4 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">key</span>
+                        Authenticate Master
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="fixed bottom-0 left-0 w-full z-50 flex justify-between items-center px-container-padding h-compact-row bg-surface-container-lowest border-t border-panel-border font-label-xs text-label-xs font-data-mono text-data-mono">
+<span class="text-outline uppercase">v1.0.0</span>
+<div class="flex items-center gap-2 text-emerald-custom">
+<div class="w-2 h-2 rounded-full bg-emerald-custom animate-pulse shadow-[0_0_5px_#10B981]"></div>
+<span class="uppercase">TLS 1.3 Active</span>
+</div>
+</footer>
+</body></html>

@@ -11,6 +11,7 @@ interface ModelForm {
   model_name: string;
   prompt_price_per_1m: string;
   completion_price_per_1m: string;
+  cache_read_price_per_1m: string;
 }
 
 const empty: ModelForm = {
@@ -18,6 +19,7 @@ const empty: ModelForm = {
   model_name: "",
   prompt_price_per_1m: "",
   completion_price_per_1m: "",
+  cache_read_price_per_1m: "",
 };
 
 export default function Models() {
@@ -82,11 +84,13 @@ export default function Models() {
     setBusy(true);
     setError(null);
     try {
+      const cacheVal = form.cache_read_price_per_1m.trim();
       await api.upsertModel({
         provider: form.provider,
         model_name: form.model_name.trim(),
         prompt_price_per_1m: parseFloat(form.prompt_price_per_1m) || 0,
         completion_price_per_1m: parseFloat(form.completion_price_per_1m) || 0,
+        cache_read_price_per_1m: cacheVal !== "" ? parseFloat(cacheVal) : null,
       });
       setCreateOpen(false);
       setForm(empty);
@@ -104,12 +108,14 @@ export default function Models() {
     setBusy(true);
     setError(null);
     try {
+      const cacheVal = editForm.cache_read_price_per_1m.trim();
       await api.upsertModel({
         provider: editForm.provider,
         model_name: editForm.model_name.trim(),
         prompt_price_per_1m: parseFloat(editForm.prompt_price_per_1m) || 0,
         completion_price_per_1m:
           parseFloat(editForm.completion_price_per_1m) || 0,
+        cache_read_price_per_1m: cacheVal !== "" ? parseFloat(cacheVal) : null,
       });
       setEditTarget(null);
       await load();
@@ -319,6 +325,7 @@ export default function Models() {
               <th>Provider</th>
               <th>Model</th>
               <th className="num">Prompt /1M</th>
+              <th className="num">Cache Read /1M</th>
               <th className="num">Completion /1M</th>
               <th>Updated</th>
               <th style={{ textAlign: "right" }}>Actions</th>
@@ -334,6 +341,18 @@ export default function Models() {
                   {m.model_name}
                 </td>
                 <td className="num">${fmtNum(m.prompt_price_per_1m)}</td>
+                <td className="num">
+                  {m.cache_read_price_per_1m != null ? (
+                    `$${fmtNum(m.cache_read_price_per_1m)}`
+                  ) : (
+                    <span
+                      className="muted"
+                      title="Uses vendor default discount ratio (e.g. 10% Anthropic, 14% DeepSeek, 25% Gemini, 50% OpenAI)"
+                    >
+                      Auto
+                    </span>
+                  )}
+                </td>
                 <td className="num">${fmtNum(m.completion_price_per_1m)}</td>
                 <td className="muted">{fmtDate(m.updated_at)}</td>
                 <td>
@@ -349,6 +368,10 @@ export default function Models() {
                           completion_price_per_1m: String(
                             m.completion_price_per_1m,
                           ),
+                          cache_read_price_per_1m:
+                            m.cache_read_price_per_1m != null
+                              ? String(m.cache_read_price_per_1m)
+                              : "",
                         });
                       }}
                     >
@@ -366,7 +389,7 @@ export default function Models() {
             ))}
             {!sortedModels.length && (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="empty">No models match the filters</div>
                 </td>
               </tr>
@@ -490,7 +513,7 @@ function ModelFields({
       </div>
       <div className="row">
         <div className="field" style={{ flex: 1 }}>
-          <label className="field__label">Prompt price /1M (USD)</label>
+          <label className="field__label">Prompt /1M (USD)</label>
           <input
             className="input"
             type="number"
@@ -503,7 +526,21 @@ function ModelFields({
           />
         </div>
         <div className="field" style={{ flex: 1 }}>
-          <label className="field__label">Completion price /1M (USD)</label>
+          <label className="field__label">Cache Read /1M (USD)</label>
+          <input
+            className="input"
+            type="number"
+            min="0"
+            step="0.000001"
+            placeholder="Auto (vendor default)"
+            value={form.cache_read_price_per_1m}
+            onChange={(e) =>
+              setForm({ ...form, cache_read_price_per_1m: e.target.value })
+            }
+          />
+        </div>
+        <div className="field" style={{ flex: 1 }}>
+          <label className="field__label">Completion /1M (USD)</label>
           <input
             className="input"
             type="number"

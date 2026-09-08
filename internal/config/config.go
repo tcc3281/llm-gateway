@@ -58,6 +58,15 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
+func (c *Config) Validate() {
+	if c.AdminAPIKey == "sk-admin-secret-key-change-me" {
+		fmt.Println("⚠️  WARNING: Using default ADMIN_API_KEY ('sk-admin-secret-key-change-me'). Set ADMIN_API_KEY environment variable for production!")
+	}
+	if c.ProviderMasterKey == "" {
+		fmt.Println("⚠️  WARNING: PROVIDER_MASTER_KEY is empty. Upstream provider keys will be stored in plaintext!")
+	}
+}
+
 func (c *Config) GetDSN() string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSSLMode)

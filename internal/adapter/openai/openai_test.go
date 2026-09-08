@@ -151,3 +151,40 @@ func TestDecodeInboundRequest_OllamaImagesFallback(t *testing.T) {
 		t.Errorf("expected data URI prefix added, got %q", msg.ContentParts[0].ImageURL.URL)
 	}
 }
+
+func TestEncodeCanonicalRequest_MaxCompletionTokens(t *testing.T) {
+	// Standard model (gpt-4o) should emit max_tokens
+	stdReq := &canonical.CanonicalRequest{
+		Model:     "gpt-4o",
+		MaxTokens: 2048,
+	}
+	stdBytes, err := EncodeCanonicalRequest(stdReq)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(stdBytes), `"max_tokens":2048`) {
+		t.Errorf("expected gpt-4o to have max_tokens, got: %s", string(stdBytes))
+	}
+	if strings.Contains(string(stdBytes), `"max_completion_tokens"`) {
+		t.Errorf("did not expect max_completion_tokens for gpt-4o, got: %s", string(stdBytes))
+	}
+
+	// Reasoning model (gpt-5.5 / o1 / o3) MUST emit max_completion_tokens and omit max_tokens
+	reasoningModels := []string{"gpt-5.5", "o1", "o3-mini"}
+	for _, m := range reasoningModels {
+		rReq := &canonical.CanonicalRequest{
+			Model:     m,
+			MaxTokens: 4096,
+		}
+		rBytes, err := EncodeCanonicalRequest(rReq)
+		if err != nil {
+			t.Fatalf("unexpected error for %s: %v", m, err)
+		}
+		if !strings.Contains(string(rBytes), `"max_completion_tokens":4096`) {
+			t.Errorf("expected %s to have max_completion_tokens, got: %s", m, string(rBytes))
+		}
+		if strings.Contains(string(rBytes), `"max_tokens"`) && !strings.Contains(string(rBytes), `"max_completion_tokens"`) {
+			t.Errorf("did not expect max_tokens for %s, got: %s", m, string(rBytes))
+		}
+	}
+}

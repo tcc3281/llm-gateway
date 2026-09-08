@@ -21,6 +21,7 @@ import (
 	"llm-gateway/internal/cache"
 	"llm-gateway/internal/db"
 	"llm-gateway/internal/model"
+	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
 	"llm-gateway/internal/telemetry"
 	"llm-gateway/pkg/sse"
@@ -28,6 +29,20 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// ErrPermissionDenied is returned when a user or API key lacks IAM permission for a model.
+type ErrPermissionDenied struct {
+	Message string
+}
+
+func (e *ErrPermissionDenied) Error() string {
+	return e.Message
+}
+
+func IsPermissionDeniedError(err error) bool {
+	var ep *ErrPermissionDenied
+	return errors.As(err, &ep)
+}
 
 // ErrProviderKey is returned when the upstream provider has no API key
 // configured in the stateful provider_keys table.
@@ -39,6 +54,20 @@ func (e *ErrProviderKey) Error() string {
 	return fmt.Sprintf("no API key configured for provider %q — set it via admin API or `llmgw provider set`", e.Provider)
 }
 
+// ErrPaymentRequired is returned when a tenant has insufficient prepaid credit balance.
+type ErrPaymentRequired struct {
+	Message string
+}
+
+func (e *ErrPaymentRequired) Error() string {
+	return e.Message
+}
+
+func IsPaymentRequiredError(err error) bool {
+	var ep *ErrPaymentRequired
+	return errors.As(err, &ep)
+}
+
 type GatewayService struct {
 	providerClient       *provider.ProviderClient
 	keyStore             *provider.KeyStore
@@ -47,6 +76,7 @@ type GatewayService struct {
 	redis                *db.RedisClient
 	pg                   *db.PostgresDB
 	responseCache        *cache.ResponseCache
+	permEngine           *permission.PermissionEngine
 	contentCapturePolicy string
 	sloMaxTTFTMs         int
 	sloMaxTBTMs          int
@@ -61,6 +91,7 @@ func NewGatewayService(
 	redis *db.RedisClient,
 	pg *db.PostgresDB,
 	rc *cache.ResponseCache,
+	permEngine *permission.PermissionEngine,
 	contentCapturePolicy string,
 	sloMaxTTFTMs int,
 	sloMaxTBTMs int,
@@ -74,6 +105,7 @@ func NewGatewayService(
 		redis:                redis,
 		pg:                   pg,
 		responseCache:        rc,
+		permEngine:           permEngine,
 		contentCapturePolicy: contentCapturePolicy,
 		sloMaxTTFTMs:         sloMaxTTFTMs,
 		sloMaxTBTMs:          sloMaxTBTMs,
@@ -387,6 +419,80 @@ func countMessagesToolCalls(messages []canonical.ChatMessage) int {
 	return count
 }
 
+func (g *GatewayService) checkTenantBoundary(ctx context.Context, apiKey *model.APIKey, requestedModel string) error {
+	if apiKey == nil || apiKey.TenantID == nil || g.pg == nil {
+		return nil
+	}
+
+	tenant, err := g.pg.GetTenantByID(*apiKey.TenantID)
+	if err != nil {
+		return &ErrPermissionDenied{
+			Message: "access denied: associated tenant not found",
+		}
+	}
+
+	if !tenant.IsActive {
+		return &ErrPermissionDenied{
+			Message: fmt.Sprintf("access denied: tenant %q is inactive", tenant.Name),
+		}
+	}
+
+	// Layer 1 System Boundary (contract / allowed_models)
+	if len(tenant.AllowedModels) > 0 {
+		allowed := false
+		for _, m := range tenant.AllowedModels {
+			if m == "*" || strings.EqualFold(m, requestedModel) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: tenant %q contract boundary restricts access to model %q", tenant.Name, requestedModel),
+			}
+		}
+	}
+
+	return nil
+}
+
+// reserveTenantHold performs Hold & Settle pre-flight reservation on RAM/Redis.
+// It prevents bad debt from concurrent requests by reserving worst-case cost against prepaid balance.
+func (g *GatewayService) reserveTenantHold(ctx context.Context, apiKey *model.APIKey, provider, modelName string, estimatedInputTokens, maxOutputTokens int) (float64, error) {
+	if apiKey == nil || apiKey.TenantID == nil || g.pg == nil {
+		return 0, nil
+	}
+
+	tenant, err := g.pg.GetTenantByID(*apiKey.TenantID)
+	if err != nil || tenant == nil {
+		return 0, nil
+	}
+
+	if tenant.BillingMode != "prepaid" {
+		return 0, nil
+	}
+
+	worstCaseCost := g.costCalc.EstimateMaxCost(provider, modelName, estimatedInputTokens, maxOutputTokens)
+
+	var currentHold float64
+	if g.redis != nil {
+		currentHold, _ = g.redis.GetTenantCreditHold(ctx, tenant.ID.String())
+	}
+
+	available := tenant.CreditBalance - currentHold
+	if available < worstCaseCost {
+		return 0, &ErrPaymentRequired{
+			Message: fmt.Sprintf("insufficient available credit balance ($%.4f available, $%.4f active hold, $%.4f required) for tenant %q; please top up", available, currentHold, worstCaseCost, tenant.Name),
+		}
+	}
+
+	if g.redis != nil {
+		_, _ = g.redis.AddTenantCreditHold(ctx, tenant.ID.String(), worstCaseCost, 5*time.Minute)
+	}
+
+	return worstCaseCost, nil
+}
+
 func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
 	startTime := time.Now()
 
@@ -406,9 +512,37 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		return fmt.Errorf("failed to decode request: %w", err)
 	}
 
+	// 1b. IAM & Key Model Permission Check
+	if g.permEngine != nil && params.ApiKey != nil {
+		// Evaluate per-key allowlist/denylist rules
+		allowed, pErr := g.permEngine.CheckKeyModelAccess(ctx, params.ApiKey.ID, canReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by API key policy", canReq.Model),
+			}
+		}
+
+		// Evaluate user IAM group policies
+		allowed, pErr = g.permEngine.CheckModelAccess(ctx, params.ApiKey.UserID, canReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by IAM group policy", canReq.Model),
+			}
+		}
+	}
+
+	// 1c. Multi-Tenant System Boundary Check (Layer 1 Contract)
+	if err := g.checkTenantBoundary(ctx, params.ApiKey, canReq.Model); err != nil {
+		return err
+	}
+
+	// Content-Agnostic Structural Tracing on OTel span
+	requestShape := telemetry.InspectPayloadShape(params.InboundFormat, params.RequestBody)
+
 	// Capture prompt event if policy allows
 	span := trace.SpanFromContext(ctx)
 	if span != nil && span.IsRecording() {
+		telemetry.SetGenAIShapeAttributes(span, requestShape)
 		telemetry.RecordPromptEvent(span, g.contentCapturePolicy, canReq.Messages)
 	}
 
@@ -452,6 +586,19 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	primaryTarget, err := g.resolveTarget(ctx, canReq.Model)
 	if err != nil {
 		return err
+	}
+
+	// 3b. Multi-Tenant Hold & Settle: Reserve worst-case cost against prepaid credit balance
+	heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, primaryTarget.Name, canReq.Model, len(params.RequestBody)/4, canReq.MaxTokens)
+	if hErr != nil {
+		return hErr
+	}
+	if heldAmount > 0 {
+		defer func() {
+			if g.redis != nil && params.ApiKey != nil && params.ApiKey.TenantID != nil {
+				_ = g.redis.ReleaseTenantCreditHold(context.Background(), params.ApiKey.TenantID.String(), heldAmount)
+			}
+		}()
 	}
 
 	targets := g.resolveFallbackChain(ctx, primaryTarget)
@@ -1093,8 +1240,11 @@ func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName
 	}
 
 	totalLatency := time.Since(startTime).Milliseconds()
+	shape := telemetry.InspectPayloadShape(params.InboundFormat, params.RequestBody)
+
 	logEntry := model.UsageLog{
 		CreatedAt:           time.Now(),
+		TenantID:            params.ApiKey.TenantID,
 		UserID:              params.ApiKey.UserID,
 		KeyID:               params.ApiKey.ID,
 		InboundFormat:       params.InboundFormat,
@@ -1114,9 +1264,17 @@ func (g *GatewayService) recordTelemetry(params ProxyParams, provider, modelName
 		TotalLatencyMs:      totalLatency,
 		StatusCode:          statusCode,
 		ErrorMessage:        errMsg,
+		RequestShape:        shape,
 	}
 
 	g.telemetry.Log(logEntry)
+
+	// Deduct prepaid tenant credit if applicable
+	if params.ApiKey.TenantID != nil && costResult.Cost > 0 && g.pg != nil {
+		go func(tid uuid.UUID, cost float64) {
+			_, _ = g.pg.DeductTenantCredit(tid, cost)
+		}(*params.ApiKey.TenantID, costResult.Cost)
+	}
 }
 
 // IsProviderKeyError reports whether err indicates a missing provider credential.
@@ -1135,6 +1293,28 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 	}
 	if err := json.Unmarshal(params.RequestBody, &embedReq); err != nil {
 		return fmt.Errorf("invalid embeddings payload: %w", err)
+	}
+
+	// 1b. IAM & Key Model Permission Check
+	if g.permEngine != nil && params.ApiKey != nil {
+		allowed, pErr := g.permEngine.CheckKeyModelAccess(ctx, params.ApiKey.ID, embedReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by API key policy", embedReq.Model),
+			}
+		}
+
+		allowed, pErr = g.permEngine.CheckModelAccess(ctx, params.ApiKey.UserID, embedReq.Model)
+		if pErr != nil || !allowed {
+			return &ErrPermissionDenied{
+				Message: fmt.Sprintf("access denied: model %q is not permitted by IAM group policy", embedReq.Model),
+			}
+		}
+	}
+
+	// 1c. Multi-Tenant System Boundary Check (Layer 1 Contract)
+	if err := g.checkTenantBoundary(ctx, params.ApiKey, embedReq.Model); err != nil {
+		return err
 	}
 
 	// 2. Resolve target provider
@@ -1174,6 +1354,19 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 			tokens = 1
 		}
 		promptTokens += tokens
+	}
+
+	// Multi-Tenant Hold & Settle: Reserve worst-case cost against prepaid credit balance
+	heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, target.Name, embedReq.Model, promptTokens, 0)
+	if hErr != nil {
+		return hErr
+	}
+	if heldAmount > 0 {
+		defer func() {
+			if g.redis != nil && params.ApiKey != nil && params.ApiKey.TenantID != nil {
+				_ = g.redis.ReleaseTenantCreditHold(context.Background(), params.ApiKey.TenantID.String(), heldAmount)
+			}
+		}()
 	}
 
 	// 5. Execute based on Provider protocol

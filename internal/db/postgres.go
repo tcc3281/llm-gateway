@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -15,7 +17,7 @@ import (
 	"llm-gateway/internal/model"
 
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 type PostgresDB struct {
@@ -82,36 +84,78 @@ func (p *PostgresDB) runMigrations() error {
 // User Repositories
 func (p *PostgresDB) CreateUser(user *model.User) error {
 	user.ID = uuid.New()
-	query := `INSERT INTO users (id, email, name, role) VALUES ($1, $2, $3, $4) RETURNING created_at, updated_at`
-	return p.QueryRow(query, user.ID, user.Email, user.Name, user.Role).Scan(&user.CreatedAt, &user.UpdatedAt)
+	if !user.IsActive {
+		user.IsActive = true
+	}
+	if user.TenantRole == "" {
+		user.TenantRole = "member"
+	}
+	query := `
+		INSERT INTO users (id, email, name, role, is_root, is_active, password_hash, tenant_id, tenant_role)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING created_at, updated_at`
+	return p.QueryRow(query, user.ID, user.Email, user.Name, user.Role, user.IsRoot, user.IsActive, user.PasswordHash, user.TenantID, user.TenantRole).Scan(&user.CreatedAt, &user.UpdatedAt)
 }
 
 func (p *PostgresDB) GetUserByID(id uuid.UUID) (*model.User, error) {
 	u := &model.User{}
-	query := `SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = $1`
-	err := p.QueryRow(query, id).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users WHERE id = $1`
+	err := p.QueryRow(query, id).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole)
 	if err != nil {
 		return nil, err
 	}
 	return u, nil
 }
 
+func (p *PostgresDB) GetUserByEmail(email string) (*model.User, error) {
+	u := &model.User{}
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users WHERE LOWER(email) = LOWER($1)`
+	err := p.QueryRow(query, email).Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func (p *PostgresDB) SetUserPassword(id uuid.UUID, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`
+	res, err := p.Exec(query, passwordHash, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return errors.New("user not found")
+	}
+	return nil
+}
+
+func (p *PostgresDB) UpdateUserStatus(id uuid.UUID, isActive bool) error {
+	query := `UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2`
+	_, err := p.Exec(query, isActive, id)
+	return err
+}
+
+
 // API Key Repositories
 func (p *PostgresDB) CreateAPIKey(key *model.APIKey) error {
 	key.ID = uuid.New()
 	query := `
-		INSERT INTO api_keys (id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO api_keys (id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, tenant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at`
-	return p.QueryRow(query, key.ID, key.UserID, key.KeyPrefix, key.KeyHash, key.Name, key.BudgetLimit, key.RateLimitRPM, key.CacheTTLSeconds, key.IsActive, key.ExpiresAt).Scan(&key.CreatedAt)
+	return p.QueryRow(query, key.ID, key.UserID, key.KeyPrefix, key.KeyHash, key.Name, key.BudgetLimit, key.RateLimitRPM, key.CacheTTLSeconds, key.IsActive, key.ExpiresAt, key.TenantID).Scan(&key.CreatedAt)
 }
 
 func (p *PostgresDB) GetAPIKeyByHash(keyHash string) (*model.APIKey, error) {
 	k := &model.APIKey{}
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys WHERE key_hash = $1 AND is_active = TRUE`
-	err := p.QueryRow(query, keyHash).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
+	err := p.QueryRow(query, keyHash).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +164,7 @@ func (p *PostgresDB) GetAPIKeyByHash(keyHash string) (*model.APIKey, error) {
 
 // Model Pricing Repositories
 func (p *PostgresDB) GetPricings() (map[string]model.ModelPricing, error) {
-	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, updated_at FROM model_pricings`
+	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, cache_read_price_per_1m, updated_at FROM model_pricings`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -130,7 +174,7 @@ func (p *PostgresDB) GetPricings() (map[string]model.ModelPricing, error) {
 	pricings := make(map[string]model.ModelPricing)
 	for rows.Next() {
 		var pr model.ModelPricing
-		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.UpdatedAt); err != nil {
+		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.CacheReadPricePer1M, &pr.UpdatedAt); err != nil {
 			return nil, err
 		}
 		// Key format: provider:model_name (e.g., "openai:gpt-4o")
@@ -141,7 +185,7 @@ func (p *PostgresDB) GetPricings() (map[string]model.ModelPricing, error) {
 }
 
 func (p *PostgresDB) GetAllModelsList() ([]model.ModelPricing, error) {
-	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, updated_at FROM model_pricings ORDER BY provider, model_name`
+	query := `SELECT id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, cache_read_price_per_1m, updated_at FROM model_pricings ORDER BY provider, model_name`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -151,7 +195,7 @@ func (p *PostgresDB) GetAllModelsList() ([]model.ModelPricing, error) {
 	list := make([]model.ModelPricing, 0)
 	for rows.Next() {
 		var pr model.ModelPricing
-		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.UpdatedAt); err != nil {
+		if err := rows.Scan(&pr.ID, &pr.Provider, &pr.ModelName, &pr.PromptPricePer1M, &pr.CompletionPricePer1M, &pr.CacheReadPricePer1M, &pr.UpdatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, pr)
@@ -164,14 +208,15 @@ func (p *PostgresDB) UpsertModelPricing(pr *model.ModelPricing) error {
 		pr.ID = uuid.New()
 	}
 	query := `
-		INSERT INTO model_pricings (id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, updated_at)
-		VALUES ($1, $2, $3, $4, $5, NOW())
+		INSERT INTO model_pricings (id, provider, model_name, prompt_price_per_1m, completion_price_per_1m, cache_read_price_per_1m, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (provider, model_name) DO UPDATE SET
 			prompt_price_per_1m = EXCLUDED.prompt_price_per_1m,
 			completion_price_per_1m = EXCLUDED.completion_price_per_1m,
+			cache_read_price_per_1m = EXCLUDED.cache_read_price_per_1m,
 			updated_at = NOW()
 		RETURNING updated_at`
-	return p.QueryRow(query, pr.ID, pr.Provider, pr.ModelName, pr.PromptPricePer1M, pr.CompletionPricePer1M).Scan(&pr.UpdatedAt)
+	return p.QueryRow(query, pr.ID, pr.Provider, pr.ModelName, pr.PromptPricePer1M, pr.CompletionPricePer1M, pr.CacheReadPricePer1M).Scan(&pr.UpdatedAt)
 }
 
 func (p *PostgresDB) DeleteModelPricing(id uuid.UUID) error {
@@ -235,7 +280,7 @@ func (p *PostgresDB) GetSpentCostByKeyID(keyID uuid.UUID) (float64, error) {
 
 // User Management
 func (p *PostgresDB) ListUsers() ([]model.User, error) {
-	query := `SELECT id, email, name, role, created_at, updated_at FROM users ORDER BY created_at DESC`
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users ORDER BY created_at DESC`
 	rows, err := p.Query(query)
 	if err != nil {
 		return nil, err
@@ -245,7 +290,7 @@ func (p *PostgresDB) ListUsers() ([]model.User, error) {
 	var users []model.User
 	for rows.Next() {
 		var u model.User
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -257,9 +302,9 @@ func (p *PostgresDB) ListUsers() ([]model.User, error) {
 func (p *PostgresDB) GetAPIKeyByID(id uuid.UUID) (*model.APIKey, error) {
 	k := &model.APIKey{}
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys WHERE id = $1`
-	err := p.QueryRow(query, id).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt)
+	err := p.QueryRow(query, id).Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +313,7 @@ func (p *PostgresDB) GetAPIKeyByID(id uuid.UUID) (*model.APIKey, error) {
 
 func (p *PostgresDB) ListAPIKeys() ([]model.APIKey, error) {
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys ORDER BY created_at DESC`
 	rows, err := p.Query(query)
 	if err != nil {
@@ -279,7 +324,7 @@ func (p *PostgresDB) ListAPIKeys() ([]model.APIKey, error) {
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
@@ -292,10 +337,15 @@ func (p *PostgresDB) DeactivateAPIKey(id uuid.UUID) error {
 	return err
 }
 
-// UpdateUser changes a user's name and/or role. Values are resolved by the
+// UpdateUser changes a user's name, role, and root status. Values are resolved by the
 // handler from the current record so unchanged fields are preserved.
-func (p *PostgresDB) UpdateUser(id uuid.UUID, name, role string) error {
-	_, err := p.Exec(`UPDATE users SET name = $2, role = $3, updated_at = NOW() WHERE id = $1`, id, name, role)
+func (p *PostgresDB) UpdateUser(id uuid.UUID, name, role string, isRoot bool) error {
+	_, err := p.Exec(`UPDATE users SET name = $2, role = $3, is_root = $4, updated_at = NOW() WHERE id = $1`, id, name, role, isRoot)
+	return err
+}
+
+func (p *PostgresDB) UpdateUserTenant(id uuid.UUID, tenantID *uuid.UUID, tenantRole string) error {
+	_, err := p.Exec(`UPDATE users SET tenant_id = $2, tenant_role = $3, updated_at = NOW() WHERE id = $1`, id, tenantID, tenantRole)
 	return err
 }
 
@@ -318,7 +368,7 @@ func (p *PostgresDB) ReactivateAPIKey(id uuid.UUID) error {
 
 func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error) {
 	query := `
-		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at
+		SELECT id, user_id, key_prefix, key_hash, name, budget_limit, rate_limit_rpm, cache_ttl_seconds, is_active, expires_at, created_at, tenant_id
 		FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`
 	rows, err := p.Query(query, userID)
 	if err != nil {
@@ -329,12 +379,31 @@ func (p *PostgresDB) ListAPIKeysByUser(userID uuid.UUID) ([]model.APIKey, error)
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyPrefix, &k.KeyHash, &k.Name, &k.BudgetLimit, &k.RateLimitRPM, &k.CacheTTLSeconds, &k.IsActive, &k.ExpiresAt, &k.CreatedAt, &k.TenantID); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)
 	}
 	return keys, nil
+}
+
+func (p *PostgresDB) ListTenantUsers(tenantID uuid.UUID) ([]model.User, error) {
+	query := `SELECT id, email, name, role, is_root, COALESCE(is_active, TRUE), COALESCE(password_hash, ''), created_at, updated_at, tenant_id, COALESCE(tenant_role, 'member') FROM users WHERE tenant_id = $1 ORDER BY created_at DESC`
+	rows, err := p.Query(query, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []model.User
+	for rows.Next() {
+		var u model.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt, &u.TenantID, &u.TenantRole); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
 }
 
 // Provider Key Repositories (stateful provider credentials)
@@ -436,8 +505,8 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 		INSERT INTO usage_logs 
 		(created_at, user_id, key_id, inbound_format, provider, model, prompt_tokens, completion_tokens, total_tokens, 
 		 cached_input_tokens, reasoning_tokens, prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
-		 cost, ttft_ms, total_latency_ms, status_code, error_message)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`)
+		 cost, ttft_ms, total_latency_ms, status_code, error_message, request_shape, tenant_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`)
 	if err != nil {
 		return err
 	}
@@ -447,11 +516,15 @@ func (p *PostgresDB) InsertUsageLogsBatch(logs []model.UsageLog) error {
 		if l.CreatedAt.IsZero() {
 			l.CreatedAt = time.Now()
 		}
+		var shapeBytes []byte
+		if l.RequestShape != nil {
+			shapeBytes, _ = json.Marshal(l.RequestShape)
+		}
 		_, err := stmt.Exec(
 			l.CreatedAt, l.UserID, l.KeyID, l.InboundFormat, l.Provider, l.Model,
 			l.PromptTokens, l.CompletionTokens, l.TotalTokens,
 			l.CachedInputTokens, l.ReasoningTokens, l.PromptPriceUsed, l.CompletionPriceUsed, l.PricingSource, l.PricingFallback,
-			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage,
+			l.Cost, l.TTFTMs, l.TotalLatencyMs, l.StatusCode, l.ErrorMessage, shapeBytes, l.TenantID,
 		)
 		if err != nil {
 			return err
@@ -786,7 +859,8 @@ func (p *PostgresDB) ListUsageLogs(f model.UsageLogFilter, limit, offset int) ([
 		       cached_input_tokens, reasoning_tokens,
 		       prompt_price_used, completion_price_used, pricing_source, pricing_fallback,
 		       cost, ttft_ms, total_latency_ms, status_code,
-		       COALESCE(error_message, '') AS error_message
+		       COALESCE(error_message, '') AS error_message,
+		       request_shape
 		FROM usage_logs
 		WHERE ` + where + `
 		ORDER BY created_at DESC
@@ -802,15 +876,22 @@ func (p *PostgresDB) ListUsageLogs(f model.UsageLogFilter, limit, offset int) ([
 	var logs []model.UsageLog
 	for rows.Next() {
 		var l model.UsageLog
+		var rawShape []byte
 		if err := rows.Scan(
 			&l.ID, &l.CreatedAt, &l.UserID, &l.KeyID, &l.InboundFormat, &l.Provider, &l.Model,
 			&l.PromptTokens, &l.CompletionTokens, &l.TotalTokens,
 			&l.CachedInputTokens, &l.ReasoningTokens,
 			&l.PromptPriceUsed, &l.CompletionPriceUsed, &l.PricingSource, &l.PricingFallback,
 			&l.Cost, &l.TTFTMs, &l.TotalLatencyMs, &l.StatusCode,
-			&l.ErrorMessage,
+			&l.ErrorMessage, &rawShape,
 		); err != nil {
 			return nil, err
+		}
+		if len(rawShape) > 0 {
+			var s model.RequestShape
+			if err := json.Unmarshal(rawShape, &s); err == nil {
+				l.RequestShape = &s
+			}
 		}
 		logs = append(logs, l)
 	}
@@ -871,6 +952,24 @@ func buildUsageLogWhere(f model.UsageLogFilter) (string, []interface{}) {
 		clauses = append(clauses, fmt.Sprintf("status_code < $%d", len(args)))
 	}
 
+	// Modality and structural filters
+	if f.Modality != "" && f.Modality != "all" {
+		args = append(args, f.Modality)
+		clauses = append(clauses, fmt.Sprintf("request_shape->>'modality' = $%d", len(args)))
+	}
+	if f.HasImages != nil {
+		args = append(args, *f.HasImages)
+		clauses = append(clauses, fmt.Sprintf("(request_shape->>'has_images')::boolean = $%d", len(args)))
+	}
+	if f.HasAudio != nil {
+		args = append(args, *f.HasAudio)
+		clauses = append(clauses, fmt.Sprintf("(request_shape->>'has_audio')::boolean = $%d", len(args)))
+	}
+	if f.StructureHash != "" {
+		args = append(args, f.StructureHash)
+		clauses = append(clauses, fmt.Sprintf("request_shape->>'structure_hash' = $%d", len(args)))
+	}
+
 	return strings.Join(clauses, " AND "), args
 }
 
@@ -885,24 +984,60 @@ func (p *PostgresDB) GetUsageLogByID(id int64) (*model.UsageLogDetail, error) {
 		       l.cost, l.ttft_ms, l.total_latency_ms, l.status_code,
 		       COALESCE(l.error_message, '') AS error_message,
 		       COALESCE(u.email, '') AS user_email,
-		       COALESCE(k.name, '') AS key_name
+		       COALESCE(k.name, '') AS key_name,
+		       l.request_shape
 		FROM usage_logs l
 		LEFT JOIN users u ON u.id = l.user_id
 		LEFT JOIN api_keys k ON k.id = l.key_id
 		WHERE l.id = $1`
 
 	var d model.UsageLogDetail
+	var rawShape []byte
 	if err := p.QueryRow(query, id).Scan(
 		&d.ID, &d.CreatedAt, &d.UserID, &d.KeyID, &d.InboundFormat, &d.Provider, &d.Model,
 		&d.PromptTokens, &d.CompletionTokens, &d.TotalTokens,
 		&d.CachedInputTokens, &d.ReasoningTokens,
 		&d.PromptPriceUsed, &d.CompletionPriceUsed, &d.PricingSource, &d.PricingFallback,
 		&d.Cost, &d.TTFTMs, &d.TotalLatencyMs, &d.StatusCode,
-		&d.ErrorMessage, &d.UserEmail, &d.KeyName,
+		&d.ErrorMessage, &d.UserEmail, &d.KeyName, &rawShape,
 	); err != nil {
 		return nil, err
 	}
+	if len(rawShape) > 0 {
+		var s model.RequestShape
+		if err := json.Unmarshal(rawShape, &s); err == nil {
+			d.RequestShape = &s
+		}
+	}
 	return &d, nil
+}
+
+// GetModalityBreakdown aggregates high-level request modalities across usage_logs.
+func (p *PostgresDB) GetModalityBreakdown(f model.DashboardFilter, from, to time.Time) (*model.ModalityBreakdown, error) {
+	where, args := buildDashboardWhere(f, from, to, "")
+	query := `
+		SELECT 
+			COUNT(*) FILTER (WHERE request_shape IS NULL OR (COALESCE((request_shape->>'has_images')::boolean, false) = false AND COALESCE((request_shape->>'has_audio')::boolean, false) AND COALESCE((request_shape->>'tool_calls_count')::int, 0) = 0)) AS text_only,
+			COUNT(*) FILTER (WHERE COALESCE((request_shape->>'has_images')::boolean, false) = true) AS vision,
+			COUNT(*) FILTER (WHERE COALESCE((request_shape->>'has_audio')::boolean, false) = true) AS audio,
+			COUNT(*) FILTER (WHERE COALESCE((request_shape->>'tool_calls_count')::int, 0) > 0 OR COALESCE((request_shape->>'tools_count')::int, 0) > 0) AS tool_calls,
+			COALESCE(SUM(COALESCE((request_shape->>'image_count')::int, 0)), 0) AS total_images,
+			COALESCE(SUM(COALESCE((request_shape->>'audio_count')::int, 0)), 0) AS total_audio
+		FROM usage_logs
+		WHERE ` + where
+
+	var b model.ModalityBreakdown
+	if err := p.QueryRow(query, args...).Scan(
+		&b.TextOnly,
+		&b.Vision,
+		&b.Audio,
+		&b.ToolCalls,
+		&b.TotalImages,
+		&b.TotalAudio,
+	); err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
 
 // parseStatusClass interprets a status filter. "200" → (200, 201, true);
@@ -924,3 +1059,856 @@ func parseStatusClass(s string) (int, int, bool) {
 	}
 	return code, code + 1, true
 }
+
+// ---------------------------------------------------------------------------
+// IAM: Groups Management
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) CreateGroup(g *model.Group) error {
+	g.ID = uuid.New()
+	query := `
+		INSERT INTO groups (id, name, description, budget_limit_monthly, rate_limit_rpm, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at, updated_at`
+	return p.QueryRow(query, g.ID, g.Name, g.Description, g.BudgetLimitMonthly, g.RateLimitRPM, g.IsActive).Scan(&g.CreatedAt, &g.UpdatedAt)
+}
+
+func (p *PostgresDB) GetGroupByID(id uuid.UUID) (*model.Group, error) {
+	g := &model.Group{}
+	query := `
+		SELECT g.id, g.name, COALESCE(g.description, ''), g.budget_limit_monthly, g.rate_limit_rpm, g.is_active, g.created_at, g.updated_at,
+		       COUNT(DISTINCT ug.user_id) AS member_count,
+		       COUNT(DISTINCT gp.id) AS policy_count
+		FROM groups g
+		LEFT JOIN user_groups ug ON ug.group_id = g.id
+		LEFT JOIN group_policies gp ON gp.group_id = g.id AND gp.is_active = TRUE
+		WHERE g.id = $1
+		GROUP BY g.id`
+	err := p.QueryRow(query, id).Scan(&g.ID, &g.Name, &g.Description, &g.BudgetLimitMonthly, &g.RateLimitRPM, &g.IsActive, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount, &g.PolicyCount)
+	if err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+func (p *PostgresDB) ListGroups() ([]model.Group, error) {
+	query := `
+		SELECT g.id, g.name, COALESCE(g.description, ''), g.budget_limit_monthly, g.rate_limit_rpm, g.is_active, g.created_at, g.updated_at,
+		       COUNT(DISTINCT ug.user_id) AS member_count,
+		       COUNT(DISTINCT gp.id) AS policy_count
+		FROM groups g
+		LEFT JOIN user_groups ug ON ug.group_id = g.id
+		LEFT JOIN group_policies gp ON gp.group_id = g.id AND gp.is_active = TRUE
+		GROUP BY g.id
+		ORDER BY g.created_at ASC`
+	rows, err := p.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []model.Group
+	for rows.Next() {
+		var g model.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.BudgetLimitMonthly, &g.RateLimitRPM, &g.IsActive, &g.CreatedAt, &g.UpdatedAt, &g.MemberCount, &g.PolicyCount); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
+func (p *PostgresDB) UpdateGroup(g *model.Group) error {
+	query := `
+		UPDATE groups
+		SET name = $2, description = $3, budget_limit_monthly = $4, rate_limit_rpm = $5, is_active = $6, updated_at = NOW()
+		WHERE id = $1`
+	_, err := p.Exec(query, g.ID, g.Name, g.Description, g.BudgetLimitMonthly, g.RateLimitRPM, g.IsActive)
+	return err
+}
+
+func (p *PostgresDB) DeleteGroup(id uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM groups WHERE id = $1`, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// IAM: Group Policies Management
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) CreateGroupPolicy(gp *model.GroupPolicy) error {
+	gp.ID = uuid.New()
+	query := `
+		INSERT INTO group_policies (id, group_id, name, policy, priority, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at`
+	return p.QueryRow(query, gp.ID, gp.GroupID, gp.Name, gp.Policy, gp.Priority, gp.IsActive).Scan(&gp.CreatedAt)
+}
+
+func (p *PostgresDB) GetGroupPolicies(groupID uuid.UUID) ([]model.GroupPolicy, error) {
+	query := `
+		SELECT id, group_id, name, policy, priority, is_active, created_at
+		FROM group_policies
+		WHERE group_id = $1
+		ORDER BY priority DESC, created_at ASC`
+	rows, err := p.Query(query, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var policies []model.GroupPolicy
+	for rows.Next() {
+		var gp model.GroupPolicy
+		if err := rows.Scan(&gp.ID, &gp.GroupID, &gp.Name, &gp.Policy, &gp.Priority, &gp.IsActive, &gp.CreatedAt); err != nil {
+			return nil, err
+		}
+		policies = append(policies, gp)
+	}
+	return policies, nil
+}
+
+func (p *PostgresDB) UpdateGroupPolicy(gp *model.GroupPolicy) error {
+	query := `
+		UPDATE group_policies
+		SET name = $2, policy = $3, priority = $4, is_active = $5
+		WHERE id = $1`
+	_, err := p.Exec(query, gp.ID, gp.Name, gp.Policy, gp.Priority, gp.IsActive)
+	return err
+}
+
+func (p *PostgresDB) DeleteGroupPolicy(id uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM group_policies WHERE id = $1`, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// IAM: User-Group Mapping
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) AddUserToGroup(userID, groupID uuid.UUID) error {
+	return p.AddUserToGroupWithRole(userID, groupID, "member")
+}
+
+func (p *PostgresDB) AddUserToGroupWithRole(userID, groupID uuid.UUID, role string) error {
+	if role == "" {
+		role = "member"
+	}
+	query := `
+		INSERT INTO user_groups (user_id, group_id, group_role)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, group_id) DO UPDATE SET group_role = EXCLUDED.group_role`
+	_, err := p.Exec(query, userID, groupID, role)
+	return err
+}
+
+func (p *PostgresDB) SetGroupMemberRole(userID, groupID uuid.UUID, role string) error {
+	if role != "admin" && role != "member" {
+		return fmt.Errorf("invalid group role: %s (must be 'admin' or 'member')", role)
+	}
+	query := `UPDATE user_groups SET group_role = $1 WHERE user_id = $2 AND group_id = $3`
+	res, err := p.Exec(query, role, userID, groupID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("user is not a member of this group")
+	}
+	return nil
+}
+
+func (p *PostgresDB) GetGroupMemberRole(userID, groupID uuid.UUID) (string, error) {
+	var role string
+	err := p.QueryRow(`SELECT COALESCE(group_role, 'member') FROM user_groups WHERE user_id = $1 AND group_id = $2`, userID, groupID).Scan(&role)
+	if err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+func (p *PostgresDB) IsUserGroupAdmin(userID, groupID uuid.UUID) (bool, error) {
+	role, err := p.GetGroupMemberRole(userID, groupID)
+	if err != nil {
+		return false, err
+	}
+	return role == "admin", nil
+}
+
+func (p *PostgresDB) GetUserAdminGroups(userID uuid.UUID) ([]model.Group, error) {
+	query := `
+		SELECT g.id, g.name, COALESCE(g.description, ''), g.budget_limit_monthly, g.rate_limit_rpm, g.is_active, g.created_at, g.updated_at
+		FROM groups g
+		JOIN user_groups ug ON ug.group_id = g.id
+		WHERE ug.user_id = $1 AND ug.group_role = 'admin' AND g.is_active = TRUE
+		ORDER BY g.name ASC`
+	rows, err := p.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []model.Group
+	for rows.Next() {
+		var g model.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.BudgetLimitMonthly, &g.RateLimitRPM, &g.IsActive, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
+func (p *PostgresDB) RemoveUserFromGroup(userID, groupID uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM user_groups WHERE user_id = $1 AND group_id = $2`, userID, groupID)
+	return err
+}
+
+func (p *PostgresDB) GetUserGroups(userID uuid.UUID) ([]model.Group, error) {
+	query := `
+		SELECT g.id, g.name, COALESCE(g.description, ''), g.budget_limit_monthly, g.rate_limit_rpm, g.is_active, g.created_at, g.updated_at
+		FROM groups g
+		JOIN user_groups ug ON ug.group_id = g.id
+		WHERE ug.user_id = $1 AND g.is_active = TRUE
+		ORDER BY g.name ASC`
+	rows, err := p.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []model.Group
+	for rows.Next() {
+		var g model.Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.BudgetLimitMonthly, &g.RateLimitRPM, &g.IsActive, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
+func (p *PostgresDB) GetGroupMembers(groupID uuid.UUID) ([]model.User, error) {
+	query := `
+		SELECT u.id, u.email, u.name, u.role, u.is_root, COALESCE(u.is_active, TRUE), COALESCE(u.password_hash, ''), COALESCE(ug.group_role, 'member'), u.created_at, u.updated_at
+		FROM users u
+		JOIN user_groups ug ON ug.user_id = u.id
+		WHERE ug.group_id = $1
+		ORDER BY (ug.group_role = 'admin') DESC, u.created_at DESC`
+	rows, err := p.Query(query, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []model.User
+	for rows.Next() {
+		var u model.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.IsRoot, &u.IsActive, &u.PasswordHash, &u.GroupRole, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+// ---------------------------------------------------------------------------
+// IAM: Key Model Restrictions (Allowlist / Denylist)
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) CreateKeyModelPolicy(kmp *model.KeyModelPolicy) error {
+	kmp.ID = uuid.New()
+	query := `
+		INSERT INTO key_model_policies (id, key_id, model_pattern, is_allowlist)
+		VALUES ($1, $2, $3, $4)
+		RETURNING created_at`
+	return p.QueryRow(query, kmp.ID, kmp.KeyID, kmp.ModelPattern, kmp.IsAllowlist).Scan(&kmp.CreatedAt)
+}
+
+func (p *PostgresDB) GetKeyModelPolicies(keyID uuid.UUID) ([]model.KeyModelPolicy, error) {
+	query := `
+		SELECT id, key_id, model_pattern, is_allowlist, created_at
+		FROM key_model_policies
+		WHERE key_id = $1
+		ORDER BY created_at ASC`
+	rows, err := p.Query(query, keyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var policies []model.KeyModelPolicy
+	for rows.Next() {
+		var kmp model.KeyModelPolicy
+		if err := rows.Scan(&kmp.ID, &kmp.KeyID, &kmp.ModelPattern, &kmp.IsAllowlist, &kmp.CreatedAt); err != nil {
+			return nil, err
+		}
+		policies = append(policies, kmp)
+	}
+	return policies, nil
+}
+
+func (p *PostgresDB) DeleteKeyModelPolicy(id uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM key_model_policies WHERE id = $1`, id)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// IAM: Audit Logging
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) CreateAuditLog(log *model.AuditLog) error {
+	query := `
+		INSERT INTO audit_logs (actor_id, actor_type, actor_ip, action, target_type, target_id, details)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, created_at`
+	var actorIP interface{} = nil
+	if log.ActorIP != "" {
+		actorIP = log.ActorIP
+	}
+	return p.QueryRow(query, log.ActorID, log.ActorType, actorIP, log.Action, log.TargetType, log.TargetID, log.Details).Scan(&log.ID, &log.CreatedAt)
+}
+
+func (p *PostgresDB) ListAuditLogs(filter model.AuditLogFilter) ([]model.AuditLog, int64, error) {
+	var where []string
+	var args []interface{}
+	idx := 1
+
+	if filter.ActorType != "" {
+		where = append(where, fmt.Sprintf("actor_type = $%d", idx))
+		args = append(args, filter.ActorType)
+		idx++
+	}
+	if filter.Action != "" {
+		where = append(where, fmt.Sprintf("action ILIKE $%d", idx))
+		args = append(args, "%"+filter.Action+"%")
+		idx++
+	}
+	if filter.TargetType != "" {
+		where = append(where, fmt.Sprintf("target_type = $%d", idx))
+		args = append(args, filter.TargetType)
+		idx++
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	var total int64
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM audit_logs %s", whereClause)
+	if err := p.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	limit := filter.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := filter.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, actor_id, actor_type, COALESCE(actor_ip::text, ''), action, COALESCE(target_type, ''), COALESCE(target_id, ''), details, created_at
+		FROM audit_logs
+		%s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d`, whereClause, idx, idx+1)
+	args = append(args, limit, offset)
+
+	rows, err := p.Query(query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var logs []model.AuditLog
+	for rows.Next() {
+		var l model.AuditLog
+		if err := rows.Scan(&l.ID, &l.ActorID, &l.ActorType, &l.ActorIP, &l.Action, &l.TargetType, &l.TargetID, &l.Details, &l.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		logs = append(logs, l)
+	}
+
+	return logs, total, nil
+}
+
+// ---------------------------------------------------------------------------
+// IAM: Member & Team Usage Analytics ("ai dùng gì, dùng bao nhiêu")
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) GetMemberUsageAnalytics(from, to time.Time, groupIDFilter string, searchFilter string) (*model.AnalyticsMembersResponse, error) {
+	resp := &model.AnalyticsMembersResponse{
+		Members: make([]model.MemberUsageSummary, 0),
+		Teams:   make([]model.TeamUsageSummary, 0),
+	}
+
+	// 1. Fetch Users matching criteria
+	userQuery := `
+		SELECT u.id, u.email, u.name, u.role, u.is_root, COALESCE(u.is_active, TRUE),
+		       COALESCE(ARRAY_AGG(DISTINCT g.name) FILTER (WHERE g.name IS NOT NULL), '{}') AS groups
+		FROM users u
+		LEFT JOIN user_groups ug ON ug.user_id = u.id
+		LEFT JOIN groups g ON g.id = ug.group_id
+		WHERE ($1 = '' OR ug.group_id::text = $1)
+		  AND ($2 = '' OR LOWER(u.email) LIKE LOWER('%' || $2 || '%') OR LOWER(u.name) LIKE LOWER('%' || $2 || '%'))
+		GROUP BY u.id, u.email, u.name, u.role, u.is_root, u.is_active
+		ORDER BY u.name ASC, u.email ASC`
+
+	uRows, err := p.Query(userQuery, groupIDFilter, searchFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer uRows.Close()
+
+	type memberInfo struct {
+		summary model.MemberUsageSummary
+	}
+	membersMap := make(map[uuid.UUID]*memberInfo)
+	orderedUserIDs := make([]uuid.UUID, 0)
+
+	for uRows.Next() {
+		var m model.MemberUsageSummary
+		if err := uRows.Scan(&m.UserID, &m.Email, &m.Name, &m.Role, &m.IsRoot, &m.IsActive, pq.Array(&m.Groups)); err != nil {
+			return nil, err
+		}
+		m.TopModels = make([]model.UserModelUsage, 0)
+		membersMap[m.UserID] = &memberInfo{summary: m}
+		orderedUserIDs = append(orderedUserIDs, m.UserID)
+	}
+
+	// 2. Fetch User API Key Budget limits
+	budgetQuery := `SELECT user_id, COALESCE(MAX(budget_limit), 0) FROM api_keys GROUP BY user_id`
+	bRows, err := p.Query(budgetQuery)
+	if err == nil {
+		defer bRows.Close()
+		for bRows.Next() {
+			var uid uuid.UUID
+			var limit float64
+			if err := bRows.Scan(&uid, &limit); err == nil {
+				if info, exists := membersMap[uid]; exists {
+					info.summary.BudgetLimit = limit
+				}
+			}
+		}
+	}
+
+	// 3. Fetch User Usage Aggregates for [from, to]
+	usageQuery := `
+		SELECT user_id,
+		       COUNT(*) AS total_requests,
+		       COALESCE(SUM(cost), 0) AS total_cost,
+		       COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
+		       COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2
+		GROUP BY user_id`
+
+	usgRows, err := p.Query(usageQuery, from, to)
+	if err == nil {
+		defer usgRows.Close()
+		for usgRows.Next() {
+			var uid uuid.UUID
+			var reqs, pt, ct int64
+			var cost float64
+			if err := usgRows.Scan(&uid, &reqs, &cost, &pt, &ct); err == nil {
+				if info, exists := membersMap[uid]; exists {
+					info.summary.TotalRequests = reqs
+					info.summary.TotalCost = cost
+					info.summary.SumPromptTokens = pt
+					info.summary.SumCompletionTokens = ct
+					if info.summary.BudgetLimit > 0 {
+						info.summary.BudgetUsedPercent = (cost / info.summary.BudgetLimit) * 100
+					}
+				}
+			}
+		}
+	}
+
+	// 4. Fetch Top Models per user (Top 3)
+	topModelQuery := `
+		SELECT user_id, model,
+		       COUNT(*) AS reqs,
+		       COALESCE(SUM(cost), 0) AS cost,
+		       COALESCE(SUM(prompt_tokens), 0) AS pt,
+		       COALESCE(SUM(completion_tokens), 0) AS ct
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2
+		GROUP BY user_id, model
+		ORDER BY user_id, reqs DESC`
+
+	tmRows, err := p.Query(topModelQuery, from, to)
+	if err == nil {
+		defer tmRows.Close()
+		for tmRows.Next() {
+			var uid uuid.UUID
+			var mu model.UserModelUsage
+			if err := tmRows.Scan(&uid, &mu.Model, &mu.TotalRequests, &mu.TotalCost, &mu.SumPromptTokens, &mu.SumCompletionTokens); err == nil {
+				if info, exists := membersMap[uid]; exists {
+					if len(info.summary.TopModels) < 3 {
+						info.summary.TopModels = append(info.summary.TopModels, mu)
+					}
+				}
+			}
+		}
+	}
+
+	// Assemble members list
+	for _, uid := range orderedUserIDs {
+		resp.Members = append(resp.Members, membersMap[uid].summary)
+	}
+
+	// 5. Team Aggregation
+	teamQuery := `
+		SELECT g.id, g.name, COALESCE(g.description, ''), COALESCE(g.budget_limit_monthly, 0),
+		       COUNT(DISTINCT ug.user_id) AS member_count,
+		       COUNT(l.id) AS total_requests,
+		       COALESCE(SUM(l.cost), 0) AS total_cost
+		FROM groups g
+		LEFT JOIN user_groups ug ON ug.group_id = g.id
+		LEFT JOIN usage_logs l ON l.user_id = ug.user_id AND l.created_at >= $1 AND l.created_at <= $2
+		WHERE g.is_active = TRUE
+		GROUP BY g.id, g.name, g.description, g.budget_limit_monthly
+		ORDER BY total_cost DESC`
+
+	tRows, err := p.Query(teamQuery, from, to)
+	if err == nil {
+		defer tRows.Close()
+		for tRows.Next() {
+			var t model.TeamUsageSummary
+			if err := tRows.Scan(&t.GroupID, &t.GroupName, &t.Description, &t.BudgetLimitMonthly, &t.MemberCount, &t.TotalRequests, &t.TotalCost); err == nil {
+				if t.BudgetLimitMonthly > 0 {
+					t.UtilizationPercent = (t.TotalCost / t.BudgetLimitMonthly) * 100
+				}
+				resp.Teams = append(resp.Teams, t)
+				resp.Summary.BudgetLimit += t.BudgetLimitMonthly
+			}
+		}
+	}
+
+	// 6. Overall KPI Summary
+	summaryQuery := `
+		SELECT COUNT(DISTINCT user_id) AS active_members,
+		       COALESCE(SUM(cost), 0) AS total_spend,
+		       COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS total_tokens
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2`
+
+	_ = p.QueryRow(summaryQuery, from, to).Scan(
+		&resp.Summary.ActiveMembers,
+		&resp.Summary.TotalSpend,
+		&resp.Summary.TotalTokens,
+	)
+
+	// Top model overall
+	topOverallQuery := `
+		SELECT model FROM usage_logs
+		WHERE created_at >= $1 AND created_at <= $2
+		GROUP BY model ORDER BY COUNT(*) DESC LIMIT 1`
+	_ = p.QueryRow(topOverallQuery, from, to).Scan(&resp.Summary.TopModel)
+	if resp.Summary.TopModel == "" {
+		resp.Summary.TopModel = "n/a"
+	}
+
+	return resp, nil
+}
+
+func (p *PostgresDB) GetMemberDetail(userID uuid.UUID, from, to time.Time) (*model.MemberDetailResponse, error) {
+	resp := &model.MemberDetailResponse{
+		ModelDetails: make([]model.UserModelUsage, 0),
+		DailyTrends:  make([]model.UsageSeriesPoint, 0),
+	}
+
+	// 1. User base info
+	u, err := p.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	groups, _ := p.GetUserGroups(userID)
+	groupNames := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupNames = append(groupNames, g.Name)
+	}
+
+	resp.Member.UserID = u.ID
+	resp.Member.Email = u.Email
+	resp.Member.Name = u.Name
+	resp.Member.Role = u.Role
+	resp.Member.IsRoot = u.IsRoot
+	resp.Member.IsActive = u.IsActive
+	resp.Member.Groups = groupNames
+	resp.Member.TopModels = make([]model.UserModelUsage, 0)
+
+	// 2. Budget Limit
+	_ = p.QueryRow(`SELECT COALESCE(MAX(budget_limit), 0) FROM api_keys WHERE user_id = $1`, userID).Scan(&resp.Member.BudgetLimit)
+
+	// 3. User usage totals
+	totalsQuery := `
+		SELECT COUNT(*), COALESCE(SUM(cost), 0), COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0)
+		FROM usage_logs
+		WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3`
+	_ = p.QueryRow(totalsQuery, userID, from, to).Scan(
+		&resp.Member.TotalRequests,
+		&resp.Member.TotalCost,
+		&resp.Member.SumPromptTokens,
+		&resp.Member.SumCompletionTokens,
+	)
+	if resp.Member.BudgetLimit > 0 {
+		resp.Member.BudgetUsedPercent = (resp.Member.TotalCost / resp.Member.BudgetLimit) * 100
+	}
+
+	// 4. Model details breakdown
+	modelQuery := `
+		SELECT model,
+		       COUNT(*) AS reqs,
+		       COALESCE(SUM(cost), 0) AS cost,
+		       COALESCE(SUM(prompt_tokens), 0) AS pt,
+		       COALESCE(SUM(completion_tokens), 0) AS ct
+		FROM usage_logs
+		WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
+		GROUP BY model
+		ORDER BY cost DESC`
+
+	mRows, err := p.Query(modelQuery, userID, from, to)
+	if err == nil {
+		defer mRows.Close()
+		for mRows.Next() {
+			var mu model.UserModelUsage
+			if err := mRows.Scan(&mu.Model, &mu.TotalRequests, &mu.TotalCost, &mu.SumPromptTokens, &mu.SumCompletionTokens); err == nil {
+				resp.ModelDetails = append(resp.ModelDetails, mu)
+				if len(resp.Member.TopModels) < 3 {
+					resp.Member.TopModels = append(resp.Member.TopModels, mu)
+				}
+			}
+		}
+	}
+
+	// 5. Daily trends
+	trendQuery := `
+		SELECT date_trunc('day', created_at) AS bucket,
+		       COUNT(*) AS total_requests,
+		       COALESCE(SUM(cost), 0) AS total_cost,
+		       COALESCE(SUM(prompt_tokens), 0) AS sum_prompt_tokens,
+		       COALESCE(SUM(completion_tokens), 0) AS sum_completion_tokens,
+		       0 AS sum_cached_tokens,
+		       0 AS sum_reasoning_tokens,
+		       COALESCE(COUNT(*) FILTER (WHERE status_code >= 400), 0) AS error_count,
+		       0 AS avg_ttft_ms,
+		       COALESCE(ROUND(AVG(total_latency_ms), 2), 0) AS avg_latency_ms
+		FROM usage_logs
+		WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
+		GROUP BY bucket
+		ORDER BY bucket ASC`
+
+	trRows, err := p.Query(trendQuery, userID, from, to)
+	if err == nil {
+		defer trRows.Close()
+		for trRows.Next() {
+			var pt model.UsageSeriesPoint
+			if err := trRows.Scan(&pt.TimeBucket, &pt.TotalRequests, &pt.TotalCost, &pt.SumPromptTokens, &pt.SumCompletionTokens, &pt.SumCachedTokens, &pt.SumReasoningTokens, &pt.ErrorCount, &pt.AvgTTFTMs, &pt.AvgLatencyMs); err == nil {
+				resp.DailyTrends = append(resp.DailyTrends, pt)
+			}
+		}
+	}
+
+	return resp, nil
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Tenant B2B Database Operations
+// ---------------------------------------------------------------------------
+
+func (p *PostgresDB) CreateTenant(t *model.Tenant) error {
+	t.ID = uuid.New()
+	if t.AllowedModels == nil {
+		t.AllowedModels = []string{"*"}
+	}
+	if t.BillingMode == "" {
+		t.BillingMode = "prepaid"
+	}
+	if t.Type == "" {
+		t.Type = "external"
+	}
+
+	query := `
+		INSERT INTO tenants (id, name, type, billing_mode, credit_balance, budget_limit_monthly, allowed_models, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at, updated_at`
+	return p.QueryRow(query, t.ID, t.Name, t.Type, t.BillingMode, t.CreditBalance, t.BudgetLimitMonthly, pq.Array(t.AllowedModels), t.IsActive).
+		Scan(&t.CreatedAt, &t.UpdatedAt)
+}
+
+func (p *PostgresDB) GetTenantByID(id uuid.UUID) (*model.Tenant, error) {
+	query := `
+		SELECT id, name, type, billing_mode, credit_balance, budget_limit_monthly, allowed_models, is_active, created_at, updated_at
+		FROM tenants WHERE id = $1`
+	var t model.Tenant
+	err := p.QueryRow(query, id).Scan(
+		&t.ID, &t.Name, &t.Type, &t.BillingMode, &t.CreditBalance, &t.BudgetLimitMonthly, pq.Array(&t.AllowedModels), &t.IsActive, &t.CreatedAt, &t.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (p *PostgresDB) ListTenants() ([]model.Tenant, error) {
+	query := `
+		SELECT id, name, type, billing_mode, credit_balance, budget_limit_monthly, allowed_models, is_active, created_at, updated_at
+		FROM tenants ORDER BY created_at DESC`
+	rows, err := p.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tenants []model.Tenant
+	for rows.Next() {
+		var t model.Tenant
+		if err := rows.Scan(&t.ID, &t.Name, &t.Type, &t.BillingMode, &t.CreditBalance, &t.BudgetLimitMonthly, pq.Array(&t.AllowedModels), &t.IsActive, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tenants = append(tenants, t)
+	}
+	return tenants, nil
+}
+
+func (p *PostgresDB) UpdateTenant(id uuid.UUID, patch *model.TenantPatch) error {
+	sets := []string{"updated_at = NOW()"}
+	args := []interface{}{id}
+	idx := 2
+
+	if patch.Name != nil {
+		sets = append(sets, fmt.Sprintf("name = $%d", idx))
+		args = append(args, *patch.Name)
+		idx++
+	}
+	if patch.Type != nil {
+		sets = append(sets, fmt.Sprintf("type = $%d", idx))
+		args = append(args, *patch.Type)
+		idx++
+	}
+	if patch.BillingMode != nil {
+		sets = append(sets, fmt.Sprintf("billing_mode = $%d", idx))
+		args = append(args, *patch.BillingMode)
+		idx++
+	}
+	if patch.BudgetLimitMonthly != nil {
+		sets = append(sets, fmt.Sprintf("budget_limit_monthly = $%d", idx))
+		args = append(args, *patch.BudgetLimitMonthly)
+		idx++
+	}
+	if patch.AllowedModels != nil {
+		sets = append(sets, fmt.Sprintf("allowed_models = $%d", idx))
+		args = append(args, pq.Array(*patch.AllowedModels))
+		idx++
+	}
+	if patch.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", idx))
+		args = append(args, *patch.IsActive)
+		idx++
+	}
+
+	query := fmt.Sprintf("UPDATE tenants SET %s WHERE id = $1", strings.Join(sets, ", "))
+	_, err := p.Exec(query, args...)
+	return err
+}
+
+func (p *PostgresDB) DeleteTenant(id uuid.UUID) error {
+	_, err := p.Exec(`DELETE FROM tenants WHERE id = $1`, id)
+	return err
+}
+
+func (p *PostgresDB) TopUpTenantCredit(tenantID uuid.UUID, amount float64, txType, contractRef, notes string, createdBy *uuid.UUID) (*model.TenantCreditTransaction, error) {
+	tx, err := p.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var newBalance float64
+	err = tx.QueryRow(`
+		UPDATE tenants
+		SET credit_balance = credit_balance + $1, updated_at = NOW()
+		WHERE id = $2
+		RETURNING credit_balance`, amount, tenantID).Scan(&newBalance)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update tenant balance: %w", err)
+	}
+
+	var transaction model.TenantCreditTransaction
+	transaction.TenantID = tenantID
+	transaction.Amount = amount
+	transaction.BalanceAfter = newBalance
+	transaction.Type = txType
+	transaction.ContractRef = contractRef
+	transaction.Notes = notes
+	transaction.CreatedBy = createdBy
+
+	err = tx.QueryRow(`
+		INSERT INTO tenant_credit_transactions (tenant_id, amount, balance_after, type, contract_ref, notes, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, created_at`,
+		tenantID, amount, newBalance, txType, contractRef, notes, createdBy,
+	).Scan(&transaction.ID, &transaction.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to record credit transaction: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+func (p *PostgresDB) DeductTenantCredit(tenantID uuid.UUID, cost float64) (float64, error) {
+	var newBalance float64
+	err := p.QueryRow(`
+		UPDATE tenants
+		SET credit_balance = credit_balance - $1, updated_at = NOW()
+		WHERE id = $2
+		RETURNING credit_balance`, cost, tenantID).Scan(&newBalance)
+	if err != nil {
+		return 0, err
+	}
+	return newBalance, nil
+}
+
+func (p *PostgresDB) ListTenantTransactions(tenantID uuid.UUID, limit, offset int) ([]model.TenantCreditTransaction, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var total int
+	err := p.QueryRow(`SELECT COUNT(*) FROM tenant_credit_transactions WHERE tenant_id = $1`, tenantID).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT id, tenant_id, amount, balance_after, type, COALESCE(contract_ref, ''), COALESCE(notes, ''), created_by, created_at
+		FROM tenant_credit_transactions
+		WHERE tenant_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+	rows, err := p.Query(query, tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var txs []model.TenantCreditTransaction
+	for rows.Next() {
+		var tx model.TenantCreditTransaction
+		if err := rows.Scan(&tx.ID, &tx.TenantID, &tx.Amount, &tx.BalanceAfter, &tx.Type, &tx.ContractRef, &tx.Notes, &tx.CreatedBy, &tx.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		txs = append(txs, tx)
+	}
+	return txs, total, nil
+}
+
+

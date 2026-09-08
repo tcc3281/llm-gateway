@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { APIKey, User } from "../api/types";
+import type { APIKey, KeyModelPolicy, User } from "../api/types";
 import { fmtDate, fmtMoney, fmtNum } from "../lib/format";
 import Modal from "../components/Modal";
 
@@ -40,6 +40,54 @@ export default function ApiKeys() {
     key: APIKey;
     action: "revoke" | "reactivate";
   } | null>(null);
+
+  const [modelTarget, setModelTarget] = useState<APIKey | null>(null);
+  const [modelPolicies, setModelPolicies] = useState<KeyModelPolicy[]>([]);
+  const [newModelPattern, setNewModelPattern] = useState("");
+  const [newIsAllowlist, setNewIsAllowlist] = useState(true);
+  const [modelPolicyLoading, setModelPolicyLoading] = useState(false);
+
+  const openModelRules = async (k: APIKey) => {
+    setModelTarget(k);
+    setNewModelPattern("");
+    setNewIsAllowlist(true);
+    try {
+      setModelPolicyLoading(true);
+      const res = await api.listKeyModelPolicies(k.id);
+      setModelPolicies(res);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to load model rules");
+    } finally {
+      setModelPolicyLoading(false);
+    }
+  };
+
+  const handleAddModelRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modelTarget || !newModelPattern.trim()) return;
+    try {
+      await api.createKeyModelPolicy(modelTarget.id, {
+        model_pattern: newModelPattern.trim(),
+        is_allowlist: newIsAllowlist,
+      });
+      setNewModelPattern("");
+      const res = await api.listKeyModelPolicies(modelTarget.id);
+      setModelPolicies(res);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to add model rule");
+    }
+  };
+
+  const handleDeleteModelRule = async (policyId: string) => {
+    if (!modelTarget) return;
+    try {
+      await api.deleteKeyModelPolicy(modelTarget.id, policyId);
+      const res = await api.listKeyModelPolicies(modelTarget.id);
+      setModelPolicies(res);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to remove model rule");
+    }
+  };
 
   const load = useCallback(async () => {
     setError(null);
@@ -202,6 +250,12 @@ export default function ApiKeys() {
                   <div className="table__actions">
                     <button
                       className="btn btn--sm"
+                      onClick={() => openModelRules(k)}
+                    >
+                      Models
+                    </button>
+                    <button
+                      className="btn btn--sm"
                       onClick={() => {
                         setEditTarget(k);
                         setEditForm({
@@ -343,6 +397,123 @@ export default function ApiKeys() {
               ? `Revoke ${confirmTarget.key.name || confirmTarget.key.key_prefix}? Revoked keys stop working immediately (Redis cache is invalidated).`
               : `Re-enable ${confirmTarget.key.name || confirmTarget.key.key_prefix}?`}
           </p>
+        </Modal>
+      )}
+
+      {modelTarget && (
+        <Modal
+          title={`Model Restrictions: ${modelTarget.name || modelTarget.key_prefix}`}
+          onClose={() => setModelTarget(null)}
+          footer={
+            <button className="btn btn--secondary" onClick={() => setModelTarget(null)}>
+              Done
+            </button>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Configure per-key allowlist (whitelist) or denylist (blacklist) wildcard rules (e.g. <code>gpt-4o</code>, <code>claude-*</code>).
+              If allowlist rules exist, the key may only access models matching at least one allowlist rule. Denylist rules always reject matching models.
+            </p>
+
+            {/* Add Rule Form */}
+            <form
+              onSubmit={handleAddModelRule}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "2fr 1.2fr auto",
+                gap: 8,
+                background: "var(--surface-high)",
+                padding: 12,
+                borderRadius: 6,
+                border: "1px solid var(--border)",
+                alignItems: "end",
+              }}
+            >
+              <div className="field" style={{ margin: 0 }}>
+                <label className="field__label">Model Pattern</label>
+                <input
+                  className="input"
+                  required
+                  placeholder="e.g. claude-* or gpt-4o"
+                  value={newModelPattern}
+                  onChange={(e) => setNewModelPattern(e.target.value)}
+                />
+              </div>
+
+              <div className="field" style={{ margin: 0 }}>
+                <label className="field__label">Rule Type</label>
+                <select
+                  className="select"
+                  value={newIsAllowlist ? "allow" : "deny"}
+                  onChange={(e) => setNewIsAllowlist(e.target.value === "allow")}
+                >
+                  <option value="allow">Allowlist (Only this)</option>
+                  <option value="deny">Denylist (Block this)</option>
+                </select>
+              </div>
+
+              <button type="submit" className="btn btn--primary" style={{ height: 38 }}>
+                Add Rule
+              </button>
+            </form>
+
+            {/* Rules List */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
+              <table className="table" style={{ margin: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Pattern</th>
+                    <th>Type</th>
+                    <th style={{ textAlign: "right" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modelPolicyLoading ? (
+                    <tr>
+                      <td colSpan={3} className="empty">Loading rules…</td>
+                    </tr>
+                  ) : modelPolicies.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="empty">
+                        No model restrictions configured (all models allowed by default subject to user IAM policies).
+                      </td>
+                    </tr>
+                  ) : (
+                    modelPolicies.map((p) => (
+                      <tr key={p.id}>
+                        <td className="mono font-bold">{p.model_pattern}</td>
+                        <td>
+                          <span
+                            className="mono"
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 8px",
+                              borderRadius: 4,
+                              background: p.is_allowlist ? "rgba(16, 185, 129, 0.12)" : "rgba(248, 113, 113, 0.12)",
+                              color: p.is_allowlist ? "var(--emerald)" : "var(--danger)",
+                              border: `1px solid ${p.is_allowlist ? "rgba(16, 185, 129, 0.3)" : "rgba(248, 113, 113, 0.3)"}`,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {p.is_allowlist ? "ALLOWLIST" : "DENYLIST"}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: "right" }}>
+                          <button
+                            className="btn btn--sm btn--danger"
+                            onClick={() => handleDeleteModelRule(p.id)}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

@@ -1,15 +1,29 @@
 import type {
+  ActionDef,
+  AnalyticsMembersResponse,
   APIKey,
+  AuditLogsPage,
   DashboardStats,
+  Group,
+  GroupPolicy,
+  KeyModelPolicy,
+  LoginResponse,
+  MemberDetailResponse,
   ModelPricing,
   ProviderKey,
   SystemInfo,
+  Tenant,
+  TenantCreditTransaction,
+  TenantPatch,
+  TenantTransactionsPage,
+  TopUpCreditRequest,
   UsageLogDetail,
   UsageLogsPage,
   User,
 } from "./types";
 
 const KEY_STORAGE = "llmgw_admin_key";
+const USER_STORAGE = "llmgw_user_info";
 
 export function getAdminKey(): string | null {
   return localStorage.getItem(KEY_STORAGE);
@@ -19,6 +33,21 @@ export function setAdminKey(key: string) {
 }
 export function clearAdminKey() {
   localStorage.removeItem(KEY_STORAGE);
+  localStorage.removeItem(USER_STORAGE);
+}
+
+export function getStoredUser(): LoginResponse["user"] | null {
+  const str = localStorage.getItem(USER_STORAGE);
+  if (!str) return null;
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredUser(u: LoginResponse["user"]) {
+  localStorage.setItem(USER_STORAGE, JSON.stringify(u));
 }
 
 export class ApiError extends Error {
@@ -34,7 +63,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> | undefined),
   };
-  headers["X-Admin-API-Key"] = key ?? "";
+  if (key) {
+    headers["X-Admin-API-Key"] = key;
+    headers["Authorization"] = `Bearer ${key}`;
+  }
   if (typeof options.body === "string") {
     headers["Content-Type"] = "application/json";
   }
@@ -71,9 +103,9 @@ export interface CreateKeyResult {
 export const api = {
   // Users
   listUsers: () => request<User[]>("/admin/users"),
-  createUser: (u: { email: string; name: string; role?: string }) =>
+  createUser: (u: { email: string; name: string; role?: string; is_root?: boolean; tenant_id?: string | null; tenant_role?: string }) =>
     request<User>("/admin/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: { name?: string; role?: string }) =>
+  updateUser: (id: string, patch: { name?: string; role?: string; is_root?: boolean; tenant_id?: string | null; tenant_role?: string }) =>
     request<User>(`/admin/users?id=${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -142,6 +174,7 @@ export const api = {
     model_name: string;
     prompt_price_per_1m: number;
     completion_price_per_1m: number;
+    cache_read_price_per_1m?: number | null;
   }) =>
     request<ModelPricing>("/admin/models", {
       method: "POST",
@@ -184,6 +217,10 @@ export const api = {
     model?: string;
     status?: string;
     inbound?: string;
+    modality?: string;
+    has_images?: boolean;
+    has_audio?: boolean;
+    structure_hash?: string;
     limit?: number;
     offset?: number;
   }) =>
@@ -192,6 +229,159 @@ export const api = {
     ),
   getLog: (id: number | string) => request<UsageLogDetail>(`/admin/logs/${id}`),
 
+  // Key Model Policies
+  listKeyModelPolicies: (keyId: string) =>
+    request<KeyModelPolicy[]>(`/admin/keys/${keyId}/models`),
+  createKeyModelPolicy: (keyId: string, p: { model_pattern: string; is_allowlist?: boolean }) =>
+    request<KeyModelPolicy>(`/admin/keys/${keyId}/models`, {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  deleteKeyModelPolicy: (keyId: string, policyId: string) =>
+    request<{ message: string }>(`/admin/keys/${keyId}/models/${policyId}`, {
+      method: "DELETE",
+    }),
+
+  // Groups & IAM
+  listGroups: () => request<Group[]>("/admin/groups"),
+  createGroup: (g: {
+    name: string;
+    description?: string;
+    budget_limit_monthly?: number;
+    rate_limit_rpm?: number;
+    is_active?: boolean;
+  }) =>
+    request<Group>("/admin/groups", {
+      method: "POST",
+      body: JSON.stringify(g),
+    }),
+  getGroup: (id: string) => request<Group>(`/admin/groups/${id}`),
+  updateGroup: (id: string, patch: Partial<Group>) =>
+    request<Group>(`/admin/groups/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteGroup: (id: string) =>
+    request<{ message: string }>(`/admin/groups/${id}`, { method: "DELETE" }),
+
+  // Group Policies
+  listGroupPolicies: (groupId: string) =>
+    request<GroupPolicy[]>(`/admin/groups/${groupId}/policies`),
+  createGroupPolicy: (
+    groupId: string,
+    p: { name: string; policy: any; priority?: number; is_active?: boolean },
+  ) =>
+    request<GroupPolicy>(`/admin/groups/${groupId}/policies`, {
+      method: "POST",
+      body: JSON.stringify(p),
+    }),
+  updateGroupPolicy: (
+    groupId: string,
+    policyId: string,
+    p: { name?: string; policy: any; priority?: number; is_active?: boolean },
+  ) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/policies/${policyId}`, {
+      method: "PATCH",
+      body: JSON.stringify(p),
+    }),
+  deleteGroupPolicy: (groupId: string, policyId: string) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/policies/${policyId}`, {
+      method: "DELETE",
+    }),
+  getIAMActions: () => request<ActionDef[]>("/admin/iam/actions"),
+
+  // Group Members
+  listGroupMembers: (groupId: string) =>
+    request<User[]>(`/admin/groups/${groupId}/members`),
+  addGroupMember: (groupId: string, userId: string, role?: "member" | "admin") =>
+    request<{ message: string }>(`/admin/groups/${groupId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, role: role || "member" }),
+    }),
+  setGroupMemberRole: (groupId: string, userId: string, role: "member" | "admin") =>
+    request<{ message: string }>(`/admin/groups/${groupId}/members/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }),
+  removeGroupMember: (groupId: string, userId: string) =>
+    request<{ message: string }>(`/admin/groups/${groupId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
+  // Audit Logs
+  auditLogs: (params: {
+    actor_type?: string;
+    action?: string;
+    target_type?: string;
+    limit?: number;
+    offset?: number;
+  }) =>
+    request<AuditLogsPage>(
+      `/admin/audit-logs${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+
+  // Auth & Profile
+  login: (email: string, password: string) =>
+    request<LoginResponse>("/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  getCurrentUser: () => request<User>("/admin/auth/me"),
+  setPassword: (userId: string, password: string) =>
+    request<{ message: string }>("/admin/auth/password", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, password }),
+    }),
+
+  // Member & Team Analytics ("ai dùng gì, dùng bao nhiêu")
+  getMemberAnalytics: (params?: {
+    from?: string;
+    to?: string;
+    group_id?: string;
+    search?: string;
+  }) =>
+    request<AnalyticsMembersResponse>(
+      `/admin/analytics/members${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+  getMemberDetail: (userId: string, params?: { from?: string; to?: string }) =>
+    request<MemberDetailResponse>(
+      `/admin/analytics/members/${userId}${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+
+  // Tenants (Multi-Tenant B2B & Pre-paid Credits)
+  listTenants: () => request<Tenant[]>("/admin/tenants"),
+  createTenant: (data: {
+    name: string;
+    type?: "internal" | "external";
+    billing_mode?: "prepaid" | "postpaid";
+    budget_limit_monthly?: number;
+    allowed_models?: string[];
+    is_active?: boolean;
+  }) =>
+    request<Tenant>("/admin/tenants", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getTenant: (id: string) => request<Tenant>(`/admin/tenants/${id}`),
+  updateTenant: (id: string, patch: TenantPatch) =>
+    request<Tenant>(`/admin/tenants/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteTenant: (id: string) =>
+    request<{ status: string }>(`/admin/tenants/${id}`, {
+      method: "DELETE",
+    }),
+  topUpTenantCredit: (id: string, req: TopUpCreditRequest) =>
+    request<TenantCreditTransaction>(`/admin/tenants/${id}/topup`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+  listTenantTransactions: (id: string, params?: { limit?: number; offset?: number }) =>
+    request<TenantTransactionsPage>(
+      `/admin/tenants/${id}/transactions${qs(params as Record<string, string | number | undefined>)}`,
+    ),
+
   // System
   systemInfo: () => request<SystemInfo>("/admin/system/info"),
   health: () =>
@@ -199,3 +389,4 @@ export const api = {
       .then((r) => r.json())
       .catch(() => ({ status: "down" })),
 };
+

@@ -107,11 +107,12 @@ func (c *CostCalculator) LookupProviderByModel(modelName string) (string, bool) 
 }
 
 type CostResult struct {
-	Cost                float64
-	PromptPriceUsed     float64
-	CompletionPriceUsed float64
-	PricingSource       string
-	PricingFallback     bool
+	Cost                  float64
+	PromptPriceUsed       float64
+	CompletionPriceUsed   float64
+	CachedPromptPriceUsed float64
+	PricingSource         string
+	PricingFallback       bool
 }
 
 func (c *CostCalculator) CalculateCost(provider, modelName string, promptTokens, completionTokens, cachedInputTokens, reasoningTokens int) CostResult {
@@ -120,7 +121,7 @@ func (c *CostCalculator) CalculateCost(provider, modelName string, promptTokens,
 	pricing, exists := c.pricings[key]
 	c.mu.RUnlock()
 
-	var promptPriceUsed, completionPriceUsed float64
+	var promptPriceUsed, completionPriceUsed, cachedPromptPriceUsed float64
 	var pricingSource string
 	var pricingFallback bool
 
@@ -137,13 +138,35 @@ func (c *CostCalculator) CalculateCost(provider, modelName string, promptTokens,
 		pricingFallback = false
 	}
 
-	// OpenAI/Anthropic: 50% discount for cached input tokens
+	// Multi-tier prompt cache pricing:
+	// 1. If explicit cache read price is configured in model_pricings, honor it.
+	// 2. Otherwise, apply provider-accurate discount ratio instead of a flat 50%:
+	//    - Anthropic (Claude): Cache Read is 10% of base prompt price (90% discount)
+	//    - DeepSeek: Cache Hit is ~14% of base prompt price (~86% discount)
+	//    - Google Gemini: Context Cache is 25% of base prompt price (75% discount)
+	//    - OpenAI / standard: Cached prompt is 50% of base prompt price (50% discount)
+	if exists && pricing.CacheReadPricePer1M != nil && *pricing.CacheReadPricePer1M >= 0 {
+		cachedPromptPriceUsed = *pricing.CacheReadPricePer1M
+	} else {
+		provLower := provider
+		switch {
+		case provLower == "anthropic":
+			cachedPromptPriceUsed = promptPriceUsed * 0.10
+		case provLower == "deepseek":
+			cachedPromptPriceUsed = promptPriceUsed * 0.14
+		case provLower == "gemini" || provLower == "google":
+			cachedPromptPriceUsed = promptPriceUsed * 0.25
+		default:
+			cachedPromptPriceUsed = promptPriceUsed * 0.50
+		}
+	}
+
 	regularInputTokens := promptTokens - cachedInputTokens
 	if regularInputTokens < 0 {
 		regularInputTokens = 0
 	}
 	promptCost := (float64(regularInputTokens) / 1_000_000.0) * promptPriceUsed
-	cachedPromptCost := (float64(cachedInputTokens) / 1_000_000.0) * (promptPriceUsed * 0.5)
+	cachedPromptCost := (float64(cachedInputTokens) / 1_000_000.0) * cachedPromptPriceUsed
 
 	// Reasoning tokens are billed at standard completion rate
 	completionCost := (float64(completionTokens) / 1_000_000.0) * completionPriceUsed
@@ -151,10 +174,44 @@ func (c *CostCalculator) CalculateCost(provider, modelName string, promptTokens,
 	totalCost := promptCost + cachedPromptCost + completionCost
 
 	return CostResult{
-		Cost:                totalCost,
-		PromptPriceUsed:     promptPriceUsed,
-		CompletionPriceUsed: completionPriceUsed,
-		PricingSource:       pricingSource,
-		PricingFallback:     pricingFallback,
+		Cost:                  totalCost,
+		PromptPriceUsed:       promptPriceUsed,
+		CompletionPriceUsed:   completionPriceUsed,
+		CachedPromptPriceUsed: cachedPromptPriceUsed,
+		PricingSource:         pricingSource,
+		PricingFallback:       pricingFallback,
 	}
+}
+
+// EstimateMaxCost estimates worst-case cost for pre-flight hold reservation (Hold & Settle).
+// It assumes 0% prompt cache hit and conservative output token buffer.
+func (c *CostCalculator) EstimateMaxCost(provider, modelName string, estimatedInputTokens, maxOutputTokens int) float64 {
+	c.mu.RLock()
+	key := fmt.Sprintf("%s:%s", provider, modelName)
+	pricing, exists := c.pricings[key]
+	c.mu.RUnlock()
+
+	var promptPrice, completionPrice float64
+	if !exists {
+		promptPrice = 1.0
+		completionPrice = 3.0
+	} else {
+		promptPrice = pricing.PromptPricePer1M
+		completionPrice = pricing.CompletionPricePer1M
+	}
+
+	if maxOutputTokens <= 0 {
+		maxOutputTokens = 256
+	} else if maxOutputTokens > 4096 {
+		maxOutputTokens = 4096
+	}
+
+	inputCost := (float64(estimatedInputTokens) / 1_000_000.0) * promptPrice
+	outputCost := (float64(maxOutputTokens) / 1_000_000.0) * completionPrice
+
+	est := inputCost + outputCost
+	if est < 0.0005 {
+		est = 0.0005
+	}
+	return est
 }
