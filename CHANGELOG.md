@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v0.3.0] - Unreleased (Staging)
+## [v0.3.0] - 2026-09-09
 
 ### Added
 - **Kong-like Multi-Level Plugin Architecture**:
@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Refactored `GatewayService` request pipeline to invoke plugin hooks seamlessly around authentication, IAM evaluation, and upstream calls.
 - Updated Gemini and OpenAI adapter streaming protocols to support thought-signature roundtrips and OpenCode SSE `finish_reason` mappings.
+
+### Fixed
+- Fixed missing `model` package import in `internal/plugin/builtin/builtin_test.go` causing `go vet` failure in CI.
 
 ---
 
