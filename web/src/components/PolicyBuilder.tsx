@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useLanguage } from "../i18n";
 import type { ActionDef, PolicyDocument, PolicyStatement } from "../api/types";
 
 export const POLICY_TEMPLATES = [
@@ -176,6 +177,7 @@ export default function PolicyBuilder({
   onCancel,
   isSubmitting = false,
 }: PolicyBuilderProps) {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"visual" | "json">("visual");
   const [name, setName] = useState(initialName);
   const [priority, setPriority] = useState(initialPriority);
@@ -227,7 +229,7 @@ export default function PolicyBuilder({
         setStatements(parseToVisualStatements(parsed));
         setError(null);
       } catch {
-        setError("Invalid JSON format. Please fix JSON syntax before switching to Visual Builder.");
+        setError(t("policy.err_invalid_json_visual", "Invalid JSON format. Please fix JSON syntax before switching to Visual Builder."));
         return;
       }
     }
@@ -311,7 +313,7 @@ export default function PolicyBuilder({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError("Policy Name is required");
+      setError(t("policy.err_name_required", "Policy Name is required"));
       return;
     }
 
@@ -320,7 +322,7 @@ export default function PolicyBuilder({
       try {
         finalDoc = JSON.parse(jsonText);
       } catch {
-        setError("Invalid JSON format. Please verify syntax.");
+        setError(t("policy.err_invalid_json", "Invalid JSON format. Please verify syntax."));
         return;
       }
     } else {
@@ -335,7 +337,7 @@ export default function PolicyBuilder({
         policy: finalDoc,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save policy");
+      setError(err instanceof Error ? err.message : t("policy.err_save_failed", "Failed to save policy"));
     }
   };
 
@@ -347,7 +349,7 @@ export default function PolicyBuilder({
       {/* Template Quick Picker */}
       <div>
         <div className="form-label" style={{ marginBottom: 6, fontSize: 12 }}>
-          Quick Templates:
+          {t("policy.quick_templates", "Quick Templates:")}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {POLICY_TEMPLATES.map((tmpl) => (
@@ -368,17 +370,17 @@ export default function PolicyBuilder({
       {/* Basic Metadata */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
         <div className="form-group">
-          <label className="form-label">Policy Name *</label>
+          <label className="form-label">{t("policy.name_label", "Policy Name *")}</label>
           <input
             className="input"
             required
-            placeholder="e.g. StandardDeveloperAccess"
+            placeholder={t("policy.name_placeholder", "e.g. StandardDeveloperAccess")}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </div>
         <div className="form-group">
-          <label className="form-label">Priority (Higher runs first)</label>
+          <label className="form-label">{t("policy.priority_label", "Priority (Higher runs first)")}</label>
           <input
             className="input"
             type="number"
@@ -417,7 +419,7 @@ export default function PolicyBuilder({
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
             checklist
           </span>
-          Visual Policy Builder
+          {t("policy.tab_visual", "Visual Policy Builder")}
         </button>
         <button
           type="button"
@@ -439,7 +441,7 @@ export default function PolicyBuilder({
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
             data_object
           </span>
-          Raw JSON Editor
+          {t("policy.tab_json", "Raw JSON Editor")}
         </button>
       </div>
 
@@ -472,7 +474,7 @@ export default function PolicyBuilder({
                     <input
                       className="input"
                       style={{ width: 200, padding: "4px 8px", fontSize: 12 }}
-                      placeholder="Statement Identifier (Sid)"
+                      placeholder={t("policy.sid_placeholder", "Statement Identifier (Sid)")}
                       value={stmt.sid}
                       onChange={(e) => updateStatement(sIdx, { sid: e.target.value })}
                     />
@@ -501,7 +503,7 @@ export default function PolicyBuilder({
                         }}
                         onClick={() => updateStatement(sIdx, { effect: "Allow" })}
                       >
-                        ALLOW
+                        {t("policy.allow", "ALLOW")}
                       </button>
                       <button
                         type="button"
@@ -516,7 +518,7 @@ export default function PolicyBuilder({
                         }}
                         onClick={() => updateStatement(sIdx, { effect: "Deny" })}
                       >
-                        DENY (Override)
+                        {t("policy.deny", "DENY (Override)")}
                       </button>
                     </div>
 
@@ -526,7 +528,7 @@ export default function PolicyBuilder({
                         className="btn btn--ghost btn--sm"
                         style={{ color: "var(--danger)", padding: "4px 8px" }}
                         onClick={() => removeStatement(sIdx)}
-                        title="Remove Statement"
+                        title={t("policy.remove_statement", "Remove Statement")}
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                           delete
@@ -539,7 +541,7 @@ export default function PolicyBuilder({
                 {/* Actions Selector */}
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>
-                    Permitted / Denied Actions:
+                    {t("policy.actions_heading", "Permitted / Denied Actions:")}
                   </div>
                   <div
                     style={{
@@ -574,7 +576,7 @@ export default function PolicyBuilder({
                                 color: "var(--primary)",
                               }}
                             >
-                              {ns} actions
+                              {ns} {t("policy.actions", "actions")}
                             </span>
                             <button
                               type="button"
@@ -582,7 +584,7 @@ export default function PolicyBuilder({
                               style={{ fontSize: 10, padding: "1px 6px" }}
                               onClick={() => toggleNamespaceActions(sIdx, ns)}
                             >
-                              {allChecked ? "Deselect All" : "Select All"}
+                              {allChecked ? t("policy.deselect_all", "Deselect All") : t("policy.select_all", "Select All")}
                             </button>
                           </div>
 
@@ -627,7 +629,9 @@ export default function PolicyBuilder({
 
                 {/* Resource Target Selector */}
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Target Resources (Models):</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                    {t("policy.target_resources", "Target Resources (Models):")}
+                  </div>
                   <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 8 }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
                       <input
@@ -636,7 +640,7 @@ export default function PolicyBuilder({
                         checked={stmt.resourceMode === "all"}
                         onChange={() => updateStatement(sIdx, { resourceMode: "all" })}
                       />
-                      <span>All Resources (<code>*</code>)</span>
+                      <span>{t("policy.all_resources", "All Resources (*)")}</span>
                     </label>
 
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
@@ -646,7 +650,7 @@ export default function PolicyBuilder({
                         checked={stmt.resourceMode === "custom"}
                         onChange={() => updateStatement(sIdx, { resourceMode: "custom" })}
                       />
-                      <span>Specific Models / Patterns</span>
+                      <span>{t("policy.specific_models", "Specific Models / Patterns")}</span>
                     </label>
                   </div>
 
@@ -656,7 +660,7 @@ export default function PolicyBuilder({
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {stmt.resources.length === 0 && (
                           <div className="muted" style={{ fontSize: 11, fontStyle: "italic" }}>
-                            No model pattern added yet. Add model patterns below (e.g. model:gpt-4o, model:claude-*).
+                            {t("policy.no_pattern_hint", "No model pattern added yet. Add model patterns below (e.g. model:gpt-4o, model:claude-*).")}
                           </div>
                         )}
                         {stmt.resources.map((res) => (
@@ -702,7 +706,7 @@ export default function PolicyBuilder({
                         <input
                           className="input mono"
                           style={{ flex: 1, fontSize: 12 }}
-                          placeholder="e.g. model:gpt-4o, model:claude-*, model:gemini-1.5-pro"
+                          placeholder={t("policy.pattern_placeholder", "e.g. model:gpt-4o, model:claude-*, model:gemini-1.5-pro")}
                           value={customResourceInput[sIdx] || ""}
                           onChange={(e) =>
                             setCustomResourceInput((prev) => ({ ...prev, [sIdx]: e.target.value }))
@@ -719,7 +723,7 @@ export default function PolicyBuilder({
                           className="btn btn--secondary btn--sm"
                           onClick={() => addResource(sIdx, customResourceInput[sIdx] || "")}
                         >
-                          Add Pattern
+                          {t("policy.btn_add_pattern", "Add Pattern")}
                         </button>
                       </div>
 
@@ -727,7 +731,7 @@ export default function PolicyBuilder({
                       {availableModels.length > 0 && (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
                           <span className="muted" style={{ fontSize: 10 }}>
-                            Quick add:
+                            {t("policy.quick_add", "Quick add:")}
                           </span>
                           {availableModels.slice(0, 8).map((m) => (
                             <button
@@ -758,7 +762,7 @@ export default function PolicyBuilder({
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
               add_circle
             </span>
-            Add Another Statement
+            {t("policy.btn_add_statement", "Add Another Statement")}
           </button>
         </div>
       )}
@@ -766,7 +770,7 @@ export default function PolicyBuilder({
       {/* Tab 2: Raw JSON Editor */}
       {activeTab === "json" && (
         <div className="form-group">
-          <label className="form-label">IAM JSON Document</label>
+          <label className="form-label">{t("policy.json_label", "IAM JSON Document")}</label>
           <textarea
             className="input mono"
             style={{ height: 320, fontSize: 12, lineHeight: 1.4 }}
@@ -780,10 +784,10 @@ export default function PolicyBuilder({
       {/* Form Action Buttons */}
       <div className="modal-actions" style={{ marginTop: 8 }}>
         <button type="button" className="btn btn--ghost" onClick={onCancel} disabled={isSubmitting}>
-          Cancel
+          {t("common.cancel", "Cancel")}
         </button>
         <button type="submit" className="btn btn--primary" disabled={isSubmitting}>
-          {isSubmitting ? "Saving..." : "Save Policy"}
+          {isSubmitting ? t("policy.btn_saving", "Saving...") : t("policy.btn_save", "Save Policy")}
         </button>
       </div>
     </form>

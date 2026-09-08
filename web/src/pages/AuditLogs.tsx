@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { AuditLog } from "../api/types";
 import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
+import { useLanguage } from "../i18n";
 
 export default function AuditLogs() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -80,14 +81,15 @@ export default function AuditLogs() {
   };
 
   const totalPages = Math.ceil(total / pageSize);
+  const { t } = useLanguage();
 
   return (
     <div className="page__content">
       <div className="page__header" style={{ marginBottom: "20px" }}>
         <div>
-          <h1 className="page__title">Audit Trail</h1>
+          <h1 className="page__title">{t("audit.title", "Audit Trail")}</h1>
           <p className="page__sub">
-            Immutable log of administrative operations, policy changes, and key lifecycle events for compliance and security auditing.
+            {t("audit.subtitle", "Immutable log of administrative operations, policy changes, and key lifecycle events for compliance and security auditing.")}
           </p>
         </div>
         <button
@@ -96,7 +98,7 @@ export default function AuditLogs() {
           onClick={() => loadAuditLogs()}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>refresh</span>
-          Refresh
+          {t("common.refresh", "Refresh")}
         </button>
       </div>
 
@@ -115,7 +117,7 @@ export default function AuditLogs() {
               setPage(0);
             }}
           >
-            <option value="">All Actors</option>
+            <option value="">{t("audit.filter_actor", "All Actors")}</option>
             <option value="admin">Admin</option>
             <option value="root">Root</option>
             <option value="user">User</option>
@@ -134,7 +136,7 @@ export default function AuditLogs() {
               setPage(0);
             }}
           >
-            <option value="">All Targets</option>
+            <option value="">{t("audit.filter_target", "All Targets")}</option>
             <option value="user">User</option>
             <option value="key">API Key</option>
             <option value="group">Group</option>
@@ -147,12 +149,12 @@ export default function AuditLogs() {
         <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 200 }}>
           <input
             className="input"
-            placeholder="Search action (e.g. key.create, user.delete)…"
+            placeholder={t("audit.filter_action", "Search action (e.g. key.create, user.delete)…")}
             value={action}
             onChange={(e) => setAction(e.target.value)}
           />
           <button type="submit" className="btn btn--primary" style={{ flexShrink: 0 }}>
-            Filter
+            {t("common.search", "Filter")}
           </button>
         </div>
       </form>
@@ -163,22 +165,22 @@ export default function AuditLogs() {
           <table className="table">
             <thead>
               <tr>
-                <th>Timestamp</th>
-                <th>Action</th>
-                <th>Actor</th>
-                <th>Target</th>
+                <th>{t("audit.col_time", "Timestamp")}</th>
+                <th>{t("audit.col_action", "Action")}</th>
+                <th>{t("audit.col_actor", "Actor")}</th>
+                <th>{t("audit.col_target", "Target")}</th>
                 <th>Client IP</th>
-                <th style={{ textAlign: "right" }}>Inspect</th>
+                <th style={{ textAlign: "right" }}>{t("common.inspect", "Inspect")}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="empty">Loading audit trail…</td>
+                  <td colSpan={6} className="empty">{t("common.loading", "Loading audit trail…")}</td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="empty">No audit records found matching criteria.</td>
+                  <td colSpan={6} className="empty">{t("audit.no_logs", "No audit records found matching criteria.")}</td>
                 </tr>
               ) : (
                 logs.map((l) => {

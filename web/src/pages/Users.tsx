@@ -6,6 +6,7 @@ import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
 import UserDetailModal from "../components/UserDetailModal";
 import { useToast } from "../components/Toast";
+import { useLanguage } from "../i18n";
 
 interface UserForm {
   name: string;
@@ -19,6 +20,7 @@ interface UserForm {
 const empty: UserForm = { name: "", email: "", role: "user", is_root: false, tenant_id: "", tenant_role: "member" };
 
 export default function Users() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -191,22 +193,22 @@ export default function Users() {
     <div>
       <div className="page__header">
         <div>
-          <h1 className="page__title">Users &amp; Members</h1>
+          <h1 className="page__title">{t("people.tab_users", "Users & Accounts")}</h1>
           <p className="page__sub">
-            {filteredUsers.length} of {users.length} account(s). Manage team credentials, passwords, and roles.
+            {filteredUsers.length} / {users.length} {t("people.tab_users_desc")}
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px" }}>
           <button
             className="btn"
             style={{ backgroundColor: "#1a2122", border: "1px solid #2d3139", color: "#22d3ee", fontFamily: "JetBrains Mono, monospace", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}
-            onClick={() => navigate("/analytics/members")}
+            onClick={() => navigate("/people?tab=analytics")}
           >
             <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>insights</span>
-            Member Analytics
+            {t("people.tab_analytics", "Member Analytics")}
           </button>
           <button className="btn btn--primary" onClick={() => setCreateOpen(true)}>
-            + New user
+            {t("users.create_btn", "+ Add User")}
           </button>
         </div>
       </div>
@@ -221,7 +223,7 @@ export default function Users() {
             type="text"
             className="input"
             style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
-            placeholder="Search members, emails, or IDs..."
+            placeholder={t("users.search_placeholder", "Search members, emails, or IDs...")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -232,11 +234,11 @@ export default function Users() {
           value={filterTenant}
           onChange={(e) => setFilterTenant(e.target.value)}
         >
-          <option value="all">All Tenants</option>
-          <option value="none">Global (No Tenant)</option>
-          {tenants.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.type.toUpperCase()})
+          <option value="all">{t("users.filter_all_tenants", "All Tenants")}</option>
+          <option value="none">{t("users.filter_global", "Global (No Tenant)")}</option>
+          {tenants.map((tItem) => (
+            <option key={tItem.id} value={tItem.id}>
+              {tItem.name} ({tItem.type.toUpperCase()})
             </option>
           ))}
         </select>
@@ -246,10 +248,10 @@ export default function Users() {
           value={filterRole}
           onChange={(e) => setFilterRole(e.target.value)}
         >
-          <option value="all">All Roles</option>
-          <option value="root">Root Admin</option>
-          <option value="admin">Tenant Admin</option>
-          <option value="user">Standard User</option>
+          <option value="all">{t("users.filter_all_roles", "All Roles")}</option>
+          <option value="root">{t("users.filter_root", "Root Admin")}</option>
+          <option value="admin">{t("users.filter_admin", "Tenant Admin")}</option>
+          <option value="user">{t("users.filter_user", "Standard User")}</option>
         </select>
       </div>
 
@@ -257,23 +259,23 @@ export default function Users() {
         <table className="table">
           <thead>
             <tr>
-              <th>Member</th>
-              <th>Tenant / Org</th>
-              <th>System Role</th>
-              <th>Created</th>
-              <th style={{ textAlign: "right" }}>Actions</th>
+              <th>{t("users.col_name", "MEMBER")}</th>
+              <th>{t("users.col_tenant", "TENANT / ORG")}</th>
+              <th>{t("users.col_role", "SYSTEM ROLE")}</th>
+              <th>{t("users.col_created", "CREATED")}</th>
+              <th style={{ textAlign: "right" }}>{t("users.col_actions", "ACTIONS")}</th>
             </tr>
           </thead>
           <tbody>
             {filteredUsers.length === 0 ? (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center", padding: "32px", color: "var(--text-muted)" }}>
-                  No members match the selected search or filters.
+                  {t("users.no_members", "No members match the selected search or filters.")}
                 </td>
               </tr>
             ) : (
               filteredUsers.map((u) => {
-                const matchedTenant = tenants.find((t) => t.id === u.tenant_id);
+                const matchedTenant = tenants.find((item) => item.id === u.tenant_id);
                 return (
                   <tr key={u.id}>
                     <td>
@@ -384,7 +386,7 @@ export default function Users() {
                         <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                           insights
                         </span>
-                        Details
+                        {t("users.details_btn", "Details")}
                       </button>
                       <button
                         className="btn btn--sm"
@@ -394,7 +396,7 @@ export default function Users() {
                           setPasswordSuccess(null);
                         }}
                       >
-                        Password
+                        {t("users.password_btn", "Password")}
                       </button>
                       <button
                         className="btn btn--sm"
@@ -410,13 +412,13 @@ export default function Users() {
                           });
                         }}
                       >
-                        Edit
+                        {t("users.edit_btn", "Edit")}
                       </button>
                       <button
                         className="btn btn--sm btn--danger"
                         onClick={() => setDeleteTarget(u)}
                       >
-                        Delete
+                        {t("users.delete_btn", "Delete")}
                       </button>
                     </div>
                   </td>
@@ -430,19 +432,19 @@ export default function Users() {
 
       {createOpen && (
         <Modal
-          title="New user"
+          title={t("users.create_title", "New user")}
           onClose={() => setCreateOpen(false)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setCreateOpen(false)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitCreate}
                 disabled={busy || !form.name.trim() || !form.email.trim()}
               >
-                {busy ? "Creating…" : "Create"}
+                {busy ? t("common.creating", "Creating…") : t("common.create", "Create")}
               </button>
             </>
           }
@@ -453,19 +455,19 @@ export default function Users() {
 
       {editTarget && (
         <Modal
-          title="Edit user"
+          title={t("users.edit_title", "Edit user")}
           onClose={() => setEditTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setEditTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitEdit}
                 disabled={busy || !editForm.name.trim()}
               >
-                {busy ? "Saving…" : "Save"}
+                {busy ? t("common.saving", "Saving…") : t("common.save", "Save")}
               </button>
             </>
           }
@@ -476,19 +478,19 @@ export default function Users() {
 
       {passwordTarget && (
         <Modal
-          title={`Set Password: ${passwordTarget.email}`}
+          title={`${t("users.pwd_modal_title", "Set Password for")}: ${passwordTarget.email}`}
           onClose={() => setPasswordTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setPasswordTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button
                 className="btn btn--primary"
                 onClick={submitPassword}
                 disabled={busy || newPassword.length < 6}
               >
-                {busy ? "Updating…" : "Update Password"}
+                {busy ? t("common.saving", "Updating…") : t("users.reset_pwd", "Update Password")}
               </button>
             </>
           }
@@ -499,7 +501,7 @@ export default function Users() {
             </div>
           )}
           <div className="field">
-            <label className="field__label">New Password (min 6 characters)</label>
+            <label className="field__label">{t("users.pwd_field_label", "New Password (min 6 characters)")}</label>
             <input
               className="input"
               type="password"
@@ -510,29 +512,28 @@ export default function Users() {
             />
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Setting a password allows this member to authenticate directly via Member Login.
+            {t("users.pwd_field_hint", "Setting a password allows this member to authenticate directly via Member Login.")}
           </p>
         </Modal>
       )}
 
       {deleteTarget && (
         <Modal
-          title="Delete user"
+          title={t("users.delete_title", "Delete user")}
           onClose={() => setDeleteTarget(null)}
           footer={
             <>
               <button className="btn btn--ghost" onClick={() => setDeleteTarget(null)}>
-                Cancel
+                {t("common.cancel", "Cancel")}
               </button>
               <button className="btn btn--danger" onClick={confirmDelete} disabled={busy}>
-                {busy ? "Deleting…" : "Delete"}
+                {busy ? t("common.deleting", "Deleting…") : t("common.delete", "Delete")}
               </button>
             </>
           }
         >
           <p>
-            Delete <strong>{deleteTarget.email}</strong>? Their API keys are
-            revoked (cascade). Usage logs are kept.
+            {t("users.delete_confirm", "Delete")} <strong>{deleteTarget.email}</strong>? {t("users.delete_confirm_desc", "Their API keys will be revoked (cascade). Usage logs are kept.")}
           </p>
         </Modal>
       )}
@@ -540,7 +541,7 @@ export default function Users() {
       {selectedUser && (
         <UserDetailModal
           user={selectedUser}
-          tenant={tenants.find((t) => t.id === selectedUser.tenant_id)}
+          tenant={tenants.find((item) => item.id === selectedUser.tenant_id)}
           onClose={() => {
             setSelectedUser(null);
             if (searchParams.has("user_id")) {
@@ -566,10 +567,11 @@ function UserFields({
   tenants: Tenant[];
   emailDisabled?: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <>
       <div className="field">
-        <label className="field__label">Name</label>
+        <label className="field__label">{t("users.field_name", "Name")}</label>
         <input
           className="input"
           value={form.name}
@@ -578,7 +580,7 @@ function UserFields({
         />
       </div>
       <div className="field">
-        <label className="field__label">Email</label>
+        <label className="field__label">{t("users.field_email", "Email")}</label>
         <input
           className="input"
           type="email"
@@ -589,7 +591,7 @@ function UserFields({
         />
       </div>
       <div className="field">
-        <label className="field__label">System Role</label>
+        <label className="field__label">{t("users.field_role", "System Role")}</label>
         <select
           className="select"
           value={form.role}
@@ -601,16 +603,16 @@ function UserFields({
       </div>
 
       <div className="field">
-        <label className="field__label">Tenant Organization</label>
+        <label className="field__label">{t("users.field_tenant", "Tenant Organization")}</label>
         <select
           className="select"
           value={form.tenant_id}
           onChange={(e) => setForm({ ...form, tenant_id: e.target.value })}
         >
-          <option value="">None (Global Access)</option>
-          {tenants.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t.type === "internal" ? "Internal" : "B2B Client"})
+          <option value="">{t("users.global_access", "None (Global Access)")}</option>
+          {tenants.map((tItem) => (
+            <option key={tItem.id} value={tItem.id}>
+              {tItem.name} ({tItem.type === "internal" ? "Internal" : "B2B Client"})
             </option>
           ))}
         </select>
@@ -618,14 +620,14 @@ function UserFields({
 
       {form.tenant_id && (
         <div className="field">
-          <label className="field__label">Tenant Role</label>
+          <label className="field__label">{t("users.field_tenant_role", "Tenant Role")}</label>
           <select
             className="select"
             value={form.tenant_role}
             onChange={(e) => setForm({ ...form, tenant_role: e.target.value })}
           >
-            <option value="member">Member</option>
-            <option value="tenant_admin">Tenant Admin (Manager)</option>
+            <option value="member">{t("users.role_member", "Member")}</option>
+            <option value="tenant_admin">{t("users.role_manager", "Tenant Admin (Manager)")}</option>
           </select>
         </div>
       )}
@@ -638,11 +640,11 @@ function UserFields({
             onChange={(e) => setForm({ ...form, is_root: e.target.checked })}
           />
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-            Root Administrator (IAM Bypass)
+            {t("users.field_root", "Root Administrator (IAM Bypass)")}
           </span>
         </label>
         <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginLeft: 22 }}>
-          Root users bypass all IAM group and model permission checks.
+          {t("users.field_root_hint", "Root users bypass all IAM group and model permission checks.")}
         </div>
       </div>
     </>

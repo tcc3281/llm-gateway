@@ -13,6 +13,7 @@ import type {
 import { fmtDate } from "../lib/format";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
+import { useLanguage } from "../i18n";
 
 type TabKey = "rules" | "history";
 
@@ -88,6 +89,7 @@ const CHANNEL_DEFS: Record<
 
 export default function Alerts() {
   const toast = useToast();
+  const { t } = useLanguage();
   const [tab, setTab] = useState<TabKey>("rules");
 
   // Telemetry Data
@@ -388,9 +390,9 @@ export default function Alerts() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: 13 }}>
-            <span>Observability</span>
+            <span>{t("common.system", "Observability")}</span>
             <span className="mono" style={{ color: "var(--border-strong)" }}>/</span>
-            <span style={{ color: "var(--text)", fontWeight: 600 }}>Alerts & Multi-Channel Webhooks</span>
+            <span style={{ color: "var(--text)", fontWeight: 600 }}>{t("alerts.title", "Alerts & Multi-Channel Webhooks")}</span>
           </div>
 
           <span
@@ -409,7 +411,7 @@ export default function Alerts() {
             }}
           >
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4edea3" }} />
-            [ENGINE ACTIVE]
+            {t("alerts.engineActive", "[ENGINE ACTIVE]")}
           </span>
 
           <div
@@ -424,9 +426,9 @@ export default function Alerts() {
               paddingLeft: 12,
             }}
           >
-            <span>{droppedEvents} dropped</span>
+            <span>{droppedEvents} {t("alerts.droppedEvents", "dropped events")}</span>
             <span style={{ color: "var(--border)" }}>|</span>
-            <span>Throttle: 30/min token bucket</span>
+            <span>{t("alerts.rateLimit", "Rate limit: 30/min token bucket")}</span>
           </div>
         </div>
 
@@ -442,7 +444,7 @@ export default function Alerts() {
             style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
             <span className="mono" style={{ fontSize: 12 }}>⚡</span>
-            Test Webhook
+            {t("alerts.testWebhook", "Test Webhook")}
           </button>
 
           <button
@@ -459,7 +461,7 @@ export default function Alerts() {
             }}
           >
             <span className="mono" style={{ fontSize: 14, fontWeight: 900 }}>+</span>
-            Create Multi-Config Rule
+            {t("alerts.createRule", "Create Multi-Config Rule")}
           </button>
         </div>
       </div>
@@ -476,7 +478,7 @@ export default function Alerts() {
             borderColor: "var(--border)",
           }}
         >
-          <div className="kpi__label" style={{ color: "var(--text-muted)" }}>Active Alert Rules</div>
+          <div className="kpi__label" style={{ color: "var(--text-muted)" }}>{t("alerts.kpiActiveRules", "Active Alert Rules")}</div>
           <div className="kpi__value kpi__value--accent" style={{ color: "#8aebff" }}>
             {activeRulesCount}{" "}
             <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)" }}>/ {rules.length}</span>
@@ -507,14 +509,14 @@ export default function Alerts() {
             borderColor: "var(--border)",
           }}
         >
-          <div className="kpi__label" style={{ color: "#4edea3" }}>Dispatched 24h</div>
+          <div className="kpi__label" style={{ color: "#4edea3" }}>{t("alerts.kpiDispatched", "Dispatched 24h")}</div>
           <div className="kpi__value kpi__value--emerald">
             {deliveredCount}{" "}
             <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)" }}>events</span>
           </div>
           <div className="kpi__delta mono" style={{ fontSize: 11, color: "#4edea3", display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4edea3" }} />
-            {successRate}% delivery rate
+            {successRate}% {t("alerts.kpiSuccessRate", "delivery rate")}
           </div>
           <div
             style={{
@@ -539,13 +541,13 @@ export default function Alerts() {
             borderColor: "var(--border)",
           }}
         >
-          <div className="kpi__label" style={{ color: "#ffb13b" }}>Spam Suppressed</div>
+          <div className="kpi__label" style={{ color: "#ffb13b" }}>{t("alerts.kpiSuppressed", "Spam Suppressed")}</div>
           <div className="kpi__value kpi__value--amber">
             {suppressedCount}{" "}
             <span style={{ fontSize: 13, fontWeight: 400, color: "var(--text-muted)" }}>throttled</span>
           </div>
           <div className="kpi__delta mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            by Cooldown Debounce Protection
+            {t("alerts.kpiSuppressedDesc", "by Cooldown Debounce Protection")}
           </div>
           <div
             style={{
@@ -570,12 +572,12 @@ export default function Alerts() {
             borderColor: "var(--border)",
           }}
         >
-          <div className="kpi__label" style={{ color: "#4edea3" }}>Circuit Health</div>
+          <div className="kpi__label" style={{ color: "#4edea3" }}>{t("alerts.kpiCircuit", "Circuit Health")}</div>
           <div className="kpi__value" style={{ color: "#4edea3" }}>
-            Healthy
+            {t("alerts.kpiCircuitHealthy", "Healthy")}
           </div>
           <div className="kpi__delta mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-            0 open circuit breakers (5m backoff)
+            {t("alerts.kpiCircuitDesc", "0 open circuit breakers")} (5m backoff)
           </div>
           <div
             style={{
@@ -618,7 +620,7 @@ export default function Alerts() {
             gap: 8,
           }}
         >
-          Alert Rules & Routing
+          {t("alerts.tabRules", "Alert Rules & Routing")}
           <span
             className="mono"
             style={{
@@ -651,7 +653,7 @@ export default function Alerts() {
             gap: 8,
           }}
         >
-          Delivery Audit & Incident History
+          {t("alerts.tabHistory", "Delivery Audit & Incident History")}
           <span
             className="mono"
             style={{

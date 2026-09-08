@@ -18,6 +18,7 @@ import { api } from "../api/client";
 import type { APIKey, DashboardStats, UsageByModel, UsageByUser, User } from "../api/types";
 import { fmtMoney, fmtNum, shortTs } from "../lib/format";
 import LogDetailDrawer, { getStatusInfo } from "../components/LogDetailDrawer";
+import { useLanguage } from "../i18n";
 
 // Obsidian Telemetry palette — mirrors tokens in styles/theme.css so the
 // dashboard reads as one system with the rest of the admin.
@@ -146,6 +147,7 @@ export default function Dashboard() {
 
   const isFiltered = Boolean(userFilter || keyFilter || providerFilter || modelFilter || modelInput);
 
+  const { t: tr } = useLanguage();
   const t = stats?.totals;
   const series = stats?.time_series ?? [];
   const successRate = t && t.requests > 0 ? 1 - t.error_rate : 0;
@@ -157,8 +159,8 @@ export default function Dashboard() {
     <div>
       <div className="page__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
         <div>
-          <h1 className="page__title">Overview</h1>
-          <p className="page__sub">Live gateway telemetry and workload intelligence across the last 24h</p>
+          <h1 className="page__title">{tr("dash.title", "Overview Dashboard")}</h1>
+          <p className="page__sub">{tr("dash.subtitle", "Live gateway telemetry and workload intelligence across the last 24h")}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
@@ -168,7 +170,7 @@ export default function Dashboard() {
             onClick={load}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>refresh</span>
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? tr("common.refreshing", "Refreshing...") : tr("common.refresh", "Refresh")}
           </button>
         </div>
       </div>
@@ -191,7 +193,7 @@ export default function Dashboard() {
           value={userFilter}
           onChange={(e) => setUserFilter(e.target.value)}
         >
-          <option value="">All users</option>
+          <option value="">{tr("dash.filter_all_users", "All users")}</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.email}
@@ -205,7 +207,7 @@ export default function Dashboard() {
           value={keyFilter}
           onChange={(e) => setKeyFilter(e.target.value)}
         >
-          <option value="">All API keys</option>
+          <option value="">{tr("dash.filter_all_keys", "All API keys")}</option>
           {keys.map((k) => (
             <option key={k.id} value={k.id}>
               {k.name} ({k.key_prefix}…)
@@ -219,7 +221,7 @@ export default function Dashboard() {
           value={providerFilter}
           onChange={(e) => setProviderFilter(e.target.value)}
         >
-          <option value="">All providers</option>
+          <option value="">{tr("dash.filter_all_providers", "All providers")}</option>
           {providerOptions.map((p) => (
             <option key={p} value={p}>
               {p}
@@ -230,7 +232,7 @@ export default function Dashboard() {
         <input
           className="input"
           style={{ width: 170 }}
-          placeholder="Filter by model…"
+          placeholder={tr("dash.filter_model_placeholder", "Filter by model…")}
           value={modelInput}
           onChange={(e) => setModelInput(e.target.value)}
         />
@@ -252,7 +254,7 @@ export default function Dashboard() {
             }}
             onClick={clearFilters}
           >
-            Clear filters
+            {tr("common.clear_filters", "Clear filters")}
           </button>
         )}
       </div>
@@ -263,28 +265,28 @@ export default function Dashboard() {
         {/* ── Row 1 · Hero KPIs ─────────────────────────────────────────── */}
         <div className="kpi-grid" style={{ marginBottom: 0 }}>
           <HeroKpi
-            label="Total Requests"
+            label={tr("dash.total_requests", "Total Requests")}
             value={fmtNum(t?.requests)}
             accent="cyan"
             spark={reqSpark}
-            sub={t && t.streaming_requests ? `${t.streaming_requests} streaming` : undefined}
+            sub={t && t.streaming_requests ? `${t.streaming_requests} ${tr("dash.streaming", "streaming")}` : undefined}
           />
-          <HeroKpi label="Total Cost" value={fmtMoney(t?.cost_usd)} accent="emerald" spark={costSpark} />
+          <HeroKpi label={tr("dash.total_cost", "Total Cost")} value={fmtMoney(t?.cost_usd)} accent="emerald" spark={costSpark} />
           <HeroKpi
-            label="Cache Savings"
+            label={tr("dash.cache_savings", "Cache Savings")}
             value={fmtMoney(t?.cache_savings_usd ?? 0)}
             accent="emerald"
-            sub={t && t.cache_hit_rate ? `${t.cache_hit_rate.toFixed(1)}% prompt cache hit` : "0% cache hit"}
+            sub={t && t.cache_hit_rate ? `${t.cache_hit_rate.toFixed(1)}% ${tr("dash.cache_hit", "prompt cache hit")}` : `0% ${tr("dash.cache_hit", "cache hit")}`}
           />
           <SuccessRateCard rate={successRate} />
           <HeroKpi
-            label="Total Tokens"
+            label={tr("dash.total_tokens", "Total Tokens")}
             value={fmtCompact((t?.prompt_tokens ?? 0) + (t?.completion_tokens ?? 0))}
             accent="cyan"
-            sub={t ? `Prompt ${fmtCompact(t.prompt_tokens)} · Out ${fmtCompact(t.completion_tokens)}` : undefined}
+            sub={t ? `${tr("dash.prompt", "Prompt")} ${fmtCompact(t.prompt_tokens)} · ${tr("dash.completion", "Out")} ${fmtCompact(t.completion_tokens)}` : undefined}
           />
           <HeroKpi
-            label="Avg Latency"
+            label={tr("dash.avg_latency", "Avg Latency")}
             value={t ? `${t.avg_latency_ms.toFixed(0)} ms` : "—"}
             accent="violet"
             sub={t && t.avg_ttft_ms ? `AVG TTFT: ${t.avg_ttft_ms.toFixed(0)} ms` : "AVG TTFT: —"}
@@ -295,7 +297,7 @@ export default function Dashboard() {
         <div className="dashboard-grid dashboard-grid--7-5">
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
-            Token Analytics <span className="mono">[prompt · cached · completion · reasoning]</span>
+            {tr("dash.token_breakdown", "Token Analytics")} <span className="mono">[prompt · cached · completion · reasoning]</span>
           </div>
           <ChartBox height={240}>
             <BarChart data={series}>
@@ -322,17 +324,17 @@ export default function Dashboard() {
           </ChartBox>
           <LegendChips
             items={[
-              { c: C.cyan, label: "Prompt" },
-              { c: C.emeraldSoft, label: "Cached (50% off)" },
-              { c: C.violet, label: "Completion" },
-              { c: C.amberSoft, label: "Reasoning" },
+              { c: C.cyan, label: tr("dash.prompt", "Prompt") },
+              { c: C.emeraldSoft, label: tr("dash.cached", "Cached (50% off)") },
+              { c: C.violet, label: tr("dash.completion", "Completion") },
+              { c: C.amberSoft, label: tr("dash.reasoning", "Reasoning") },
             ]}
           />
         </div>
 
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
-            Cost Trend <span className="mono">[usd / bucket]</span>
+            {tr("dash.cost_trend", "Cost Trend")} <span className="mono">[usd / bucket]</span>
           </div>
           <ChartBox height={240}>
             <AreaChart data={series}>
@@ -367,14 +369,14 @@ export default function Dashboard() {
       <div className="dashboard-grid dashboard-grid--3-col">
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
-            Cost by Model <span className="mono">[by_model]</span>
+            {tr("dash.by_model", "Cost by Model")} <span className="mono">[by_model]</span>
           </div>
           <ModelDonut rows={stats?.by_model ?? []} />
         </div>
 
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
-            Top Consumers <span className="mono">[by_user]</span>
+            {tr("dash.top_consumers", "Top Consumers")} <span className="mono">[by_user]</span>
           </div>
           <ConsumerBars rows={stats?.by_user ?? []} />
         </div>
@@ -410,7 +412,7 @@ export default function Dashboard() {
 
         <div className="card" style={{ margin: 0 }}>
           <div className="card__title">
-            Recent Requests <span className="mono">[recent]</span>
+            {tr("dash.recent_requests", "Recent Requests")} <span className="mono">[recent]</span>
           </div>
           <RecentTable rows={stats?.recent ?? []} onInspect={(id) => setSelectedLogId(id)} />
         </div>

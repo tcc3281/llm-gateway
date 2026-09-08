@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, RequireAuth } from "./auth";
 import { ToastProvider } from "./components/Toast";
+import { LanguageProvider } from "./i18n";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -15,9 +16,10 @@ import Settings from "./pages/Settings";
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <BrowserRouter>
+    <LanguageProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <BrowserRouter>
           <Routes>
           <Route path="/login" element={<Login />} />
           <Route
@@ -46,8 +48,9 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </BrowserRouter>
-    </ToastProvider>
-  </AuthProvider>
+        </BrowserRouter>
+        </ToastProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }

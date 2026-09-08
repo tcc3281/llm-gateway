@@ -4,6 +4,7 @@ import type { APIKey, UsageLog, UsageLogsPage, User } from "../api/types";
 import { fmtDate, fmtMoney, fmtNum, localToRFC3339 } from "../lib/format";
 import { StatusBadge } from "./Dashboard";
 import LogDetailDrawer from "../components/LogDetailDrawer";
+import { useLanguage } from "../i18n";
 
 const PAGE_SIZE = 50;
 
@@ -201,13 +202,15 @@ export default function UsageLogs() {
     filters.inbound !== "" ||
     preset !== "24h";
 
+  const { t } = useLanguage();
+
   return (
     <div>
       <div className="page__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
         <div>
-          <h1 className="page__title">Usage Logs</h1>
+          <h1 className="page__title">{t("logs.title", "Usage Logs")}</h1>
           <p className="page__sub">
-            {fmtNum(data.total)} request(s) match the current filters.
+            {fmtNum(data.total)} {t("logs.subtitle", "request(s) match the current filters.")}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -215,6 +218,7 @@ export default function UsageLogs() {
           <div className="time-presets" style={{ display: "flex", background: "var(--surface-raised)", border: "1px solid var(--border)", borderRadius: 4, height: 32, padding: 2 }}>
             {(["24h", "7d", "30d", "all", "custom"] as const).map((p) => {
               const active = preset === p;
+              const label = p === "all" ? t("logs.preset_all", "all") : p === "custom" ? t("logs.preset_custom", "custom") : p;
               return (
                 <button
                   key={p}
@@ -232,7 +236,7 @@ export default function UsageLogs() {
                   }}
                   onClick={() => handlePresetChange(p)}
                 >
-                  {p}
+                  {label}
                 </button>
               );
             })}
@@ -244,7 +248,7 @@ export default function UsageLogs() {
             onClick={() => load(filters, page * PAGE_SIZE)}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>refresh</span>
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? t("common.refreshing", "Refreshing...") : t("common.refresh", "Refresh")}
           </button>
         </div>
       </div>
@@ -256,7 +260,7 @@ export default function UsageLogs() {
           value={filters.provider}
           onChange={(e) => set("provider")(e.target.value)}
         >
-          <option value="">Any provider</option>
+          <option value="">{t("logs.filter_provider", "Any provider")}</option>
           {providerOptions.map((p) => (
             <option key={p} value={p}>
               {p}
@@ -266,7 +270,7 @@ export default function UsageLogs() {
         <input
           className="input"
           style={{ width: 180 }}
-          placeholder="Model…"
+          placeholder={t("logs.filter_model", "Model…")}
           value={modelInput}
           onChange={(e) => setModelInput(e.target.value)}
         />
@@ -276,7 +280,7 @@ export default function UsageLogs() {
           value={filters.user_id}
           onChange={(e) => set("user_id")(e.target.value)}
         >
-          <option value="">Any user</option>
+          <option value="">{t("logs.filter_user", "Any user")}</option>
           {users.map((u) => (
             <option key={u.id} value={u.id}>
               {u.email}
@@ -289,7 +293,7 @@ export default function UsageLogs() {
           value={filters.key_id}
           onChange={(e) => set("key_id")(e.target.value)}
         >
-          <option value="">Any API key</option>
+          <option value="">{t("logs.filter_key", "Any API key")}</option>
           {keys.map((k) => (
             <option key={k.id} value={k.id}>
               {k.name} ({k.key_prefix}…)
@@ -302,14 +306,14 @@ export default function UsageLogs() {
           value={filters.status}
           onChange={(e) => set("status")(e.target.value)}
         >
-          <option value="">Any status</option>
-          <optgroup label="Classes">
+          <option value="">{t("logs.filter_status", "Any status")}</option>
+          <optgroup label={t("logs.status_classes", "Classes")}>
             <option value="2xx">2xx (Success)</option>
             <option value="3xx">3xx (Redirect)</option>
             <option value="4xx">4xx (Client Error)</option>
             <option value="5xx">5xx (Server Error)</option>
           </optgroup>
-          <optgroup label="Specific Codes">
+          <optgroup label={t("logs.status_specific", "Specific Codes")}>
             <option value="200">200 OK</option>
             <option value="400">400 Bad Request</option>
             <option value="401">401 Unauthorized</option>
@@ -328,7 +332,7 @@ export default function UsageLogs() {
           value={filters.inbound}
           onChange={(e) => set("inbound")(e.target.value)}
         >
-          <option value="">Any format</option>
+          <option value="">{t("logs.filter_inbound", "Any format")}</option>
           <option value="openai">openai</option>
           <option value="anthropic">anthropic</option>
         </select>
@@ -338,12 +342,12 @@ export default function UsageLogs() {
           value={filters.modality}
           onChange={(e) => set("modality")(e.target.value)}
         >
-          <option value="">All modalities</option>
-          <option value="text">Text only</option>
-          <option value="vision">Vision</option>
-          <option value="audio">Audio</option>
-          <option value="tools">Tools / Agents</option>
-          <option value="reasoning">Reasoning</option>
+          <option value="">{t("logs.filter_modality", "All modalities")}</option>
+          <option value="text">{t("logs.modality_text", "Text only")}</option>
+          <option value="vision">{t("logs.modality_vision", "Vision")}</option>
+          <option value="audio">{t("logs.modality_audio", "Audio")}</option>
+          <option value="tools">{t("logs.modality_tools", "Tools / Agents")}</option>
+          <option value="reasoning">{t("logs.modality_reasoning", "Reasoning")}</option>
         </select>
         {preset === "custom" && (
           <>
@@ -393,7 +397,7 @@ export default function UsageLogs() {
             }}
             onClick={clearFilters}
           >
-            Clear filters
+            {t("common.clear_filters", "Clear filters")}
           </button>
         )}
       </div>
@@ -404,17 +408,17 @@ export default function UsageLogs() {
         <table className="table table--dense">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Provider</th>
-              <th>Model</th>
-              <th className="num">Status</th>
-              <th>In</th>
-              <th className="num">In Tk</th>
-              <th className="num">Out Tk</th>
-              <th className="num">TTFT</th>
-              <th className="num">Latency</th>
-              <th className="num">Cost</th>
-              <th>Error</th>
+              <th>{t("logs.col_time", "Time")}</th>
+              <th>{t("logs.col_provider", "Provider")}</th>
+              <th>{t("logs.col_model", "Model")}</th>
+              <th className="num">{t("logs.col_status", "Status")}</th>
+              <th>{t("logs.col_inbound", "In")}</th>
+              <th className="num">{t("logs.col_in_tk", "In Tk")}</th>
+              <th className="num">{t("logs.col_out_tk", "Out Tk")}</th>
+              <th className="num">{t("logs.col_ttft", "TTFT")}</th>
+              <th className="num">{t("logs.col_latency", "Latency")}</th>
+              <th className="num">{t("logs.col_cost", "Cost")}</th>
+              <th>{t("logs.col_error", "Error")}</th>
               <th></th>
             </tr>
           </thead>
@@ -531,7 +535,7 @@ export default function UsageLogs() {
                     }}
                     title="Inspect full log details"
                   >
-                    Inspect
+                    {t("common.inspect", "Inspect")}
                   </button>
                 </td>
               </tr>
@@ -539,7 +543,7 @@ export default function UsageLogs() {
             {!data.data.length && (
               <tr>
                 <td colSpan={12}>
-                  <div className="empty">No logs match the current filters</div>
+                  <div className="empty">{t("logs.no_logs", "No logs match the current filters")}</div>
                 </td>
               </tr>
             )}
@@ -554,7 +558,7 @@ export default function UsageLogs() {
             disabled={page === 0}
             onClick={() => setPage((p) => Math.max(0, p - 1))}
           >
-            ← Prev
+            {t("common.prev", "← Prev")}
           </button>
           <span className="mono" style={{ fontSize: 12 }}>
             {page + 1} / {pages}
@@ -564,7 +568,7 @@ export default function UsageLogs() {
             disabled={page + 1 >= pages}
             onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
           >
-            Next →
+            {t("common.next", "Next →")}
           </button>
         </div>
       )}

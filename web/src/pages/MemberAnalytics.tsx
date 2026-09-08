@@ -5,8 +5,10 @@ import type {
   MemberDetailResponse,
   MemberUsageSummary,
 } from "../api/types";
+import { useLanguage } from "../i18n";
 
 export default function MemberAnalytics() {
+  const { t } = useLanguage();
   const [range, setRange] = useState<"24h" | "7d" | "30d">("7d");
   const [selectedGroup, setSelectedGroup] = useState<string>("");
   const [search, setSearch] = useState<string>("");
@@ -122,10 +124,10 @@ export default function MemberAnalytics() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
           <h1 style={{ fontFamily: "Inter, sans-serif", fontSize: "22px", fontWeight: 700, margin: "0 0 4px 0", color: "#dde4e5" }}>
-            Member &amp; Team Usage Analytics
+            {t("analytics.title", "Member & Team Usage Analytics")}
           </h1>
           <p style={{ margin: 0, fontSize: "13px", color: "#859397" }}>
-            Telemetry, model breakdown, and budget quota tracking per team member
+            {t("analytics.subtitle", "Telemetry, model breakdown, and budget quota tracking per team member")}
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
@@ -143,7 +145,7 @@ export default function MemberAnalytics() {
               fontSize: "12px",
             }}
           >
-            Export CSV
+            {t("common.export_csv", "Export CSV")}
           </button>
         </div>
       </div>
@@ -169,7 +171,7 @@ export default function MemberAnalytics() {
           }}
         >
           <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", fontWeight: 700, color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-            ACTIVE MEMBERS
+            {t("analytics.kpi_active_members", "ACTIVE MEMBERS")}
           </span>
           <div style={{ margin: "12px 0 0 0" }}>
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "28px", fontWeight: 700, color: "#22d3ee" }}>
@@ -177,7 +179,7 @@ export default function MemberAnalytics() {
             </span>
           </div>
           <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397" }}>
-            Making calls in past {range}
+            {t("analytics.past", "Making calls in past")} {range}
           </span>
         </div>
 
@@ -194,7 +196,7 @@ export default function MemberAnalytics() {
           }}
         >
           <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", fontWeight: 700, color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-            TOTAL SPEND / BUDGET
+            {t("analytics.kpi_total_spend", "TOTAL SPEND / BUDGET")}
           </span>
           <div style={{ margin: "8px 0 0 0" }}>
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "22px", fontWeight: 700, color: "#10b981" }}>
@@ -202,7 +204,7 @@ export default function MemberAnalytics() {
             </span>
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "13px", color: "#859397" }}>
               {" "}
-              / ${data?.summary.budget_limit.toFixed(0) || "unlimited"}
+              / ${data?.summary.budget_limit.toFixed(0) || t("common.unlimited", "unlimited")}
             </span>
           </div>
           {data && data.summary.budget_limit > 0 && (
@@ -217,7 +219,7 @@ export default function MemberAnalytics() {
                 />
               </div>
               <div style={{ textAlign: "right", fontSize: "10px", fontFamily: "JetBrains Mono, monospace", color: "#859397", marginTop: "4px" }}>
-                {((data.summary.total_spend / data.summary.budget_limit) * 100).toFixed(1)}% QUOTA
+                {((data.summary.total_spend / data.summary.budget_limit) * 100).toFixed(1)}% {t("analytics.quota", "QUOTA")}
               </div>
             </div>
           )}
@@ -236,7 +238,7 @@ export default function MemberAnalytics() {
           }}
         >
           <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", fontWeight: 700, color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-            MOST POPULAR MODEL
+            {t("analytics.kpi_top_model", "MOST POPULAR MODEL")}
           </span>
           <div style={{ margin: "12px 0 0 0" }}>
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "13px", color: "#a855f7", backgroundColor: "rgba(168, 85, 247, 0.1)", border: "1px solid rgba(168, 85, 247, 0.3)", padding: "4px 8px", borderRadius: "3px" }}>
@@ -244,7 +246,7 @@ export default function MemberAnalytics() {
             </span>
           </div>
           <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397" }}>
-            Highest request volume
+            {t("analytics.highest_volume", "Highest request volume")}
           </span>
         </div>
 
@@ -261,7 +263,7 @@ export default function MemberAnalytics() {
           }}
         >
           <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", fontWeight: 700, color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-            TOTAL TOKENS PROCESSED
+            {t("dash.total_tokens", "TOTAL TOKENS PROCESSED")}
           </span>
           <div style={{ margin: "12px 0 0 0" }}>
             <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "28px", fontWeight: 700, color: "#22d3ee" }}>
@@ -324,10 +326,10 @@ export default function MemberAnalytics() {
             outline: "none",
           }}
         >
-          <option value="">All Teams &amp; Groups</option>
-          {data?.teams.map((t) => (
-            <option key={t.group_id} value={t.group_id}>
-              {t.group_name} ({t.member_count} members)
+          <option value="">{t("common.all", "All Teams & Groups")}</option>
+          {data?.teams.map((group) => (
+            <option key={group.group_id} value={group.group_id}>
+              {group.group_name} ({group.member_count} members)
             </option>
           ))}
         </select>
@@ -336,7 +338,7 @@ export default function MemberAnalytics() {
         <div style={{ flex: 1, minWidth: "220px" }}>
           <input
             type="text"
-            placeholder="Search member by name or email..."
+            placeholder={t("users.search_placeholder", "Search member by name or email...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
@@ -370,28 +372,28 @@ export default function MemberAnalytics() {
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid #2d3139", backgroundColor: "rgba(47, 54, 56, 0.4)" }}>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>Member</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>Assigned Team</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>Top Models Used</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>Total Reqs</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>Prompt Tok</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>Comp Tok</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>Total Cost</th>
-                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", width: "140px" }}>Budget Quota</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>{t("analytics.col_user", "Member")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>{t("users.col_groups", "Assigned Team")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase" }}>{t("analytics.col_top_model", "Top Models Used")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>{t("analytics.col_requests", "Total Reqs")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>{t("dash.prompt_tokens", "Prompt Tok")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>{t("dash.completion_tokens", "Comp Tok")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", textAlign: "right" }}>{t("analytics.col_spend", "Total Cost")}</th>
+                  <th style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", width: "140px" }}>{t("analytics.quota", "Budget Quota")}</th>
                 </tr>
               </thead>
-              <tbody style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "13px" }}>
+              <tbody>
                 {loading && (
                   <tr>
                     <td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "#859397" }}>
-                      Loading member usage analytics...
+                      {t("common.loading", "Loading member analytics telemetry...")}
                     </td>
                   </tr>
                 )}
                 {!loading && data?.members.length === 0 && (
                   <tr>
                     <td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "#859397" }}>
-                      No member activity found matching filters.
+                      {t("common.no_data", "No members match the query filters.")}
                     </td>
                   </tr>
                 )}
@@ -399,27 +401,32 @@ export default function MemberAnalytics() {
                   data?.members.map((m) => {
                     const isSelected = selectedMember?.user_id === m.user_id;
                     const quotaColor =
-                      m.budget_used_percent > 90 ? "#ef4444" : m.budget_used_percent > 70 ? "#f59e0b" : "#10b981";
+                      m.budget_used_percent > 90
+                        ? "#ef4444"
+                        : m.budget_used_percent > 70
+                        ? "#f59e0b"
+                        : "#10b981";
+
                     return (
                       <tr
                         key={m.user_id}
                         onClick={() => setSelectedMember(m)}
                         style={{
-                          borderBottom: "1px solid #1f2229",
+                          borderBottom: "1px solid #2d3139",
                           backgroundColor: isSelected ? "rgba(34, 211, 238, 0.08)" : "transparent",
                           cursor: "pointer",
-                          transition: "background-color 0.15s ease",
+                          transition: "background 0.1s ease",
                         }}
                       >
                         <td style={{ padding: "12px 16px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                             <div
                               style={{
-                                width: "32px",
-                                height: "32px",
-                                borderRadius: "4px",
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "3px",
                                 backgroundColor: isSelected ? "#22d3ee" : "#242b2d",
-                                color: isSelected ? "#000" : "#22d3ee",
+                                color: isSelected ? "#06282d" : "#dde4e5",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
@@ -427,26 +434,15 @@ export default function MemberAnalytics() {
                                 fontSize: "12px",
                               }}
                             >
-                              {(m.name || m.email).substring(0, 2).toUpperCase()}
+                              {(m.name || m.email).charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                <span style={{ fontWeight: 600, color: "#ffffff" }}>{m.name || "Unnamed"}</span>
-                                {m.is_root ? (
-                                  <span style={{ fontSize: "9px", padding: "1px 4px", borderRadius: "2px", border: "1px solid rgba(34, 211, 238, 0.4)", backgroundColor: "rgba(34, 211, 238, 0.1)", color: "#22d3ee", fontWeight: 700 }}>
-                                    [ROOT]
-                                  </span>
-                                ) : m.role === "admin" ? (
-                                  <span style={{ fontSize: "9px", padding: "1px 4px", borderRadius: "2px", border: "1px solid rgba(16, 185, 129, 0.4)", backgroundColor: "rgba(16, 185, 129, 0.1)", color: "#10b981", fontWeight: 700 }}>
-                                    [LEAD]
-                                  </span>
-                                ) : (
-                                  <span style={{ fontSize: "9px", padding: "1px 4px", borderRadius: "2px", border: "1px solid #3c494c", backgroundColor: "#242b2d", color: "#859397", fontWeight: 700 }}>
-                                    [MEMBER]
-                                  </span>
-                                )}
+                              <div style={{ color: "#ffffff", fontWeight: 600, fontSize: "13px" }}>
+                                {m.name || "—"}
                               </div>
-                              <div style={{ fontSize: "11px", color: "#859397" }}>{m.email}</div>
+                              <div style={{ color: "#859397", fontSize: "11px", fontFamily: "JetBrains Mono, monospace" }}>
+                                {m.email}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -455,7 +451,7 @@ export default function MemberAnalytics() {
                           {m.groups.length > 0 ? (
                             <span style={{ color: "#22d3ee" }}>{m.groups.join(", ")}</span>
                           ) : (
-                            <span style={{ color: "#64748b" }}>Unassigned</span>
+                            <span style={{ color: "#64748b" }}>{t("common.not_set", "Unassigned")}</span>
                           )}
                         </td>
 
@@ -478,7 +474,7 @@ export default function MemberAnalytics() {
                                 </span>
                               ))
                             ) : (
-                              <span style={{ fontSize: "11px", color: "#64748b" }}>none</span>
+                              <span style={{ fontSize: "11px", color: "#64748b" }}>—</span>
                             )}
                           </div>
                         </td>
@@ -510,7 +506,7 @@ export default function MemberAnalytics() {
                               </div>
                             </div>
                           ) : (
-                            <span style={{ fontSize: "11px", color: "#64748b" }}>Unlimited</span>
+                            <span style={{ fontSize: "11px", color: "#64748b" }}>{t("common.unlimited", "Unlimited")}</span>
                           )}
                         </td>
                       </tr>
@@ -548,188 +544,91 @@ export default function MemberAnalytics() {
               </div>
               <button
                 onClick={() => setSelectedMember(null)}
-                style={{ background: "none", border: "none", color: "#859397", cursor: "pointer", fontSize: "16px" }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#859397",
+                  cursor: "pointer",
+                  fontSize: "18px",
+                  padding: "4px",
+                  lineHeight: 1,
+                }}
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* Member Status Badge */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", backgroundColor: "#242b2d", border: "1px solid #3c494c", borderRadius: "3px" }}>
-                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397" }}>STATUS:</span>
-                <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#10b981", backgroundColor: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "2px 6px", borderRadius: "2px", fontWeight: 700 }}>
-                  [ACTIVE_LOGGING]
+            <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
+              {/* Member Meta Badges */}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "11px", fontFamily: "JetBrains Mono, monospace", padding: "2px 6px", borderRadius: "3px", backgroundColor: "rgba(34, 211, 238, 0.1)", color: "#22d3ee", border: "1px solid rgba(34, 211, 238, 0.3)" }}>
+                  Role: {selectedMember.role}
                 </span>
+                {selectedMember.groups.map((grp) => (
+                  <span key={grp} style={{ fontSize: "11px", fontFamily: "JetBrains Mono, monospace", padding: "2px 6px", borderRadius: "3px", backgroundColor: "#242b2d", color: "#dde4e5", border: "1px solid #3c494c" }}>
+                    {grp}
+                  </span>
+                ))}
+              </div>
+
+              {/* Spend Details */}
+              <div style={{ backgroundColor: "#242b2d", padding: "12px", borderRadius: "4px", border: "1px solid #3c494c" }}>
+                <span style={{ fontSize: "11px", color: "#859397", fontFamily: "JetBrains Mono, monospace", textTransform: "uppercase" }}>
+                  {t("analytics.col_spend", "Total Period Spend")}
+                </span>
+                <div style={{ fontSize: "20px", fontWeight: 700, color: "#10b981", margin: "4px 0" }}>
+                  ${selectedMember.cost_usd.toFixed(4)}
+                </div>
+                <div style={{ fontSize: "11px", color: "#859397" }}>
+                  {selectedMember.requests.toLocaleString()} {t("dash.total_requests", "requests")} &bull;{" "}
+                  {formatTokens(selectedMember.prompt_tokens + selectedMember.completion_tokens)} {t("dash.total_tokens", "tokens")}
+                </div>
               </div>
 
               {/* Models Breakdown */}
               <div>
-                <h4 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", margin: "0 0 10px 0" }}>
-                  Model Distribution ({range})
-                </h4>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#859397", fontFamily: "JetBrains Mono, monospace", textTransform: "uppercase" }}>
+                  {t("dash.by_model", "Model Breakdown")}
+                </span>
                 {loadingDetail ? (
-                  <div style={{ fontSize: "12px", color: "#859397", fontFamily: "JetBrains Mono, monospace" }}>Loading breakdown...</div>
-                ) : memberDetail?.model_details.length === 0 ? (
-                  <div style={{ fontSize: "12px", color: "#64748b", fontFamily: "JetBrains Mono, monospace" }}>No model calls recorded.</div>
+                  <div style={{ fontSize: "12px", color: "#859397", marginTop: "8px" }}>{t("common.loading", "Loading detail...")}</div>
                 ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                    {memberDetail?.model_details.map((md, idx) => {
-                      const share = selectedMember.cost_usd > 0 ? (md.cost_usd / selectedMember.cost_usd) * 100 : 0;
-                      const accentColor = idx === 0 ? "#22d3ee" : idx === 1 ? "#a855f7" : "#10b981";
-                      return (
-                        <div
-                          key={md.model}
-                          style={{
-                            padding: "8px 12px",
-                            backgroundColor: "#242b2d",
-                            border: "1px solid #3c494c",
-                            borderLeft: `3px solid ${accentColor}`,
-                            borderRadius: "2px",
-                            fontFamily: "JetBrains Mono, monospace",
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "4px" }}>
-                            <span style={{ color: "#ffffff", fontWeight: 600 }}>[{md.model}]</span>
-                            <span style={{ color: "#10b981", fontWeight: 700 }}>${md.cost_usd.toFixed(2)}</span>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#859397" }}>
-                            <span>{md.requests.toLocaleString()} reqs</span>
-                            <span>{share.toFixed(1)}% spend</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+                    {memberDetail?.model_details.map((md) => (
+                      <div
+                        key={md.model}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          fontSize: "12px",
+                          padding: "6px 8px",
+                          backgroundColor: "#242b2d",
+                          borderRadius: "3px",
+                          border: "1px solid #3c494c",
+                        }}
+                      >
+                        <span style={{ fontFamily: "JetBrains Mono, monospace", color: "#22d3ee" }}>
+                          {md.model}
+                        </span>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ color: "#dde4e5", fontWeight: 600 }}>${md.cost_usd.toFixed(2)}</div>
+                          <div style={{ fontSize: "10px", color: "#859397" }}>
+                            {md.requests} reqs &bull; {formatTokens(md.tokens ?? (md.prompt_tokens + md.completion_tokens))}
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
+                    {(!memberDetail || memberDetail.model_details.length === 0) && (
+                      <div style={{ fontSize: "12px", color: "#859397" }}>{t("common.no_data", "No model calls")}</div>
+                    )}
                   </div>
                 )}
               </div>
-
-              {/* Daily Trend Volume Sparkline Bars */}
-              <div>
-                <h4 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", margin: "0 0 10px 0" }}>
-                  Daily Request Trend
-                </h4>
-                {memberDetail?.daily_trends && memberDetail.daily_trends.length > 0 ? (
-                  <div
-                    style={{
-                      height: "80px",
-                      backgroundColor: "#242b2d",
-                      border: "1px solid #3c494c",
-                      borderRadius: "3px",
-                      display: "flex",
-                      alignItems: "flex-end",
-                      padding: "8px 6px",
-                      gap: "4px",
-                    }}
-                  >
-                    {(() => {
-                      const max = Math.max(...memberDetail.daily_trends.map((t) => t.requests), 1);
-                      return memberDetail.daily_trends.map((t) => {
-                        const heightPct = Math.max(8, (t.requests / max) * 100);
-                        return (
-                          <div
-                            key={t.time_bucket}
-                            title={`${t.time_bucket}: ${t.requests} reqs ($${t.cost_usd.toFixed(2)})`}
-                            style={{
-                              flex: 1,
-                              height: `${heightPct}%`,
-                              backgroundColor: "rgba(34, 211, 238, 0.5)",
-                              borderRadius: "2px 2px 0 0",
-                              transition: "background-color 0.15s ease",
-                              cursor: "pointer",
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#22d3ee")}
-                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "rgba(34, 211, 238, 0.5)")}
-                          />
-                        );
-                      });
-                    })()}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "JetBrains Mono, monospace" }}>
-                    No daily points recorded in window.
-                  </div>
-                )}
-              </div>
-
-              {/* Action Button */}
-              <button
-                onClick={() => window.location.href = "/audit-logs"}
-                className="btn"
-                style={{
-                  width: "100%",
-                  justifyContent: "center",
-                  backgroundColor: "#242b2d",
-                  border: "1px solid #3c494c",
-                  color: "#dde4e5",
-                  fontFamily: "JetBrains Mono, monospace",
-                  fontSize: "11px",
-                  marginTop: "8px",
-                }}
-              >
-                VIEW FULL AUDIT LOG
-              </button>
             </div>
           </aside>
         )}
       </div>
-
-      {/* MAIN SECTION 3: TEAM AGGREGATION CARDS */}
-      {data && data.teams.length > 0 && (
-        <div style={{ marginTop: "8px" }}>
-          <h3 style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "11px", color: "#859397", letterSpacing: "0.05em", textTransform: "uppercase", margin: "0 0 12px 0" }}>
-            TEAM AGGREGATION ({range})
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
-            {data.teams.map((t) => {
-              const utilColor =
-                t.utilization_percent > 90 ? "#ef4444" : t.utilization_percent > 70 ? "#f59e0b" : "#10b981";
-              return (
-                <div
-                  key={t.group_id}
-                  style={{
-                    backgroundColor: "#1a2122",
-                    border: "1px solid #2d3139",
-                    borderRadius: "4px",
-                    padding: "16px",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-                    <div>
-                      <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "14px", fontWeight: 700, color: "#ffffff" }}>
-                        {t.group_name}
-                      </span>
-                      <div style={{ fontSize: "11px", color: "#859397", fontFamily: "JetBrains Mono, monospace" }}>
-                        {t.member_count} active members · {t.requests.toLocaleString()} reqs
-                      </div>
-                    </div>
-                    <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "14px", fontWeight: 700, color: "#10b981" }}>
-                      ${t.cost_usd.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <div style={{ width: "100%", height: "6px", backgroundColor: "#242b2d", borderRadius: "2px", overflow: "hidden", marginBottom: "6px" }}>
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${Math.min(100, t.utilization_percent)}%`,
-                        backgroundColor: utilColor,
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "10px", fontFamily: "JetBrains Mono, monospace", color: "#859397" }}>
-                    <span>UTILIZATION</span>
-                    <span style={{ color: utilColor }}>
-                      {t.utilization_percent.toFixed(1)}% / ${t.budget_limit_monthly.toFixed(0) || "unlimited"}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

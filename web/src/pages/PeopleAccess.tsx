@@ -3,44 +3,46 @@ import Users from "./Users";
 import Groups from "./Groups";
 import Tenants from "./Tenants";
 import MemberAnalytics from "./MemberAnalytics";
+import { useLanguage } from "../i18n";
 
 type TabKey = "users" | "groups" | "tenants" | "analytics";
 
-interface TabItem {
+interface TabConfig {
   key: TabKey;
-  label: string;
+  labelKey: string;
   icon: string;
-  desc: string;
+  descKey: string;
 }
 
-const TABS: TabItem[] = [
+const TAB_CONFIGS: TabConfig[] = [
   {
     key: "users",
-    label: "Users & Accounts",
+    labelKey: "people.tab_users",
     icon: "person",
-    desc: "Manage user accounts, roles, and administrative access",
+    descKey: "people.tab_users_desc",
   },
   {
     key: "groups",
-    label: "IAM Groups & Policies",
+    labelKey: "people.tab_groups",
     icon: "shield_person",
-    desc: "Organize teams, assign monthly budgets, and configure IAM permission policies",
+    descKey: "people.tab_groups_desc",
   },
   {
     key: "tenants",
-    label: "Tenants & B2B Billing",
+    labelKey: "people.tab_tenants",
     icon: "domain",
-    desc: "Manage multi-tenant SaaS clients, system boundary models, and prepaid credit escrows",
+    descKey: "people.tab_tenants_desc",
   },
   {
     key: "analytics",
-    label: "Member Analytics",
+    labelKey: "people.tab_analytics",
     icon: "insights",
-    desc: "Track team and member consumption, spending ceilings, and model breakdown",
+    descKey: "people.tab_analytics_desc",
   },
 ];
 
 export default function PeopleAccess() {
+  const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = (searchParams.get("tab") as TabKey) || "users";
 
@@ -48,7 +50,7 @@ export default function PeopleAccess() {
     setSearchParams({ tab });
   };
 
-  const activeTabItem = TABS.find((t) => t.key === currentTab) || TABS[0];
+  const activeTabItem = TAB_CONFIGS.find((tItem) => tItem.key === currentTab) || TAB_CONFIGS[0];
 
   return (
     <div>
@@ -64,11 +66,13 @@ export default function PeopleAccess() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
           <div>
             <div className="mono" style={{ fontSize: 11, color: "var(--primary)", textTransform: "uppercase", fontWeight: 700 }}>
-              Access Control & Organization
+              {t("people.badge", "ACCESS CONTROL & ORGANIZATION")}
             </div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: "2px 0 4px 0" }}>People & Access</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: "2px 0 4px 0" }}>
+              {t("people.title", "People & Access Management")}
+            </h1>
             <p className="muted" style={{ fontSize: 13, margin: 0, paddingBottom: 12 }}>
-              {activeTabItem.desc}
+              {t(activeTabItem.descKey)}
             </p>
           </div>
 
@@ -84,7 +88,7 @@ export default function PeopleAccess() {
               marginBottom: 12,
             }}
           >
-            {TABS.map((tab) => {
+            {TAB_CONFIGS.map((tab) => {
               const isActive = tab.key === currentTab;
               return (
                 <button
@@ -110,7 +114,7 @@ export default function PeopleAccess() {
                   <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
                     {tab.icon}
                   </span>
-                  <span>{tab.label}</span>
+                  <span>{t(tab.labelKey)}</span>
                 </button>
               );
             })}

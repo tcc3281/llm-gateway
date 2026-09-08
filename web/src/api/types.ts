@@ -302,6 +302,7 @@ export interface UserModelUsage {
   cost_usd: number;
   prompt_tokens: number;
   completion_tokens: number;
+  tokens?: number;
 }
 
 export interface MemberUsageSummary {
@@ -396,8 +397,8 @@ export interface TenantTransactionsPage {
 
 export interface TopUpCreditRequest {
   amount: number;
-  contract_ref: string;
-  notes: string;
+  contract_ref?: string;
+  notes?: string;
 }
 
 export interface TenantPatch {
