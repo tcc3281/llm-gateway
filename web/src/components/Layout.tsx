@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/keys", key: "nav.keys", defaultLabel: "API Keys", icon: "key" },
   { to: "/providers", key: "nav.providers", defaultLabel: "Providers", icon: "hub" },
   { to: "/models", key: "nav.models", defaultLabel: "Models & Pricing", icon: "payments" },
+  { to: "/virtual-models", key: "nav.virtual_models", defaultLabel: "Virtual Models", icon: "alt_route" },
   { to: "/alerts", key: "nav.alerts", defaultLabel: "Alerts & Hooks", icon: "notifications_active" },
   { to: "/logs", key: "nav.logs", defaultLabel: "Usage Logs", icon: "list_alt" },
   { to: "/audit-logs", key: "nav.audit", defaultLabel: "Audit Trail", icon: "history" },

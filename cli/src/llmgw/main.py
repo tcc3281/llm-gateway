@@ -1254,5 +1254,132 @@ def chat(client: GatewayClient, url: str, api_key: str, model: str, message: str
     console.print(f"[dim]{' | '.join(parts)} ({pub_url})[/dim]")
 
 
+# ----------------------------------------------------
+# Alias & Virtual Models Commands (v0.3.0)
+# ----------------------------------------------------
+@cli.group(name="alias")
+def alias_group():
+    """Manage virtual models and dynamic routing aliases"""
+    pass
+
+
+@alias_group.command(name="list")
+@click.option("--tenant", default=None, help="Filter by tenant ID")
+@click.pass_obj
+def alias_list(client: GatewayClient, tenant: str | None):
+    """List all virtual models and routing aliases"""
+    params = {}
+    if tenant:
+        params["tenant_id"] = tenant
+    resp = client.request("GET", "/admin/virtual-models", params=params)
+    vms = resp.json()
+    if client.json_out:
+        client.emit(vms)
+        return
+
+    if not vms:
+        rprint("[yellow]⚠️ No virtual models found. Use 'llmgw alias create' to create one.[/yellow]")
+        return
+
+    table = Table(title="Virtual Models & Routing Aliases")
+    table.add_column("ALIAS NAME", style="bold cyan")
+    table.add_column("STRATEGY", style="yellow")
+    table.add_column("SCOPE", style="blue")
+    table.add_column("TARGETS & WEIGHTS", style="green")
+    table.add_column("FALLBACKS", style="magenta")
+    table.add_column("STATUS", style="white")
+
+    for v in vms:
+        targets = v.get("targets") or []
+        primaries = [t for t in targets if t.get("is_active", True) and t.get("priority", 1) == 1]
+        fallbacks = [t for t in targets if t.get("is_active", True) and t.get("priority", 1) > 1]
+
+        target_strs = [f"{t.get('provider')}/{t.get('model_name')} ({t.get('weight', 100)}wt)" for t in primaries]
+        fallback_strs = [f"T{t.get('priority')}:{t.get('provider')}/{t.get('model_name')}" for t in fallbacks]
+
+        status_str = "[bold green]ACTIVE[/bold green]" if v.get("is_active") else "[dim red]INACTIVE[/dim red]"
+        scope_str = "Global" if not v.get("tenant_id") else f"Tenant:{v.get('tenant_id')[:8]}"
+
+        table.add_row(
+            v.get("name", ""),
+            v.get("routing_strategy", "weighted"),
+            scope_str,
+            ", ".join(target_strs) or "-",
+            ", ".join(fallback_strs) or "-",
+            status_str,
+        )
+
+    console.print(table)
+
+
+@alias_group.command(name="create")
+@click.argument("name")
+@click.option("--target", "-t", "targets", multiple=True, required=True, help="Target in format provider/model (e.g. openai/gpt-4o-mini)")
+@click.option("--weight", "-w", "weights", multiple=True, type=int, help="Weights corresponding to targets")
+@click.option("--fallback", "-f", "fallbacks", multiple=True, help="Fallback targets in format provider/model")
+@click.option("--strategy", default="weighted", type=click.Choice(["weighted", "fallback", "round_robin"]), help="Routing strategy")
+@click.option("--desc", default="", help="Description of the alias")
+@click.option("--tenant", default=None, help="Tenant UUID (optional)")
+@click.pass_obj
+def alias_create(client: GatewayClient, name: str, targets: list[str], weights: list[int], fallbacks: list[str], strategy: str, desc: str, tenant: str | None):
+    """Create a virtual model alias with canary targets and fallback chain"""
+    target_objs = []
+    weight_list = list(weights)
+
+    for i, t in enumerate(targets):
+        parts = t.split("/", 1)
+        prov = parts[0] if len(parts) == 2 else "openai"
+        mod = parts[1] if len(parts) == 2 else parts[0]
+        w = weight_list[i] if i < len(weight_list) else 100
+        target_objs.append({
+            "provider": prov,
+            "model_name": mod,
+            "weight": w,
+            "priority": 1,
+            "is_active": True,
+        })
+
+    for j, fb in enumerate(fallbacks):
+        parts = fb.split("/", 1)
+        prov = parts[0] if len(parts) == 2 else "openai"
+        mod = parts[1] if len(parts) == 2 else parts[0]
+        target_objs.append({
+            "provider": prov,
+            "model_name": mod,
+            "weight": 100,
+            "priority": j + 2,
+            "is_active": True,
+        })
+
+    payload = {
+        "name": name,
+        "description": desc,
+        "tenant_id": tenant,
+        "routing_strategy": strategy,
+        "is_active": True,
+        "targets": target_objs,
+    }
+
+    resp = client.request("POST", "/admin/virtual-models", json=payload)
+    data = resp.json()
+    if client.json_out:
+        client.emit(data)
+    else:
+        rprint(f"[bold green]✓ Virtual model '{name}' created successfully (ID: {data.get('id')})[/bold green]")
+
+
+@alias_group.command(name="delete")
+@click.argument("alias_id")
+@click.pass_obj
+def alias_delete(client: GatewayClient, alias_id: str):
+    """Delete a virtual model alias by ID"""
+    client.request("DELETE", f"/admin/virtual-models/{alias_id}")
+    if client.json_out:
+        client.emit({"deleted": alias_id})
+    else:
+        rprint(f"[bold green]✓ Virtual model '{alias_id}' deleted successfully[/bold green]")
+
+
 if __name__ == "__main__":
     cli()
+

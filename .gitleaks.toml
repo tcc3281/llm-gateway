@@ -1,0 +1,24 @@
+title = "Gitleaks configuration for llm-gateway"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for documentation examples, design mocks, and placeholder tokens"
+paths = [
+  '''(?i)\.env\.example$''',
+  '''(?i)design/.*''',
+  '''(?i)CHEATSHEET\.md''',
+  '''(?i)README(\..*)?\.md''',
+  '''(?i)docs/.*''',
+]
+regexes = [
+  '''sk-admin-secret-key-[a-zA-Z0-9_-]+''',
+  '''sk-gw-[a-f0-9]{40}''',
+  '''sk-gw-\.\.\.''',
+  '''sk-proj-\.\.\.''',
+  '''sk-ant-\.\.\.''',
+  '''sk-or-v1-\.\.\.''',
+  '''sk-prod-\.\.\.''',
+  '''sk-dev-\.\.\.''',
+]

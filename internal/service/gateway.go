@@ -3,11 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,6 +172,27 @@ func (g *GatewayService) ListAvailableModels(ctx context.Context) ([]model.Provi
 				})
 			}
 		}
+
+		// 1b. Active Virtual Models (v0.3.0)
+		if vms, err := g.pg.ListVirtualModels(nil); err == nil {
+			for _, vm := range vms {
+				if !vm.IsActive || seen[vm.Name] {
+					continue
+				}
+				seen[vm.Name] = true
+				created := vm.CreatedAt.Unix()
+				if created <= 0 {
+					created = 1700000000
+				}
+				models = append(models, model.ProviderModel{
+					ID:       vm.Name,
+					Object:   "model",
+					Created:  created,
+					OwnedBy:  "virtual",
+					Provider: "virtual",
+				})
+			}
+		}
 	}
 
 	// 2. Live model lists from each provider that has a key configured (concurrent fetch).
@@ -248,9 +272,10 @@ type ProxyParams struct {
 // and telemetry; BaseURL is empty for built-in providers and the custom endpoint
 // for OpenAI/Anthropic-compatible providers.
 type ResolvedTarget struct {
-	Provider provider.ProviderType
-	Name     string
-	BaseURL  string
+	Provider    provider.ProviderType
+	Name        string
+	BaseURL     string
+	TargetModel string // explicit model name for virtual models or aliased targets
 }
 
 // resolveTarget decides the upstream provider for a model name.
@@ -331,6 +356,134 @@ func (g *GatewayService) targetForProvider(name, protocol, baseURL string) Resol
 		pt = provider.ProviderAnthropic
 	}
 	return ResolvedTarget{Provider: pt, Name: name, BaseURL: baseURL}
+}
+
+// resolveVirtualModel attempts to resolve modelName as a Virtual Model Alias.
+// If modelName matches an active Virtual Model in PostgreSQL, it executes dynamic routing
+// (e.g. weighted random traffic splitting / canary, followed by priority-based fallback chains),
+// and returns the resolved targets ladder with TargetModel set.
+// Returns (vm, targets, nil) if found; returns (nil, nil, nil) if modelName is not a virtual model.
+func (g *GatewayService) resolveVirtualModel(ctx context.Context, modelName string, tenantID *uuid.UUID) (*model.VirtualModel, []ResolvedTarget, error) {
+	if g.pg == nil {
+		return nil, nil, nil
+	}
+
+	vm, err := g.pg.GetVirtualModelByName(modelName, tenantID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	if vm == nil || !vm.IsActive || len(vm.Targets) == 0 {
+		return nil, nil, nil
+	}
+
+	// Filter active targets
+	var activeTargets []model.VirtualModelTarget
+	for _, t := range vm.Targets {
+		if t.IsActive {
+			activeTargets = append(activeTargets, t)
+		}
+	}
+	if len(activeTargets) == 0 {
+		return nil, nil, fmt.Errorf("virtual model %q has no active targets configured", modelName)
+	}
+
+	// Find the minimum priority among active targets (normally 1)
+	minPriority := activeTargets[0].Priority
+	for _, t := range activeTargets {
+		if t.Priority < minPriority {
+			minPriority = t.Priority
+		}
+	}
+
+	// Separate into Primary pool (all targets with priority == minPriority)
+	// and Fallback tiers (priority > minPriority)
+	var primaryPool []model.VirtualModelTarget
+	var fallbackPool []model.VirtualModelTarget
+	for _, t := range activeTargets {
+		if t.Priority == minPriority {
+			primaryPool = append(primaryPool, t)
+		} else {
+			fallbackPool = append(fallbackPool, t)
+		}
+	}
+
+	// Sort fallbackPool by priority ASC, then ID ASC
+	sort.SliceStable(fallbackPool, func(i, j int) bool {
+		if fallbackPool[i].Priority != fallbackPool[j].Priority {
+			return fallbackPool[i].Priority < fallbackPool[j].Priority
+		}
+		return fallbackPool[i].ID < fallbackPool[j].ID
+	})
+
+	var selectedPrimary model.VirtualModelTarget
+	var secondaryPrimaryTargets []model.VirtualModelTarget
+
+	if len(primaryPool) == 1 {
+		selectedPrimary = primaryPool[0]
+		secondaryPrimaryTargets = nil
+	} else {
+		switch vm.RoutingStrategy {
+		case "fallback":
+			selectedPrimary = primaryPool[0]
+			secondaryPrimaryTargets = primaryPool[1:]
+		case "round_robin":
+			fallthrough
+		default: // "weighted"
+			totalWeight := 0
+			for _, t := range primaryPool {
+				w := t.Weight
+				if w <= 0 {
+					w = 1
+				}
+				totalWeight += w
+			}
+			if totalWeight <= 0 {
+				totalWeight = 1
+			}
+			r := rand.Intn(totalWeight)
+			accum := 0
+			selectedIdx := 0
+			for i, t := range primaryPool {
+				w := t.Weight
+				if w <= 0 {
+					w = 1
+				}
+				accum += w
+				if r < accum {
+					selectedIdx = i
+					break
+				}
+			}
+			selectedPrimary = primaryPool[selectedIdx]
+			for i, t := range primaryPool {
+				if i != selectedIdx {
+					secondaryPrimaryTargets = append(secondaryPrimaryTargets, t)
+				}
+			}
+		}
+	}
+
+	orderedTargets := append([]model.VirtualModelTarget{selectedPrimary}, secondaryPrimaryTargets...)
+	orderedTargets = append(orderedTargets, fallbackPool...)
+
+	var resolvedTargets []ResolvedTarget
+	for _, t := range orderedTargets {
+		rt, err := g.targetForProviderName(ctx, t.Provider)
+		if err != nil {
+			continue
+		}
+		rt.TargetModel = t.ModelName
+		resolvedTargets = append(resolvedTargets, rt)
+	}
+
+	if len(resolvedTargets) == 0 {
+		return nil, nil, fmt.Errorf("could not resolve any active upstream targets for virtual model %q", modelName)
+	}
+
+	return vm, resolvedTargets, nil
 }
 
 // DiscoverProvider fetches one provider's /models API and persists the result
@@ -593,13 +746,36 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 	}
 
 	// 3. Resolve target Upstream Provider & Fallback Ladder
-	primaryTarget, err := g.resolveTarget(ctx, canReq.Model)
-	if err != nil {
-		return err
+	var primaryTarget ResolvedTarget
+	var targets []ResolvedTarget
+	targetModelName := canReq.Model
+
+	var tenantID *uuid.UUID
+	if params.ApiKey != nil {
+		tenantID = params.ApiKey.TenantID
+	}
+
+	vm, vmTargets, vmErr := g.resolveVirtualModel(ctx, canReq.Model, tenantID)
+	if vmErr != nil {
+		return vmErr
+	}
+	if vm != nil && len(vmTargets) > 0 {
+		primaryTarget = vmTargets[0]
+		targets = vmTargets
+		if primaryTarget.TargetModel != "" {
+			targetModelName = primaryTarget.TargetModel
+		}
+	} else {
+		resolved, err := g.resolveTarget(ctx, canReq.Model)
+		if err != nil {
+			return err
+		}
+		primaryTarget = resolved
+		targets = g.resolveFallbackChain(ctx, primaryTarget)
 	}
 
 	// 3b. Multi-Tenant Hold & Settle: Reserve worst-case cost against prepaid credit balance
-	heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, primaryTarget.Name, canReq.Model, len(params.RequestBody)/4, canReq.MaxTokens)
+	heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, primaryTarget.Name, targetModelName, len(params.RequestBody)/4, canReq.MaxTokens)
 	if hErr != nil {
 		return hErr
 	}
@@ -611,14 +787,12 @@ func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) 
 		}()
 	}
 
-	targets := g.resolveFallbackChain(ctx, primaryTarget)
-
 	// 4. Dispatch with Fallback Ladder
 	upResp, usedTarget, usedModel, attempts, err := g.sendWithFallback(ctx, targets, canReq, params.UpstreamAPIKey)
 	if err != nil {
 		durationSec := time.Since(startTime).Seconds()
-		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, canReq.Model, "chat", durationSec, http.StatusServiceUnavailable)
-		g.recordTelemetry(params, primaryTarget.Name, canReq.Model, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
+		telemetry.RecordDurationMetric(ctx, primaryTarget.Name, targetModelName, "chat", durationSec, http.StatusServiceUnavailable)
+		g.recordTelemetry(params, primaryTarget.Name, targetModelName, 0, 0, 0, 0, analytics.CostResult{}, 0, http.StatusServiceUnavailable, err.Error(), startTime)
 		if span := trace.SpanFromContext(ctx); span != nil && span.IsRecording() {
 			span.RecordError(err)
 		}
@@ -1363,9 +1537,26 @@ func (g *GatewayService) HandleEmbeddings(ctx context.Context, params ProxyParam
 	}
 
 	// 2. Resolve target provider
-	target, err := g.resolveTarget(ctx, embedReq.Model)
-	if err != nil {
-		return err
+	var target ResolvedTarget
+	var err error
+	var tenantID *uuid.UUID
+	if params.ApiKey != nil {
+		tenantID = params.ApiKey.TenantID
+	}
+	vm, vmTargets, vmErr := g.resolveVirtualModel(ctx, embedReq.Model, tenantID)
+	if vmErr != nil {
+		return vmErr
+	}
+	if vm != nil && len(vmTargets) > 0 {
+		target = vmTargets[0]
+		if target.TargetModel != "" {
+			embedReq.Model = target.TargetModel
+		}
+	} else {
+		target, err = g.resolveTarget(ctx, embedReq.Model)
+		if err != nil {
+			return err
+		}
 	}
 
 	// 3. Resolve upstream API key

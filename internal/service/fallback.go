@@ -165,7 +165,10 @@ func (g *GatewayService) sendWithFallback(
 			}
 		}
 
-		targetModel := g.fallbackModelForTarget(canReq, target)
+		targetModel := target.TargetModel
+		if targetModel == "" {
+			targetModel = g.fallbackModelForTarget(canReq, target)
+		}
 		payload, err := encodeForTarget(canReq, target, targetModel)
 		if err != nil {
 			attempts = append(attempts, FallbackAttempt{
