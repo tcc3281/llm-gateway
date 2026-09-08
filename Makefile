@@ -1,126 +1,100 @@
-.PHONY: help up down build restart logs health web-install web-dev web-build user-list user-create key-list key-create key-revoke provider-list provider-set model-list model-add model-delete stats
+# ==============================================================================
+# LLM Gateway - Makefile (Project Configuration & Execution)
+# ==============================================================================
 
-CONTAINER_NAME = llm_gateway
-BUDGET ?= 50.0
-RPM ?= 100
-INTERVAL ?= hour
+.PHONY: help env up down restart build logs logs-all ps health \
+        up-monitoring up-all \
+        web-install web-dev web-build \
+        secret-scan test lint check clean
 
+# ------------------------------------------------------------------------------
+# Configurations
+# ------------------------------------------------------------------------------
+DOCKER_COMPOSE ?= docker compose
+
+# ------------------------------------------------------------------------------
+# Help / Menu
+# ------------------------------------------------------------------------------
 help:
-	@echo "========================================="
-	@echo "    LLM Gateway Makefile Commands"
-	@echo "========================================="
+	@echo "========================================================================"
+	@echo "                   🚀 LLM Gateway Project Lifecycle                     "
+	@echo "========================================================================"
 	@echo ""
-	@echo "--- Docker & System ---"
-	@echo "make up             - Khởi động hệ thống (docker-compose up -d)"
-	@echo "make down           - Dừng hệ thống"
-	@echo "make build          - Build lại và khởi động"
-	@echo "make logs           - Xem logs của gateway container"
-	@echo "make health         - Kiểm tra health server admin (port 8081)"
+	@echo "⚙️  [Configuration]"
+	@echo "  make env              - Tạo file .env từ .env.example (nếu chưa có)"
 	@echo ""
-	@echo "--- Dashboard Frontend (web/) ---"
-	@echo "make web-install    - Cài dependencies (npm install) trong web/"
-	@echo "make web-dev        - Chạy Vite dev server (proxy tới admin :8081)"
-	@echo "make web-build      - Build frontend vào internal/web/dist"
+	@echo "🐳 [Docker & Services]"
+	@echo "  make up               - Khởi động core stack ở chế độ background"
+	@echo "  make down             - Dừng toàn bộ containers"
+	@echo "  make restart          - Khởi động lại hệ thống (down + up)"
+	@echo "  make build            - Build lại Docker image và khởi động stack"
+	@echo "  make logs             - Theo dõi logs của gateway container"
+	@echo "  make logs-all         - Theo dõi logs toàn bộ services trong stack"
+	@echo "  make ps               - Xem trạng thái các container"
+	@echo "  make health           - Kiểm tra health check server admin (:8081)"
+	@echo "  make up-monitoring    - Khởi động stack kèm Prometheus & Grafana"
+	@echo "  make up-all           - Khởi động tất cả profiles service"
 	@echo ""
-	@echo "--- CLI: Users ---"
-	@echo "make user-list      - Liệt kê tất cả người dùng"
-	@echo "make user-create    - Tạo người dùng mới"
-	@echo "                      (Cần: EMAIL, NAME) | Ví dụ: make user-create EMAIL=dev@abc.com NAME=\"Dev 1\""
+	@echo "💻 [Web Dashboard (web/)]"
+	@echo "  make web-install      - Cài đặt npm dependencies"
+	@echo "  make web-dev          - Chạy Vite development server (:5173)"
+	@echo "  make web-build        - Build production bundle vào internal/web/dist"
 	@echo ""
-	@echo "--- CLI: API Keys ---"
-	@echo "make key-list       - Liệt kê tất cả API keys"
-	@echo "make key-create     - Tạo API key (Mặc định: BUDGET=$(BUDGET), RPM=$(RPM))"
-	@echo "                      (Cần: UID, NAME)   | Ví dụ: make key-create UID=<uuid> NAME=\"App Key\""
-	@echo "make key-revoke     - Thu hồi vô hiệu hoá API key"
-	@echo "                      (Cần: KID)         | Ví dụ: make key-revoke KID=<uuid>"
+	@echo "🛡️  [Quality & Security]"
+	@echo "  make secret-scan      - Quét rò rỉ secret bằng Gitleaks (Docker/local)"
+	@echo "  make test             - Chạy backend unit tests"
+	@echo "  make lint             - Kiểm tra Go vet"
+	@echo "  make check            - Chạy toàn bộ kiểm tra (lint + test + secret-scan)"
+	@echo "  make clean            - Dọn dẹp cache, file build và coverage"
 	@echo ""
-	@echo "--- CLI: Providers ---"
-	@echo "make provider-list  - Liệt kê các API key của nhà cung cấp"
-	@echo "make provider-set   - Thêm/cập nhật provider key"
-	@echo "                      (Cần: PVD, KEY)    | Ví dụ: make provider-set PVD=openai KEY=sk-..."
-	@echo ""
-	@echo "--- CLI: Models & Pricing ---"
-	@echo "make model-list     - Liệt kê models và bảng giá định tuyến"
-	@echo "make model-add      - Thêm/cập nhật model"
-	@echo "                      (Cần: PVD, MODEL, PROMPT, COMP) | Ví dụ: make model-add PVD=openai MODEL=gpt-4o PROMPT=2.5 COMP=10"
-	@echo "make model-delete   - Xóa model"
-	@echo "                      (Cần: MID)         | Ví dụ: make model-delete MID=<uuid>"
-	@echo ""
-	@echo "--- CLI: Analytics & Stats ---"
-	@echo "make stats          - Xem thống kê (Mặc định: INTERVAL=$(INTERVAL))"
-	@echo "                      (Tùy chọn: INTERVAL, UID) | Ví dụ: make stats INTERVAL=day"
-	@echo ""
+	@echo "========================================================================"
 
-# Docker Commands
+# ==============================================================================
+# 1. Configuration
+# ==============================================================================
+env:
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		echo "✅ Đã khởi tạo file .env từ .env.example. Vui lòng chỉnh sửa các key nếu cần."; \
+	else \
+		echo "ℹ️  File .env đã tồn tại, không cần tạo lại."; \
+	fi
+
+# ==============================================================================
+# 2. Docker & Services
+# ==============================================================================
 up:
-	docker-compose up -d
+	$(DOCKER_COMPOSE) up -d
 
 down:
-	docker-compose down
-
-build: web-build
-	docker-compose up -d --build
+	$(DOCKER_COMPOSE) down
 
 restart: down up
 
+build:
+	$(DOCKER_COMPOSE) up -d --build
+
 logs:
-	docker-compose logs -f gateway
+	$(DOCKER_COMPOSE) logs -f gateway
+
+logs-all:
+	$(DOCKER_COMPOSE) logs -f
+
+ps:
+	$(DOCKER_COMPOSE) ps
 
 health:
-	curl -s http://localhost:8081/health
+	@curl -s http://localhost:8081/health || echo "❌ Admin server chưa sẵn sàng."
 
-# Users
-user-list:
-	uv run --project cli llmgw user list
+up-monitoring:
+	$(DOCKER_COMPOSE) --profile monitoring up -d
 
-user-create:
-	@if [ -z "$(EMAIL)" ] || [ -z "$(NAME)" ]; then echo "❌ Lỗi: Thiếu tham số EMAIL hoặc NAME.\nVí dụ: make user-create EMAIL=dev@abc.com NAME=\"Dev\""; exit 1; fi
-	uv run --project cli llmgw user create --email "$(EMAIL)" --name "$(NAME)" --role user
+up-all:
+	$(DOCKER_COMPOSE) --profile all up -d
 
-# Keys
-key-list:
-	uv run --project cli llmgw key list
-
-key-create:
-	@if [ -z "$(UID)" ] || [ -z "$(NAME)" ]; then echo "❌ Lỗi: Thiếu tham số UID hoặc NAME.\nVí dụ: make key-create UID=<uuid> NAME=\"App\""; exit 1; fi
-	uv run --project cli llmgw key create --user-id "$(UID)" --name "$(NAME)" --budget "$(BUDGET)" --rpm "$(RPM)"
-
-key-revoke:
-	@if [ -z "$(KID)" ]; then echo "❌ Lỗi: Thiếu tham số KID.\nVí dụ: make key-revoke KID=<uuid>"; exit 1; fi
-	uv run --project cli llmgw key revoke --id "$(KID)"
-
-# Providers
-provider-list:
-	uv run --project cli llmgw provider list
-
-provider-set:
-	@if [ -z "$(PVD)" ] || [ -z "$(KEY)" ]; then echo "❌ Lỗi: Thiếu tham số PVD (provider) hoặc KEY.\nVí dụ: make provider-set PVD=openai KEY=sk-..."; exit 1; fi
-	uv run --project cli llmgw provider set --provider "$(PVD)" --api-key "$(KEY)"
-
-# Models
-model-list:
-	uv run --project cli llmgw model list
-
-model-add:
-	@if [ -z "$(PVD)" ] || [ -z "$(MODEL)" ] || [ -z "$(PROMPT)" ] || [ -z "$(COMP)" ]; then echo "❌ Lỗi: Thiếu tham số PVD, MODEL, PROMPT, COMP.\nVí dụ: make model-add PVD=openai MODEL=gpt-4o PROMPT=2.5 COMP=10"; exit 1; fi
-	uv run --project cli llmgw model add --provider "$(PVD)" --name "$(MODEL)" --prompt-price "$(PROMPT)" --completion-price "$(COMP)"
-
-model-delete:
-	@if [ -z "$(MID)" ]; then echo "❌ Lỗi: Thiếu tham số MID.\nVí dụ: make model-delete MID=<uuid>"; exit 1; fi
-	uv run --project cli llmgw model delete --id "$(MID)"
-
-model-discover:
-	uv run --project cli llmgw model discover
-
-# Stats
-stats:
-	@if [ -z "$(UID)" ]; then \
-		uv run --project cli llmgw stats --interval "$(INTERVAL)"; \
-	else \
-		uv run --project cli llmgw stats --interval "$(INTERVAL)" --user-id "$(UID)"; \
-	fi
-
-# Dashboard Frontend (web/)
+# ==============================================================================
+# 3. Web Dashboard (web/)
+# ==============================================================================
 web-install:
 	cd web && npm install
 
@@ -129,3 +103,30 @@ web-dev:
 
 web-build:
 	cd web && npm run build
+
+# ==============================================================================
+# 4. Quality, Testing & Security
+# ==============================================================================
+secret-scan:
+	@echo "🔍 Đang quét rò rỉ secret / API key bằng Gitleaks..."
+	@if command -v gitleaks > /dev/null 2>&1; then \
+		gitleaks detect -v --source . --config .gitleaks.toml; \
+	else \
+		docker run --rm -v "$$(pwd):/path" zricethezav/gitleaks:latest detect -v --source=/path --config=/path/.gitleaks.toml; \
+	fi
+
+test:
+	go test -v -race -timeout 10m -covermode=atomic -coverprofile=coverage.out ./...
+
+lint:
+	go vet ./...
+
+check: lint test secret-scan
+	@echo "✅ Toàn bộ bài kiểm tra (Lint, Test, Secret Scan) đã hoàn tất thành công!"
+
+clean:
+	@echo "🧹 Dọn dẹp build artifacts và coverage..."
+	@rm -f coverage.out profile.cov
+	@rm -rf internal/web/dist/*
+	@touch internal/web/dist/index.html
+	@echo "✨ Hoàn tất dọn dẹp."
