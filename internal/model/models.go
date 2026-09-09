@@ -105,6 +105,7 @@ type UsageLog struct {
 	TotalLatencyMs      int64     `json:"total_latency_ms"` // Total duration
 	StatusCode          int           `json:"status_code"`
 	ErrorMessage        string        `json:"error_message,omitempty"`
+	ClientIP            string        `json:"client_ip,omitempty"`
 	RequestShape        *RequestShape `json:"request_shape,omitempty"`
 }
 
@@ -261,6 +262,7 @@ type UsageLogFilter struct {
 	HasImages     *bool
 	HasAudio      *bool
 	StructureHash string
+	ClientIP      string
 }
 
 // UsageLogDetail enriches UsageLog with joined user email and api key name

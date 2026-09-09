@@ -3,10 +3,12 @@ package permission
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"llm-gateway/internal/db"
+	"llm-gateway/internal/model"
 
 	"github.com/google/uuid"
 )
@@ -19,6 +21,13 @@ type PermissionEngine struct {
 	policyCache map[uuid.UUID][]cachedPolicy // group_id -> parsed policies
 	cacheExpiry time.Time
 	cacheTTL    time.Duration
+
+	keyPolicyCache sync.Map // keyID -> cachedKeyPolicyItem
+}
+
+type cachedKeyPolicyItem struct {
+	policies  []model.KeyModelPolicy
+	expiresAt time.Time
 }
 
 type cachedPolicy struct {
@@ -124,27 +133,48 @@ func (pe *PermissionEngine) CheckKeyModelAccess(ctx context.Context, keyID uuid.
 		return true, nil
 	}
 
-	policies, err := pe.pg.GetKeyModelPolicies(keyID)
-	if err != nil {
-		return false, fmt.Errorf("failed to load key model policies: %w", err)
+	var policies []model.KeyModelPolicy
+	if val, ok := pe.keyPolicyCache.Load(keyID); ok {
+		item := val.(cachedKeyPolicyItem)
+		if time.Now().Before(item.expiresAt) {
+			policies = item.policies
+		} else {
+			pe.keyPolicyCache.Delete(keyID)
+		}
+	}
+
+	if policies == nil {
+		pols, err := pe.pg.GetKeyModelPolicies(keyID)
+		if err != nil {
+			return false, fmt.Errorf("failed to load key model policies: %w", err)
+		}
+		if pols == nil {
+			pols = []model.KeyModelPolicy{}
+		}
+		pe.keyPolicyCache.Store(keyID, cachedKeyPolicyItem{
+			policies:  pols,
+			expiresAt: time.Now().Add(pe.cacheTTL),
+		})
+		policies = pols
 	}
 
 	if len(policies) == 0 {
 		return true, nil // No per-key restriction configured
 	}
 
+	cleanModel := strings.ToLower(strings.TrimSpace(modelName))
 	hasAllowlist := false
 	matchedAllowlist := false
 
 	for _, p := range policies {
 		if p.IsAllowlist {
 			hasAllowlist = true
-			if MatchPattern(p.ModelPattern, modelName) {
+			if MatchCleanPattern(p.ModelPattern, cleanModel) {
 				matchedAllowlist = true
 			}
 		} else {
 			// Explicit key denylist
-			if MatchPattern(p.ModelPattern, modelName) {
+			if MatchCleanPattern(p.ModelPattern, cleanModel) {
 				return false, nil // Blocked by key denylist
 			}
 		}
@@ -161,9 +191,14 @@ func (pe *PermissionEngine) CheckKeyModelAccess(ctx context.Context, keyID uuid.
 // InvalidateCache invalidates the in-memory policy cache.
 func (pe *PermissionEngine) InvalidateCache() {
 	pe.mu.Lock()
-	defer pe.mu.Unlock()
 	pe.policyCache = make(map[uuid.UUID][]cachedPolicy)
 	pe.cacheExpiry = time.Time{}
+	pe.mu.Unlock()
+
+	pe.keyPolicyCache.Range(func(key, value any) bool {
+		pe.keyPolicyCache.Delete(key)
+		return true
+	})
 }
 
 // CheckGroupAdmin evaluates whether a user is an admin of the specified group or root.

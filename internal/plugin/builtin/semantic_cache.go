@@ -24,6 +24,10 @@ func (p *SemanticCachePlugin) Hooks() []plugin.HookType {
 	return []plugin.HookType{plugin.HookPreRouting, plugin.HookPostUpstream}
 }
 
+func (p *SemanticCachePlugin) IsAsyncPostUpstream() bool {
+	return true
+}
+
 func (p *SemanticCachePlugin) ExecPreRouting(pctx *plugin.PluginContext, cfg map[string]any) error {
 	if pctx.CanReq == nil || pctx.CanReq.Stream || pctx.Redis == nil {
 		return nil
@@ -51,10 +55,7 @@ func (p *SemanticCachePlugin) ExecPostUpstream(pctx *plugin.PluginContext, resp 
 		return nil
 	}
 
-	ttlSeconds := 300
-	if v, ok := cfg["ttl_seconds"].(float64); ok && v > 0 {
-		ttlSeconds = int(v)
-	}
+	ttlSeconds := getIntConfig(cfg, "ttl_seconds", 300)
 
 	cacheKey := cache.CacheKey(pctx.CanReq)
 	respBytes, err := json.Marshal(resp)

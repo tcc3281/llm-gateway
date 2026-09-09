@@ -94,6 +94,14 @@ func main() {
 	// Refresh discovered model catalog hourly in the background
 	go proxyEngine.StartModelDiscoveryLoop(context.Background(), time.Hour)
 
+	// Start in-memory plugin cache background sync & distributed Redis Pub/Sub listener
+	if pe := proxyEngine.PluginEngine(); pe != nil {
+		pe.StartBackgroundSync(context.Background(), 30*time.Second)
+		if redisClient != nil {
+			pe.StartRedisSubscriber(context.Background(), redisClient)
+		}
+	}
+
 	// 7. Handlers & Public Mux
 	gwHandler := handler.NewGatewayHandler(authService, proxyEngine, redisClient, pg)
 

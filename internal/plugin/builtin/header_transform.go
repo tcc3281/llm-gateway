@@ -41,14 +41,8 @@ func (p *HeaderTransformPlugin) ExecPreRouting(pctx *plugin.PluginContext, cfg m
 	}
 
 	// 2. Remove headers
-	if removeRaw, ok := cfg["remove"].([]any); ok {
-		for _, r := range removeRaw {
-			if rStr, ok := r.(string); ok && rStr != "" {
-				pctx.RemoveHeaders = append(pctx.RemoveHeaders, rStr)
-			}
-		}
-	} else if removeSlice, ok := cfg["remove"].([]string); ok {
-		pctx.RemoveHeaders = append(pctx.RemoveHeaders, removeSlice...)
+	if removes := getStringSliceConfig(cfg, "remove"); len(removes) > 0 {
+		pctx.RemoveHeaders = append(pctx.RemoveHeaders, removes...)
 	}
 
 	return nil

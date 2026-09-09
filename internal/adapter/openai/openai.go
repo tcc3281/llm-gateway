@@ -619,8 +619,9 @@ func DecodeStreamChunk(data []byte, fallbackModel string) (*canonical.CanonicalS
 	return c, nil
 }
 
-// FormatCanonicalToOpenAISSE converts CanonicalStreamChunk to OpenAI SSE string format
-func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, error) {
+// FormatCanonicalToOpenAISSEBytes converts CanonicalStreamChunk directly to OpenAI SSE byte format,
+// eliminating intermediate string conversions and re-allocations on the streaming hot path.
+func FormatCanonicalToOpenAISSEBytes(chunk *canonical.CanonicalStreamChunk) ([]byte, error) {
 	streamChunk := OpenAIStreamChunk{
 		ID:      chunk.ID,
 		Object:  "chat.completion.chunk",
@@ -645,10 +646,23 @@ func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, 
 
 	data, err := json.Marshal(streamChunk)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return "data: " + string(data) + "\n\n", nil
+	out := make([]byte, 0, len(data)+8)
+	out = append(out, "data: "...)
+	out = append(out, data...)
+	out = append(out, "\n\n"...)
+	return out, nil
+}
+
+// FormatCanonicalToOpenAISSE converts CanonicalStreamChunk to OpenAI SSE string format
+func FormatCanonicalToOpenAISSE(chunk *canonical.CanonicalStreamChunk) (string, error) {
+	b, err := FormatCanonicalToOpenAISSEBytes(chunk)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // FormatOpenAIToolCallSSE renders reconstructed assistant tool calls as two

@@ -30,6 +30,7 @@ interface Filters {
   status: string;
   inbound: string;
   modality: string;
+  client_ip: string;
   from: string;
   to: string;
 }
@@ -42,6 +43,7 @@ const empty: Filters = {
   status: "",
   inbound: "",
   modality: "",
+  client_ip: "",
   from: "",
   to: "",
 };
@@ -88,6 +90,7 @@ export default function UsageLogs() {
           status: f.status || undefined,
           inbound: f.inbound || undefined,
           modality: f.modality || undefined,
+          client_ip: f.client_ip || undefined,
           limit: PAGE_SIZE,
           offset,
         });
@@ -430,7 +433,12 @@ export default function UsageLogs() {
                 onClick={() => setSelectedLog(l)}
               >
                 <td className="mono" style={{ fontSize: 11 }}>
-                  {fmtDate(l.created_at)}
+                  <div>{fmtDate(l.created_at)}</div>
+                  {l.client_ip && (
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                      {l.client_ip}
+                    </div>
+                  )}
                 </td>
                 <td>{l.provider}</td>
                 <td style={{ maxWidth: 220 }}>
