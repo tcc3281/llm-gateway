@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from typing import Any
 
 import click
 import httpx
@@ -10,6 +11,8 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .client import (
+    CONFIG_DIR,
+    CONFIG_FILE,
     GatewayClient,
     _extract_error,
     _status_hint,
@@ -69,25 +72,25 @@ def config_set(ctx, url: str, key: str, interactive: bool):
             sys.exit(1)
 
     try:
-        client.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        if not client.CONFIG_FILE.exists():
-            client.CONFIG_FILE.touch(mode=0o600)
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        if not CONFIG_FILE.exists():
+            CONFIG_FILE.touch(mode=0o600)
         else:
-            os.chmod(client.CONFIG_FILE, 0o600)
+            os.chmod(CONFIG_FILE, 0o600)
 
         # Preserve any public-proxy settings already saved.
         saved = {}
         try:
-            with open(client.CONFIG_FILE, "r") as f:
+            with open(CONFIG_FILE, "r") as f:
                 saved = json.load(f)
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
         saved.update({"gateway_url": url, "admin_api_key": key})
 
-        with open(client.CONFIG_FILE, "w") as f:
+        with open(CONFIG_FILE, "w") as f:
             json.dump(saved, f, indent=4)
 
-        rprint(f"[bold green]✅ Configuration saved successfully to {client.CONFIG_FILE}![/bold green]")
+        rprint(f"[bold green]✅ Configuration saved successfully to {CONFIG_FILE}![/bold green]")
     except Exception as e:
         console.print(f"[bold red]Error saving config file:[/bold red] {e}")
         sys.exit(1)
@@ -112,7 +115,7 @@ def config_show(client: GatewayClient):
         "admin_api_key": redacted_key,
         "public_url": pub_url,
         "source": "Environment Variables" if (os.getenv("GATEWAY_URL") or os.getenv("ADMIN_API_KEY")) else
-                  (f"Config file ({client.CONFIG_FILE})" if client.CONFIG_FILE.exists() else "Default Values"),
+                  (f"Config file ({CONFIG_FILE})" if CONFIG_FILE.exists() else "Default Values"),
     }
     if client.json_out:
         client.emit(data)
@@ -452,7 +455,7 @@ def model_delete(client: GatewayClient, id: str):
 @click.pass_obj
 def model_sync(client: GatewayClient, provider: str):
     """Pull pricing rules from the LiteLLM catalog into model_pricings (cost calculation only — does NOT affect routing)"""
-    with console.status(f"[bold green]Triggering model pricing sync for '{provider}' on Gateway...") as status:
+    with console.status(f"[bold green]Triggering model pricing sync for '{provider}' on Gateway..."):
         resp = client.request("POST", "/admin/models/sync", params={"provider": provider})
         result = resp.json()
 
@@ -467,7 +470,7 @@ def model_sync(client: GatewayClient, provider: str):
 @click.pass_obj
 def model_discover(client: GatewayClient):
     """Fetch each configured provider's /models API into provider_models (the ROUTING catalog)"""
-    with console.status("[bold green]Discovering models from configured providers...") as status:
+    with console.status("[bold green]Discovering models from configured providers..."):
         resp = client.request("POST", "/admin/models/discover")
         result = resp.json()
 
@@ -631,7 +634,7 @@ def stats(client: GatewayClient, interval: str, user_id: str):
 @click.pass_obj
 def logs(client: GatewayClient, limit: int, status: str, model: str, provider: str, user_id: str):
     """View gateway usage logs (GET /admin/logs)"""
-    params = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     if status:
         params["status"] = status
     if model:
@@ -1070,7 +1073,9 @@ def chat(client: GatewayClient, url: str, api_key: str, model: str, message: str
     # OpenAI inbound: auto round-trip the tool result so the model can answer.
     if tools and inbound_format == "openai" and tool_calls:
         assistant_msg = (data.get("choices") or [{}])[0].get("message", {})
-        messages2 = list(body["messages"]) + [assistant_msg]
+        raw_msgs = body.get("messages")
+        messages2 = list(raw_msgs) if isinstance(raw_msgs, list) else []
+        messages2.append(assistant_msg)
         for tc in tool_calls:
             messages2.append({"role": "tool", "tool_call_id": tc.get("id"), "content": "Sunny, 25°C"})
         body2 = dict(body)
@@ -1205,7 +1210,7 @@ def alias_create(client: GatewayClient, name: str, targets: list[str], weights: 
         "targets": target_objs,
     }
 
-    resp = client.request("POST", "/admin/virtual-models", json=payload)
+    resp = client.request("POST", "/admin/virtual-models", json_data=payload)
     data = resp.json()
     if client.json_out:
         client.emit(data)
@@ -1248,8 +1253,10 @@ def user_update(client: GatewayClient, id: str, name: str, role: str):
         name_key="email", what="user"
     )
     payload = {}
-    if name: payload["name"] = name
-    if role: payload["role"] = role
+    if name:
+        payload["name"] = name
+    if role:
+        payload["role"] = role
     resp = client.request("PATCH", "/admin/users", params={"id": user_id}, json_data=payload)
     if client.json_out:
         client.emit(resp.json())
@@ -1287,8 +1294,10 @@ def key_update(client: GatewayClient, id: str, budget: float, rpm: int):
         name_key="name", what="key"
     )
     payload = {}
-    if budget is not None: payload["budget_limit"] = budget
-    if rpm is not None: payload["rate_limit_rpm"] = rpm
+    if budget is not None:
+        payload["budget_limit"] = budget
+    if rpm is not None:
+        payload["rate_limit_rpm"] = rpm
     resp = client.request("PATCH", "/admin/keys", params={"id": key_id}, json_data=payload)
     if client.json_out:
         client.emit(resp.json())

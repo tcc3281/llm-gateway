@@ -29,7 +29,7 @@ def tenant_list(client: GatewayClient):
     table.add_column("NAME", style="white")
     table.add_column("TIER", style="yellow")
     table.add_column("BALANCE", style="green")
-    
+
     for t in data:
         table.add_row(
             str(t.get("id", "")),
@@ -66,8 +66,10 @@ def tenant_update(client: GatewayClient, id: str, name: str, tier: str):
         name_key="name", what="tenant"
     )
     payload = {}
-    if name: payload["name"] = name
-    if tier: payload["tier"] = tier
+    if name:
+        payload["name"] = name
+    if tier:
+        payload["tier"] = tier
 
     resp = client.request("PATCH", f"/admin/tenants/{tenant_id}", json_data=payload)
     if client.json_out:

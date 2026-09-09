@@ -5,6 +5,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from ..client import GatewayClient
+from ..utils import confirm_destructive
 
 
 @click.group()
@@ -29,7 +30,7 @@ def plugin_list(client: GatewayClient):
     table.add_column("NAME", style="cyan")
     table.add_column("DESCRIPTION", style="white")
     table.add_column("VERSION", style="yellow")
-    
+
     for p in data:
         table.add_row(
             str(p.get("name", "")),
@@ -45,9 +46,11 @@ def plugin_list(client: GatewayClient):
 def plugin_bindings(client: GatewayClient, tenant_id: str, plugin_name: str):
     """List active plugin bindings"""
     params = {}
-    if tenant_id: params["tenant_id"] = tenant_id
-    if plugin_name: params["plugin_name"] = plugin_name
-    
+    if tenant_id:
+        params["tenant_id"] = tenant_id
+    if plugin_name:
+        params["plugin_name"] = plugin_name
+
     resp = client.request("GET", "/admin/plugin-bindings", params=params or None)
     data = resp.json()
     if client.json_out:
@@ -64,7 +67,7 @@ def plugin_bindings(client: GatewayClient, tenant_id: str, plugin_name: str):
     table.add_column("SCOPE LEVEL", style="yellow")
     table.add_column("PRIORITY", style="green")
     table.add_column("ENABLED", style="blue")
-    
+
     for b in data:
         table.add_row(
             str(b.get("id", "")),
@@ -103,7 +106,7 @@ def plugin_bind(client: GatewayClient, plugin: str, scope: str, scope_id: str, c
         "priority": priority,
         "is_enabled": True
     }
-    
+
     resp = client.request("POST", "/admin/plugin-bindings", json_data=payload)
     if client.json_out:
         client.emit(resp.json())

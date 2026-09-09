@@ -29,7 +29,7 @@ def group_list(client: GatewayClient):
     table.add_column("TENANT ID", style="magenta")
     table.add_column("NAME", style="white")
     table.add_column("DESCRIPTION", style="yellow")
-    
+
     for g in data:
         table.add_row(
             str(g.get("id", "")),

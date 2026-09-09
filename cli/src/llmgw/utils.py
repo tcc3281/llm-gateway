@@ -1,9 +1,12 @@
+import json
 import sys
 import uuid
 
+import click
 from rich.console import Console
 
 console = Console()
+
 
 def is_uuid(s: str) -> bool:
     try:
@@ -11,6 +14,7 @@ def is_uuid(s: str) -> bool:
         return True
     except (ValueError, AttributeError, TypeError):
         return False
+
 
 def resolve_id(client, arg: str, fetch, name_key: str, what: str, hint: str = "") -> str:
     """Resolve an id argument that may be a UUID, a unique prefix, or a name.
@@ -40,7 +44,7 @@ def resolve_id(client, arg: str, fetch, name_key: str, what: str, hint: str = ""
         if hint:
             console.print(f"[dim]{hint}[/dim]")
         sys.exit(2)
-        
+
     if client.json_out:
         print(f'{{"status": "error", "code": "NOT_FOUND", "message": "No {what} found matching \'{arg}\'"}}')
         sys.exit(2)
@@ -49,15 +53,16 @@ def resolve_id(client, arg: str, fetch, name_key: str, what: str, hint: str = ""
         console.print(f"[dim]{hint}[/dim]")
     sys.exit(2)
 
-import click
-
 
 def confirm_destructive(client, prompt: str, yes: bool):
     """Ensure hard gates for destructive commands."""
     if yes:
         return
     if client.json_out:
-        import json
-        print(json.dumps({"status": "error", "code": "CONFIRMATION_REQUIRED", "message": "Destructive operation requires --yes flag"}))
+        print(json.dumps({
+            "status": "error",
+            "code": "CONFIRMATION_REQUIRED",
+            "message": "Destructive operation requires --yes flag",
+        }))
         sys.exit(2)
     click.confirm(f"[Warning] {prompt} Are you sure?", abort=True)

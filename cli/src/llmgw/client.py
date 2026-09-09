@@ -28,7 +28,7 @@ def load_config() -> tuple[str, str]:
                     base_url or data.get("gateway_url", "http://localhost:8081"),
                     admin_key or data.get("admin_api_key", "sk-admin-secret-key-change-me")
                 )
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
 
     # 3. Fallbacks
@@ -43,7 +43,7 @@ def load_public_config() -> tuple[str, str]:
                 data = json.load(f)
                 url = url or data.get("public_url")
                 key = key or data.get("public_api_key")
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
     return url or "http://localhost:8080", key or ""
 
@@ -79,7 +79,7 @@ class GatewayClient:
         if self.json_out:
             print(json.dumps(data, indent=2, default=str))
 
-    def request(self, method: str, path: str, json_data: dict = None, params: dict = None):
+    def request(self, method: str, path: str, json_data: dict | None = None, params: dict | None = None):
         url = f"{self.base_url}{path}"
         try:
             resp = self.client.request(method, url, json=json_data, params=params)

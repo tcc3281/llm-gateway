@@ -19,13 +19,13 @@ def env_sync(client: GatewayClient, tenant: str, key_name: str, budget: float, r
     resp = client.request("GET", "/admin/tenants")
     tenants = resp.json()
     tenant_obj = next((t for t in tenants if t["name"] == tenant), None)
-    
+
     if not tenant_obj:
         if not client.json_out:
             rprint(f"Creating missing tenant: {tenant}...")
         resp = client.request("POST", "/admin/tenants", json_data={"name": tenant})
         tenant_obj = resp.json()
-    
+
     tenant_id = tenant_obj["id"]
 
     # 2. Ensure Key exists for this tenant
@@ -42,12 +42,12 @@ def env_sync(client: GatewayClient, tenant: str, key_name: str, budget: float, r
             "email": sa_email, "name": f"Service Account for {tenant}", "role": "user"
         })
         user_obj = resp.json()
-        
+
         # Add user to tenant? There is no tenant-user mapping API exposed directly yet,
         # but tenant_id might be needed if they are grouped. Assuming global users for now.
 
     user_id = user_obj["id"]
-    
+
     # 3. Create a fresh key
     if not client.json_out:
         rprint(f"Provisioning fresh API Key '{key_name}'...")
@@ -59,22 +59,22 @@ def env_sync(client: GatewayClient, tenant: str, key_name: str, budget: float, r
     })
     key_data = resp.json()
     api_key = key_data["api_key"]
-    
+
     # 4. Write to .env
     env_path = Path.cwd() / ".env"
     lines = []
     if env_path.exists():
         with open(env_path, "r") as f:
             lines = f.readlines()
-            
+
     # Remove existing
-    lines = [l for l in lines if not l.startswith("OPENAI_API_BASE=") and not l.startswith("OPENAI_API_KEY=")]
+    lines = [line for line in lines if not line.startswith("OPENAI_API_BASE=") and not line.startswith("OPENAI_API_KEY=")]
     lines.append(f"OPENAI_API_BASE={public_url}\n")
     lines.append(f"OPENAI_API_KEY={api_key}\n")
-    
+
     with open(env_path, "w") as f:
         f.writelines(lines)
-        
+
     result = {
         "status": "success",
         "action": "env_synced",
@@ -83,7 +83,7 @@ def env_sync(client: GatewayClient, tenant: str, key_name: str, budget: float, r
         "key_id": key_data["id"],
         "env_file": str(env_path)
     }
-    
+
     if client.json_out:
         client.emit(result)
     else:
