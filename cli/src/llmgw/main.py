@@ -17,7 +17,7 @@ from .client import (
     load_public_config,
 )
 from .commands import env_sync, group, mcp_serve, plugin, tenant
-from .utils import is_uuid, resolve_id
+from .utils import confirm_destructive, is_uuid, resolve_id
 
 console = Console()
 
@@ -283,9 +283,11 @@ def key_create(client: GatewayClient, user_id: str, name: str, budget: float, rp
 
 @key.command(name="revoke")
 @click.option("--id", required=True, help="API key UUID, unique prefix, or key name to revoke")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
 @click.pass_obj
-def key_revoke(client: GatewayClient, id: str):
+def key_revoke(client: GatewayClient, id: str, yes: bool):
     """Revoke an API key"""
+    confirm_destructive(client, f"This will immediately revoke API key '{id}'. It will no longer work.", yes)
     key_id = resolve_id(
         client, id,
         fetch=lambda: client.request("GET", "/admin/keys").json(),
@@ -1256,9 +1258,11 @@ def user_update(client: GatewayClient, id: str, name: str, role: str):
 
 @user.command(name="delete")
 @click.option("--id", required=True, help="User ID or Email")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
 @click.pass_obj
-def user_delete(client: GatewayClient, id: str):
+def user_delete(client: GatewayClient, id: str, yes: bool):
     """Delete a user"""
+    confirm_destructive(client, f"This will permanently delete user '{id}' and all their API keys.", yes)
     user_id = resolve_id(
         client, id,
         fetch=lambda: client.request("GET", "/admin/users").json(),
@@ -1290,3 +1294,85 @@ def key_update(client: GatewayClient, id: str, budget: float, rpm: int):
         client.emit(resp.json())
         return
     rprint("[bold green]✅ Key Updated.[/bold green]")
+
+@key.command(name="reactivate")
+@click.option("--id", required=True, help="API key UUID, unique prefix, or key name to reactivate")
+@click.pass_obj
+def key_reactivate(client: GatewayClient, id: str):
+    """Reactivate a revoked API key"""
+    key_id = resolve_id(
+        client, id,
+        fetch=lambda: client.request("GET", "/admin/keys").json(),
+        name_key="name", what="API key", hint="Run 'llmgw key list' to see key names/IDs.")
+    resp = client.request("POST", "/admin/keys/reactivate", params={"id": key_id})
+    if client.json_out:
+        print(json.dumps(resp.json(), indent=2))
+        return
+    rprint("[bold green]✅ API Key reactivated successfully.[/bold green]")
+
+@key.group(name="model")
+def key_model():
+    """Manage allowlist/denylist models for an API key"""
+
+@key_model.command(name="list")
+@click.option("--key-id", required=True, help="API key UUID or name")
+@click.pass_obj
+def key_model_list(client: GatewayClient, key_id: str):
+    """List model access policies for a key"""
+    k_id = resolve_id(
+        client, key_id,
+        fetch=lambda: client.request("GET", "/admin/keys").json(),
+        name_key="name", what="API key")
+    resp = client.request("GET", f"/admin/keys/{k_id}/models").json()
+    if client.json_out:
+        print(json.dumps(resp, indent=2))
+        return
+    if not resp:
+        rprint("[bold yellow]No model policies set. All models are allowed by default.[/bold yellow]")
+        return
+    table = Table(title=f"Model Policies for Key {k_id}")
+    table.add_column("ID", style="dim")
+    table.add_column("Pattern")
+    table.add_column("Type")
+    for r in resp:
+        t = "[bold green]ALLOWLIST[/bold green]" if r.get("is_allowlist") else "[bold red]DENYLIST[/bold red]"
+        table.add_row(str(r.get("id")), r.get("model_pattern", ""), t)
+    console.print(table)
+
+@key_model.command(name="add")
+@click.option("--key-id", required=True, help="API key UUID or name")
+@click.option("--pattern", required=True, help="Model regex or glob pattern (e.g. gpt-4.*)")
+@click.option("--allow", "is_allowlist", flag_value=True, default=True, help="Set as allowlist (default)")
+@click.option("--deny", "is_allowlist", flag_value=False, help="Set as denylist")
+@click.pass_obj
+def key_model_add(client: GatewayClient, key_id: str, pattern: str, is_allowlist: bool):
+    """Add a model access policy to a key"""
+    k_id = resolve_id(
+        client, key_id,
+        fetch=lambda: client.request("GET", "/admin/keys").json(),
+        name_key="name", what="API key")
+    payload = {"model_pattern": pattern, "is_allowlist": is_allowlist}
+    resp = client.request("POST", f"/admin/keys/{k_id}/models", json_data=payload).json()
+    if client.json_out:
+        print(json.dumps(resp, indent=2))
+        return
+    t = "ALLOWLIST" if is_allowlist else "DENYLIST"
+    rprint(f"[bold green]✅ Added {t} rule '{pattern}' to key {k_id}[/bold green]")
+
+@key_model.command(name="delete")
+@click.option("--key-id", required=True, help="API key UUID or name")
+@click.option("--policy-id", required=True, help="Policy ID to remove")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+@click.pass_obj
+def key_model_delete(client: GatewayClient, key_id: str, policy_id: str, yes: bool):
+    """Delete a model access policy from a key"""
+    confirm_destructive(client, f"This will remove the model policy {policy_id}.", yes)
+    k_id = resolve_id(
+        client, key_id,
+        fetch=lambda: client.request("GET", "/admin/keys").json(),
+        name_key="name", what="API key")
+    resp = client.request("DELETE", f"/admin/keys/{k_id}/models/{policy_id}").json()
+    if client.json_out:
+        print(json.dumps(resp, indent=2))
+        return
+    rprint(f"[bold green]✅ Removed model policy {policy_id} from key {k_id}[/bold green]")

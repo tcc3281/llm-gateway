@@ -3,7 +3,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from ..client import GatewayClient
-from ..utils import resolve_id
+from ..utils import confirm_destructive, resolve_id
 
 
 @click.group()
@@ -56,9 +56,11 @@ def group_create(client: GatewayClient, name: str, tenant_id: str, desc: str):
 
 @group.command(name="delete")
 @click.option("--id", required=True, help="Group ID or Name")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
 @click.pass_obj
-def group_delete(client: GatewayClient, id: str):
+def group_delete(client: GatewayClient, id: str, yes: bool):
     """Delete a group"""
+    confirm_destructive(client, f"This will permanently delete group '{id}'.", yes)
     group_id = resolve_id(
         client, id,
         fetch=lambda: client.request("GET", "/admin/groups").json(),

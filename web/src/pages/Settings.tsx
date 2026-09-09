@@ -100,6 +100,33 @@ export default function Settings() {
 
       <div className="card">
         <div className="card__title">
+          {t("settings.cli_title", "CLI Quick Setup")} <span className="mono">[agent config]</span>
+        </div>
+        <div style={{ padding: "12px 16px" }}>
+          <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+            {t("settings.cli_desc", "Use this command to configure your local IDE agent or terminal to manage the gateway. For security, copy the Admin API Key directly from your environment.")}
+          </p>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <div className="secret-box" style={{ flex: 1, wordBreak: "break-all", fontFamily: "monospace", fontSize: 12 }}>
+              llmgw config set --url {window.location.origin} --key &lt;YOUR_ADMIN_API_KEY&gt;
+            </div>
+            <button
+              type="button"
+              className="btn btn--primary"
+              style={{ flexShrink: 0 }}
+              onClick={() => {
+                navigator.clipboard.writeText(`llmgw config set --url ${window.location.origin} --key YOUR_ADMIN_API_KEY`);
+                alert("Command copied to clipboard!");
+              }}
+            >
+              {t("common.copy", "Copy")}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card__title">
           {t("settings.database_title", "Database")} <span className="mono">[postgres]</span>
         </div>
         <div className="settings-grid">

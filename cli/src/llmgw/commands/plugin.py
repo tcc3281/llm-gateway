@@ -81,9 +81,11 @@ def plugin_bindings(client: GatewayClient, tenant_id: str, plugin_name: str):
 @click.option("--scope-id", default="", help="ID of the resource for the scope (leave empty for global)")
 @click.option("--config", required=True, help="JSON configuration string for the plugin")
 @click.option("--priority", type=int, default=100, help="Execution priority (lower runs first)")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
 @click.pass_obj
-def plugin_bind(client: GatewayClient, plugin: str, scope: str, scope_id: str, config: str, priority: int):
+def plugin_bind(client: GatewayClient, plugin: str, scope: str, scope_id: str, config: str, priority: int, yes: bool):
     """Create a new plugin binding to a scope"""
+    confirm_destructive(client, f"This will bind plugin {plugin} to {scope} scope.", yes)
     try:
         config_dict = json.loads(config)
     except json.JSONDecodeError as e:
@@ -111,11 +113,29 @@ def plugin_bind(client: GatewayClient, plugin: str, scope: str, scope_id: str, c
 
 @plugin.command(name="unbind")
 @click.option("--id", required=True, help="Binding ID")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
 @click.pass_obj
-def plugin_unbind(client: GatewayClient, id: str):
+def plugin_unbind(client: GatewayClient, id: str, yes: bool):
     """Delete a plugin binding"""
+    confirm_destructive(client, f"This will remove plugin binding {id}.", yes)
     resp = client.request("DELETE", f"/admin/plugin-bindings/{id}")
     if client.json_out:
         client.emit(resp.json())
         return
     rprint("[bold green]✅ Plugin Binding Deleted.[/bold green]")
+
+@plugin.command(name="get")
+@click.option("--name", required=True, help="Plugin Name")
+@click.pass_obj
+def plugin_get(client: GatewayClient, name: str):
+    """Get detailed information and schema about a plugin"""
+    resp = client.request("GET", f"/admin/plugins/{name}").json()
+    if client.json_out:
+        import json
+        print(json.dumps(resp, indent=2))
+        return
+    rprint(f"[bold green]Plugin:[/bold green] {resp.get('name')}")
+    rprint(f"[bold]Description:[/bold] {resp.get('description')}")
+    rprint("[bold]Default Config:[/bold]")
+    import json
+    rprint(json.dumps(resp.get('default_config', {}), indent=2))

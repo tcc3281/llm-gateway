@@ -48,3 +48,16 @@ def resolve_id(client, arg: str, fetch, name_key: str, what: str, hint: str = ""
     if hint:
         console.print(f"[dim]{hint}[/dim]")
     sys.exit(2)
+
+import click
+
+
+def confirm_destructive(client, prompt: str, yes: bool):
+    """Ensure hard gates for destructive commands."""
+    if yes:
+        return
+    if client.json_out:
+        import json
+        print(json.dumps({"status": "error", "code": "CONFIRMATION_REQUIRED", "message": "Destructive operation requires --yes flag"}))
+        sys.exit(2)
+    click.confirm(f"[Warning] {prompt} Are you sure?", abort=True)

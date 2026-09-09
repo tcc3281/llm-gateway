@@ -3,7 +3,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from ..client import GatewayClient
-from ..utils import resolve_id
+from ..utils import confirm_destructive, resolve_id
 
 
 @click.group()
@@ -78,9 +78,11 @@ def tenant_update(client: GatewayClient, id: str, name: str, tier: str):
 
 @tenant.command(name="delete")
 @click.option("--id", required=True, help="Tenant ID or Name")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
 @click.pass_obj
-def tenant_delete(client: GatewayClient, id: str):
+def tenant_delete(client: GatewayClient, id: str, yes: bool):
     """Delete a tenant"""
+    confirm_destructive(client, f"This will permanently delete tenant '{id}'.", yes)
     tenant_id = resolve_id(
         client, id,
         fetch=lambda: client.request("GET", "/admin/tenants").json(),
