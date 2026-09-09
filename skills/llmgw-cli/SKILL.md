@@ -1,95 +1,69 @@
 ---
 name: llmgw-cli
-description: How to use the LLM Gateway CLI (llmgw) to configure tenants, api keys, plugins, models, and IAM groups. Make sure to use this skill whenever the user asks to provision gateway resources, set up project API keys, bind guardrail plugins, or configure the LLM Gateway environment.
+description: How to help developers configure and manage an LLM Gateway deployment using the llmgw CLI. Use this skill when the user wants to provision API keys, add team members, set spending limits, configure guardrail plugins, set up virtual model routing aliases, or troubleshoot gateway errors. Trigger on any mention of: llmgw, llm-gateway config, api key provisioning, model routing, budget limits, rate limits, prompt-guard, or tenant setup.
 ---
 
-# llmgw: Agent Cheatsheet & MCP Guide
+# llmgw CLI — Agent Skill Entry Point
 
-This document is the official skill/rule file for IDE AI Agents (Cursor, Windsurf, Claude Code, Antigravity) that interact with the `llmgw` (LLM Gateway) CLI.
+`llmgw` is the command-line tool for managing an LLM Gateway deployment. It lets developers configure tenants, API keys, plugins, model routing, and access control—all from the terminal or through an IDE agent.
 
-## Overview
-`llmgw` is the infrastructure management CLI for the LLM Gateway.
-**As an AI Agent, you are the primary consumer of this CLI.** Do not rely on rich tables; always use structured JSON outputs and automated workflows.
+## Installation
 
-## Golden Rules for Agents
+Users install `llmgw` as a native binary. They do **not** use `uv` or Python directly:
 
-1. **Always use the `--json` flag:**
-   When running standard commands, prepend the flag immediately after the base command:
-   ```bash
-   uv run --project cli llmgw --json tenant list
-   uv run --project cli llmgw --json key create --user-id "uuid" --name "my-key"
-   ```
-   *Never parse standard human-readable tables.*
-
-2. **Destructive Commands REQUIRE `--yes`:**
-   Any command that deletes, revokes, or consumes resources has a hard gate. If you do not pass `--yes`, the command will abort with a `CONFIRMATION_REQUIRED` error.
-   Example: `uv run --project cli llmgw --json key revoke --id "my-key" --yes`
-
-3. **Idempotency & Upsert:**
-   When creating resources (like a Tenant or API Key), anticipate HTTP 400 (Already Exists). Handle gracefully by using `list` or `get` to retrieve the existing entity's ID instead of failing.
-
-4. **Use the `env-sync` Macro:**
-   If asked to "provision an API key" or "connect this project to the gateway", DO NOT run individual `tenant create`, `user create`, `key create` commands. Instead, use the built-in macro command that handles idempotency safely and writes the `.env` file directly:
-   ```bash
-   uv run --project cli llmgw --json env-sync --tenant "project-name" --key-name "default" --budget 10
-   ```
-
-## Quick Start Configuration
-If you receive authentication errors (HTTP 401), or need to set up the CLI for the first time:
 ```bash
-uv run --project cli llmgw config set --url "http://localhost:8081" --key "sk-admin-secret"
+# Debian/Ubuntu — from release .deb package
+sudo dpkg -i llmgw_*.deb
+
+# Or from release zip
+sudo mv llmgw-linux-amd64 /usr/local/bin/llmgw && chmod +x /usr/local/bin/llmgw
+
+# macOS / Windows — download binary from GitHub Releases
 ```
 
-## Command Reference
+## First Things First
 
-### Tenant Management
-- List tenants: `llmgw --json tenant list`
-- Create tenant: `llmgw --json tenant create --name "tenant-1" --tier "pro"`
-- Update tenant: `llmgw --json tenant update --id "tenant-uuid" --name "tenant-2" --tier "enterprise"`
-- Delete tenant: `llmgw --json tenant delete --id "tenant-uuid" --yes`
-- Add balance: `llmgw --json tenant topup --id "tenant-uuid" --amount 50.0 --yes`
+Before any command works, configure the gateway URL and admin key:
 
-### API Key & Model Policy Management
-- List keys: `llmgw --json key list --user-id "user-uuid"`
-- Create key: `llmgw --json key create --user-id "user-uuid" --name "dev-key" --budget 10 --rpm 60`
-- Revoke key: `llmgw --json key revoke --id "key-uuid" --yes`
-- Reactivate key: `llmgw --json key reactivate --id "key-uuid"`
-- List model policies: `llmgw --json key model list --key-id "key-uuid"`
-- Add allowlist rule: `llmgw --json key model add --key-id "key-uuid" --pattern "gpt-4.*" --allow`
-- Add denylist rule: `llmgw --json key model add --key-id "key-uuid" --pattern "claude-*" --deny`
-- Remove rule: `llmgw --json key model delete --key-id "key-uuid" --policy-id "policy-uuid" --yes`
-
-### Plugin & Guardrail Management
-- List plugins catalog: `llmgw --json plugin list`
-- Get plugin schema: `llmgw --json plugin get --name "prompt-guard"`
-- List bindings: `llmgw --json plugin bindings --tenant "tenant-uuid"`
-- Bind plugin: 
-  ```bash
-  llmgw --json plugin bind --plugin "prompt-guard" --scope "tenant" --scope-id "<tenant-uuid>" --config '{"reject_injection": true, "reject_pii": false}' --priority 10 --yes
-  ```
-- Unbind plugin: `llmgw --json plugin unbind --id "binding-uuid" --yes`
-
-### Virtual Models (Aliases)
-- List aliases: `llmgw --json alias list`
-- Create alias: `llmgw --json alias create --name "fast-model" --target "gpt-4o-mini" --fallback "claude-3-haiku"`
-- Delete alias: `llmgw --json alias delete --id "alias-uuid" --yes`
-
-## Using the Built-In MCP Server
-If your environment supports connecting to external MCP servers (e.g. `fastmcp` stdio), you do not need to use bash commands at all!
-You can start the MCP server using:
 ```bash
-uv run --project cli llmgw mcp-serve
+llmgw config set --url http://localhost:8081 --key sk-admin-secret
 ```
-This exposes Native Tools to your IDE for tenant, plugin, and environment provisioning workflows. Note that destructive tools natively trigger Human-in-the-Loop (HITL) pop-ups.
 
-## Troubleshooting Error Codes
-When `llmgw --json` encounters an error, it returns a structured JSON:
-```json
-{
-  "status": "error",
-  "code": "HTTP_404",
-  "message": "Resource not found",
-  "suggested_action": "Check parameters or permissions."
-}
+Verify connectivity:
+
+```bash
+llmgw health
 ```
-Use the `code` and `message` to self-correct your next action. Do not ask the user unless the credentials (X-Admin-API-Key) are missing or invalid (HTTP_401).
+
+---
+
+## Reference Files — Read These for Specific Tasks
+
+| Situation | Read This File |
+|---|---|
+| Setting up a project, provisioning a key from scratch | [references/quickstart.md](references/quickstart.md) |
+| Common day-to-day tasks (add user, set limits, routing, plugins) | [references/usecases.md](references/usecases.md) |
+| Command returned an error, something is broken | [references/error-handling.md](references/error-handling.md) |
+| IDE agent wants native MCP tool integration (not shell) | [references/mcp-mode.md](references/mcp-mode.md) |
+
+---
+
+## Three Rules That Matter
+
+**1. `--json` flag for scripting / agent use**
+Human-readable tables are fine for reading, but for parsing output or chaining commands use `--json`:
+```bash
+llmgw --json tenant list
+```
+
+**2. `--yes` for destructive operations**
+Delete, revoke, topup all require explicit confirmation. Without `--yes` the command asks interactively—or returns `CONFIRMATION_REQUIRED` if run non-interactively:
+```bash
+llmgw --json key revoke --id my-key --yes
+```
+
+**3. `env-sync` for full project setup in one shot**
+Instead of running 3–4 separate create commands, use the built-in macro:
+```bash
+llmgw env-sync --tenant my-project --key-name default --budget 20
+```
