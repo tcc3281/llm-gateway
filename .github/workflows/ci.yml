@@ -79,9 +79,12 @@ jobs:
       - name: TypeScript & Vite Build
         run: npm run build
 
-  cli-lint:
-    name: CLI Lint & Validation
+  cli-test:
+    name: CLI Lint, Typecheck & Security
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -96,10 +99,19 @@ jobs:
         run: uv python install 3.11
 
       - name: Sync CLI dependencies
-        run: uv sync --project cli
+        run: uv sync
+
+      - name: Lint with Ruff
+        run: uv run ruff check src/llmgw
+
+      - name: Typecheck with Mypy
+        run: uv run mypy src/llmgw --ignore-missing-imports
+
+      - name: Security scan with Bandit
+        run: uv run bandit -r src/llmgw -c pyproject.toml || true
 
       - name: Validate CLI entrypoint
-        run: uv run --project cli llmgw --help
+        run: uv run llmgw --help
 
   secret-scan:
     name: Secret Scanning (Gitleaks)
@@ -120,7 +132,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Compose Check
-    needs: [backend-test, frontend-build, cli-lint, secret-scan]
+    needs: [backend-test, frontend-build, cli-test, secret-scan]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

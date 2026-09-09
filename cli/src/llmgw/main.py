@@ -1,178 +1,25 @@
+import json
 import os
 import sys
-import json
-import uuid
-from pathlib import Path
+
 import click
 import httpx
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich import print as rprint
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+from .client import (
+    GatewayClient,
+    _extract_error,
+    _status_hint,
+    load_config,
+    load_public_config,
+)
+from .commands import env_sync, group, mcp_serve, plugin, tenant
+from .utils import is_uuid, resolve_id
 
 console = Console()
-
-CONFIG_DIR = Path.home() / ".config" / "llmgw"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-
-
-def load_config() -> tuple[str, str]:
-    # 1. Env variables have highest precedence
-    base_url = os.getenv("GATEWAY_URL")
-    admin_key = os.getenv("ADMIN_API_KEY")
-
-    if base_url and admin_key:
-        return base_url, admin_key
-
-    # 2. Try loading from config file
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                return (
-                    base_url or data.get("gateway_url", "http://localhost:8081"),
-                    admin_key or data.get("admin_api_key", "sk-admin-secret-key-change-me")
-                )
-        except Exception:
-            pass
-
-    # 3. Fallbacks
-    return base_url or "http://localhost:8081", admin_key or "sk-admin-secret-key-change-me"
-
-
-def load_public_config() -> tuple[str, str]:
-    """Public-proxy connection (for `llmgw chat`). Env > config file > defaults."""
-    url = os.getenv("GATEWAY_PUBLIC_URL")
-    key = os.getenv("PUBLIC_API_KEY")
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                url = url or data.get("public_url")
-                key = key or data.get("public_api_key")
-        except Exception:
-            pass
-    return url or "http://localhost:8080", key or ""
-
-
-# ----------------------------------------------------
-# Error helpers
-# ----------------------------------------------------
-
-def _extract_error(resp) -> str:
-    """Pull a human-readable message from an error response body."""
-    try:
-        body = resp.json()
-    except Exception:
-        return resp.text.strip() or f"HTTP {resp.status_code}"
-    if isinstance(body, dict):
-        for k in ("error", "message", "detail"):
-            v = body.get(k)
-            if isinstance(v, str):
-                return v
-            if isinstance(v, dict):
-                return v.get("message") or json.dumps(v)
-    return resp.text.strip() or f"HTTP {resp.status_code}"
-
-
-def _status_hint(code: int, msg: str) -> str:
-    if code == 401:
-        return "Check the admin API key (X-Admin-API-Key); for 'llmgw chat' check the user API key. Run 'llmgw config show'."
-    if code == 403:
-        return "Client IP not allowed for the admin API (ADMIN_ALLOWED_IPS)."
-    if code == 404 and "model" in msg.lower():
-        return "Model isn't in the routing catalog — run 'llmgw model discover', then 'llmgw model catalog'."
-    if code == 429:
-        return "Rate limit hit (key RPM) or budget exhausted."
-    return ""
-
-
-# ----------------------------------------------------
-# ID resolution (accept a UUID, a unique prefix, or a human name)
-# ----------------------------------------------------
-
-def _is_uuid(s: str) -> bool:
-    try:
-        uuid.UUID(s)
-        return True
-    except (ValueError, AttributeError, TypeError):
-        return False
-
-
-def _resolve_id(client: "GatewayClient", arg: str, fetch, name_key: str, what: str, hint: str = "") -> str:
-    """Resolve an id argument that may be a UUID, a unique prefix, or a name.
-
-    fetch() returns the parsed list payload; name_key is the field matched for
-    names (key -> "name", model -> "model_name", user -> "email").
-    """
-    if _is_uuid(arg):
-        return arg
-
-    rows = fetch() or []
-    exact = [r for r in rows if str(r.get(name_key, "")) == arg or str(r.get("id", "")) == arg]
-    matches = exact or [
-        r for r in rows
-        if str(r.get(name_key, "")).startswith(arg) or str(r.get("id", "")).startswith(arg)
-    ]
-
-    if len(matches) == 1:
-        return str(matches[0]["id"])
-    if len(matches) > 1:
-        console.print(f"[bold red]'{arg}' matches multiple {what}:[/bold red]")
-        for m in matches:
-            console.print(f"  {m.get('id')}  {m.get(name_key)}")
-        if hint:
-            console.print(f"[dim]{hint}[/dim]")
-        sys.exit(2)
-    console.print(f"[bold red]No {what} found matching '{arg}'.[/bold red]")
-    if hint:
-        console.print(f"[dim]{hint}[/dim]")
-    sys.exit(2)
-
-
-class GatewayClient:
-    def __init__(self, base_url: str, admin_key: str, json_out: bool = False):
-        self.base_url = base_url.rstrip("/")
-        self.admin_key = admin_key
-        self.json_out = json_out
-        self.client = httpx.Client(
-            headers={
-                "Content-Type": "application/json",
-                "X-Admin-API-Key": self.admin_key
-            },
-            timeout=10.0
-        )
-
-    def emit(self, data):
-        """Print raw JSON when --json is enabled; otherwise the rich render path handles display."""
-        if self.json_out:
-            print(json.dumps(data, indent=2, default=str))
-
-    def request(self, method: str, path: str, json_data: dict = None, params: dict = None):
-        url = f"{self.base_url}{path}"
-        try:
-            resp = self.client.request(method, url, json=json_data, params=params)
-            if resp.status_code >= 400:
-                self._die(resp)
-            return resp
-        except httpx.RequestError as exc:
-            if self.json_out:
-                print(json.dumps({"ok": False, "error": f"connection_error: {exc}"}, indent=2))
-            else:
-                console.print(f"[bold red]Connection Error:[/bold red] Failed connecting to Gateway at {self.base_url}: {exc}")
-            sys.exit(1)
-
-    def _die(self, resp):
-        msg = _extract_error(resp)
-        if self.json_out:
-            print(json.dumps({"ok": False, "http_status": resp.status_code, "error": msg}, indent=2))
-            sys.exit(1)
-        console.print(f"[bold red]HTTP {resp.status_code}: {msg}[/bold red]")
-        hint = _status_hint(resp.status_code, msg)
-        if hint:
-            console.print(f"[dim]{hint}[/dim]")
-        sys.exit(1)
-
 
 @click.group()
 @click.option("--json", "json_out", is_flag=True, default=False,
@@ -190,7 +37,6 @@ def cli(ctx, json_out):
 @cli.group()
 def config():
     """Manage local CLI configuration"""
-    pass
 
 
 @config.command(name="set")
@@ -223,25 +69,25 @@ def config_set(ctx, url: str, key: str, interactive: bool):
             sys.exit(1)
 
     try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        if not CONFIG_FILE.exists():
-            CONFIG_FILE.touch(mode=0o600)
+        client.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        if not client.CONFIG_FILE.exists():
+            client.CONFIG_FILE.touch(mode=0o600)
         else:
-            os.chmod(CONFIG_FILE, 0o600)
+            os.chmod(client.CONFIG_FILE, 0o600)
 
         # Preserve any public-proxy settings already saved.
         saved = {}
         try:
-            with open(CONFIG_FILE, "r") as f:
+            with open(client.CONFIG_FILE, "r") as f:
                 saved = json.load(f)
         except Exception:
             pass
         saved.update({"gateway_url": url, "admin_api_key": key})
 
-        with open(CONFIG_FILE, "w") as f:
+        with open(client.CONFIG_FILE, "w") as f:
             json.dump(saved, f, indent=4)
 
-        rprint(f"[bold green]✅ Configuration saved successfully to {CONFIG_FILE}![/bold green]")
+        rprint(f"[bold green]✅ Configuration saved successfully to {client.CONFIG_FILE}![/bold green]")
     except Exception as e:
         console.print(f"[bold red]Error saving config file:[/bold red] {e}")
         sys.exit(1)
@@ -266,13 +112,13 @@ def config_show(client: GatewayClient):
         "admin_api_key": redacted_key,
         "public_url": pub_url,
         "source": "Environment Variables" if (os.getenv("GATEWAY_URL") or os.getenv("ADMIN_API_KEY")) else
-                  (f"Config file ({CONFIG_FILE})" if CONFIG_FILE.exists() else "Default Values"),
+                  (f"Config file ({client.CONFIG_FILE})" if client.CONFIG_FILE.exists() else "Default Values"),
     }
     if client.json_out:
         client.emit(data)
         return
 
-    rprint(f"[bold]Active Configuration Source:[/bold]")
+    rprint("[bold]Active Configuration Source:[/bold]")
     rprint(f"  [cyan]Source:[/cyan] {data['source']}")
     rprint(f"  [cyan]Gateway URL:[/cyan] {url}")
     rprint(f"  [cyan]Admin Key:[/cyan] {redacted_key}")
@@ -300,7 +146,6 @@ def health(client: GatewayClient):
 @cli.group()
 def user():
     """Manage users"""
-    pass
 
 
 @user.command(name="list")
@@ -357,7 +202,6 @@ def user_create(client: GatewayClient, email: str, name: str, role: str):
 @cli.group()
 def key():
     """Manage API keys"""
-    pass
 
 
 @key.command(name="list")
@@ -367,10 +211,10 @@ def key_list(client: GatewayClient, user_id: str):
     """List all API keys"""
     params = {}
     if user_id:
-        if _is_uuid(user_id):
+        if is_uuid(user_id):
             params["user_id"] = user_id
         else:
-            params["user_id"] = _resolve_id(
+            params["user_id"] = resolve_id(
                 client, user_id,
                 fetch=lambda: client.request("GET", "/admin/users").json(),
                 name_key="email", what="user", hint="Run 'llmgw user list' to see emails.")
@@ -414,8 +258,8 @@ def key_list(client: GatewayClient, user_id: str):
 @click.pass_obj
 def key_create(client: GatewayClient, user_id: str, name: str, budget: float, rpm: int):
     """Create a new API key"""
-    if not _is_uuid(user_id):
-        user_id = _resolve_id(
+    if not is_uuid(user_id):
+        user_id = resolve_id(
             client, user_id,
             fetch=lambda: client.request("GET", "/admin/users").json(),
             name_key="email", what="user", hint="Run 'llmgw user list' to see emails.")
@@ -442,7 +286,7 @@ def key_create(client: GatewayClient, user_id: str, name: str, budget: float, rp
 @click.pass_obj
 def key_revoke(client: GatewayClient, id: str):
     """Revoke an API key"""
-    key_id = _resolve_id(
+    key_id = resolve_id(
         client, id,
         fetch=lambda: client.request("GET", "/admin/keys").json(),
         name_key="name", what="API key", hint="Run 'llmgw key list' to see key names/IDs.")
@@ -589,7 +433,7 @@ def model_add(client: GatewayClient, provider: str, name: str, prompt_price: flo
 @click.pass_obj
 def model_delete(client: GatewayClient, id: str):
     """Delete a model pricing rule"""
-    model_id = _resolve_id(
+    model_id = resolve_id(
         client, id,
         fetch=lambda: client.request("GET", "/admin/models").json(),
         name_key="model_name", what="model", hint="Run 'llmgw model list' to see model names/IDs.")
@@ -725,10 +569,10 @@ def stats(client: GatewayClient, interval: str, user_id: str):
     """View timeseries usage analytics and telemetry"""
     params = {"interval": interval}
     if user_id:
-        if _is_uuid(user_id):
+        if is_uuid(user_id):
             params["user_id"] = user_id
         else:
-            params["user_id"] = _resolve_id(
+            params["user_id"] = resolve_id(
                 client, user_id,
                 fetch=lambda: client.request("GET", "/admin/users").json(),
                 name_key="email", what="user", hint="Run 'llmgw user list' to see emails.")
@@ -739,7 +583,7 @@ def stats(client: GatewayClient, interval: str, user_id: str):
         client.emit(stats_resp)
         return
 
-    rprint(f"[bold]📊 LLM Gateway Usage & Analytics Report[/bold]")
+    rprint("[bold]📊 LLM Gateway Usage & Analytics Report[/bold]")
     rprint(f"Interval: [cyan]{stats_resp.get('interval')}[/cyan] | From: {stats_resp.get('from')} | To: {stats_resp.get('to')}\n")
 
     data = stats_resp.get("data", [])
@@ -793,10 +637,10 @@ def logs(client: GatewayClient, limit: int, status: str, model: str, provider: s
     if provider:
         params["provider"] = provider
     if user_id:
-        if _is_uuid(user_id):
+        if is_uuid(user_id):
             params["user_id"] = user_id
         else:
-            params["user_id"] = _resolve_id(
+            params["user_id"] = resolve_id(
                 client, user_id,
                 fetch=lambda: client.request("GET", "/admin/users").json(),
                 name_key="email", what="user", hint="Run 'llmgw user list' to see emails.")
@@ -857,10 +701,10 @@ def dashboard(client: GatewayClient, interval: str, user_id: str, limit: int):
     """View consolidated real-time dashboard analytics"""
     params = {"interval": interval, "limit": limit}
     if user_id:
-        if _is_uuid(user_id):
+        if is_uuid(user_id):
             params["user_id"] = user_id
         else:
-            params["user_id"] = _resolve_id(
+            params["user_id"] = resolve_id(
                 client, user_id,
                 fetch=lambda: client.request("GET", "/admin/users").json(),
                 name_key="email", what="user", hint="Run 'llmgw user list' to see emails.")
@@ -1260,7 +1104,6 @@ def chat(client: GatewayClient, url: str, api_key: str, model: str, message: str
 @cli.group(name="alias")
 def alias_group():
     """Manage virtual models and dynamic routing aliases"""
-    pass
 
 
 @alias_group.command(name="list")
@@ -1383,3 +1226,67 @@ def alias_delete(client: GatewayClient, alias_id: str):
 if __name__ == "__main__":
     cli()
 
+
+cli.add_command(tenant)
+cli.add_command(plugin)
+cli.add_command(group)
+cli.add_command(env_sync)
+cli.add_command(mcp_serve)
+
+@user.command(name="update")
+@click.option("--id", required=True, help="User ID or Email")
+@click.option("--name", help="New name")
+@click.option("--role", help="New role")
+@click.pass_obj
+def user_update(client: GatewayClient, id: str, name: str, role: str):
+    """Update a user"""
+    user_id = resolve_id(
+        client, id,
+        fetch=lambda: client.request("GET", "/admin/users").json(),
+        name_key="email", what="user"
+    )
+    payload = {}
+    if name: payload["name"] = name
+    if role: payload["role"] = role
+    resp = client.request("PATCH", "/admin/users", params={"id": user_id}, json_data=payload)
+    if client.json_out:
+        client.emit(resp.json())
+        return
+    rprint("[bold green]✅ User Updated.[/bold green]")
+
+@user.command(name="delete")
+@click.option("--id", required=True, help="User ID or Email")
+@click.pass_obj
+def user_delete(client: GatewayClient, id: str):
+    """Delete a user"""
+    user_id = resolve_id(
+        client, id,
+        fetch=lambda: client.request("GET", "/admin/users").json(),
+        name_key="email", what="user"
+    )
+    resp = client.request("DELETE", "/admin/users", params={"id": user_id})
+    if client.json_out:
+        client.emit(resp.json())
+        return
+    rprint("[bold green]✅ User Deleted.[/bold green]")
+
+@key.command(name="update")
+@click.option("--id", required=True, help="Key ID or Name")
+@click.option("--budget", type=float, help="New Budget limit")
+@click.option("--rpm", type=int, help="New RPM limit")
+@click.pass_obj
+def key_update(client: GatewayClient, id: str, budget: float, rpm: int):
+    """Update an API Key"""
+    key_id = resolve_id(
+        client, id,
+        fetch=lambda: client.request("GET", "/admin/keys").json(),
+        name_key="name", what="key"
+    )
+    payload = {}
+    if budget is not None: payload["budget_limit"] = budget
+    if rpm is not None: payload["rate_limit_rpm"] = rpm
+    resp = client.request("PATCH", "/admin/keys", params={"id": key_id}, json_data=payload)
+    if client.json_out:
+        client.emit(resp.json())
+        return
+    rprint("[bold green]✅ Key Updated.[/bold green]")
