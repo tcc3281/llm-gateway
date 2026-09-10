@@ -278,8 +278,8 @@ Loại bỏ việc quản lý username/password thủ công nội bộ, đáp �
 | :--- | :--- | :--- | :---: |
 | **v0.2.x** | Enterprise Foundation | Distributed Architecture, AWS IAM, Multi-tenancy, Alerting, i18n, MIT License | **Đã hoàn thành** |
 | **v0.3.x** | **Virtual Models & Plugins** | Virtual Model Aliasing, Fallback Chains, 10 Modular Plugins, Scope Bindings | **Đã hoàn thành (v0.3.1)** |
-| **v0.4.0** | **CLI Tooling & Live Logs** | Quản lý Profile đa môi trường, `llmgw plugins` CLI, Live Tail Logs | *Kế hoạch kế tiếp* |
-| **v0.5.0** | **Advanced Intelligence Plugins** | Plugins: `semantic-cache` (Vector Embedding), `pii-masking`, `prompt-guard`, `langfuse-exporter` | *Kế hoạch* |
+| **v0.4.0** | **Agentic CLI Bridge & Modular Architecture** | FastMCP stdio server, `env-sync`, Model Allow/Deny CLI, 8 New Core Plugins, DB/Gateway Modularization | **Đã hoàn thành (v0.4.0)** |
+| **v0.5.0** | **Advanced Intelligence & Dynamic Routing** | Plugins: Vector Cache, Live Logs Tail, Smart GPU Spilling | *Kế hoạch kế tiếp* |
 | **v0.6.0** | **Cell-Based Isolation & Sharding** | Dedicated Shard Pool (Docker Compose + K8s Helm), Dynamic Quarantine, Smart GPU Spilling | *Kế hoạch* |
 | **v0.7.0** | **Cluster-Native Mesh Scaling** | Gossip Protocol Mesh (`memberlist`), Local Quota Token-Leasing, Cluster-Aware KV-Cache Routing | *Nghiên cứu* |
 | **v1.0.0** | **Enterprise Production Ready** | Enterprise SSO (SAML 2.0 / OIDC), Custom WASM/Go Plugin SDK, Zero-Knowledge Engine | *Mục tiêu dài hạn* |

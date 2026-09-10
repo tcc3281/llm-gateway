@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.4.0] - 2026-09-10
+
+### Added
+- **Agentic CLI Bridge & Native MCP Server**:
+  - FastMCP stdio server (`llmgw mcp-serve`) integrating natively with AI IDE agents (Cursor, Windsurf, Claude Code, Antigravity) with Human-in-the-Loop (HITL) confirmation for destructive actions.
+  - One-command project onboarding macro (`llmgw env-sync --tenant ... --key-name ... --budget ...`) creating tenants, keys, and `.env` idempotently.
+  - Granular Model Routing & Policy CLI (`llmgw key model list/add/delete`) supporting regex allowlists and denylists.
+  - Destructive action guardrails: enforced `--yes` flag requirement on critical operations (`key revoke`, `tenant delete`, `plugin unbind`).
+  - Plugin schema introspection via `llmgw plugin get --name <plugin>`.
+  - Comprehensive Agent Skill directory (`skills/llmgw-cli/`) with practical references (`quickstart.md`, `usecases.md`, `error-handling.md`, `mcp-mode.md`) and standard agent rules (`AGENTS.md`, `.cursor/rules/llmgw.mdc`).
+  - Automated multi-platform PyInstaller release workflow for Linux and macOS binaries (`.github/workflows/cli-release.yml`).
+- **Expanded Core Plugin Catalog (8 New Built-in Plugins)**:
+  - `prometheus-metrics`: Native Prometheus exporter for request latency, counter, and token telemetry.
+  - `system-prompt-injector`: Dynamic system prompt insertion/overriding scoped by Tenant, Role, or Key.
+  - `content-moderation`: Keyword and pattern-based content moderation guardrails.
+  - `ip-restriction`: IP CIDR allowlist and denylist enforcement per Tenant, User, or Key.
+  - `prompt-compression`: Token optimization by stripping redundant whitespace and repetitive patterns.
+  - `response-watermarking`: Dynamic provenance watermarking and custom headers in responses.
+  - `canary-traffic-splitter`: Weighted canary traffic splitting across multiple providers and models.
+  - `webhook-notifier`: Event-driven webhook alerting on failure thresholds and request lifecycles.
+  - Database schema migration `000018_prometheus_and_prompt_injector_plugins` registering new plugins.
+- **Client IP Telemetry**:
+  - Database schema migration `000019_usage_logs_client_ip` adding `client_ip` column to `usage_logs`.
+  - Web Admin UI: Log detail drawer and usage logs table displaying client IP address.
+
+### Changed
+- **Architectural Refactoring & Modularization**:
+  - Decoupled monolithic PostgreSQL repository (`internal/db/postgres.go`) into focused domain files (`postgres_alerts.go`, `postgres_audit.go`, `postgres_iam_groups.go`, `postgres_logs.go`, `postgres_models_providers.go`, `postgres_plugins.go`, `postgres_tenants_billing.go`, `postgres_users_keys.go`, `postgres_virtual_models.go`).
+  - Decoupled monolithic Gateway service (`internal/service/gateway.go`) into modular domain components (`gateway_discovery.go`, `gateway_embeddings.go`, `gateway_routing.go`, `gateway_stream.go`, `gateway_telemetry.go`).
+- **Web Admin UI Improvements**:
+  - Extended `PluginBindingModal` with specialized configuration forms for newly added plugins.
+  - Added CLI Quickstart card to Settings page.
+  - Bumped UI Pipeline version badge to `v0.4.0`.
+- **Version Synchronization**:
+  - Synchronized version references across Web Admin UI (`web`), CLI tool (`llmgw-cli`), Security Policy, and Roadmap to `v0.4.0`.
+
+---
+
 ## [v0.3.1] - 2026-09-09
 
 ### Fixed

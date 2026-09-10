@@ -186,7 +186,7 @@ export default function Plugins() {
                 borderRadius: "4px",
               }}
             >
-              PIPELINE v0.3.1
+              PIPELINE v0.4.0
             </span>
           </div>
           <p className="page__subtitle" style={{ marginTop: "0.25rem", color: "var(--text-muted, #859397)" }}>
