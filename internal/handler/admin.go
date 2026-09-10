@@ -640,6 +640,7 @@ func (h *AdminHandler) GetUsageLogs(w http.ResponseWriter, r *http.Request) {
 	f.InboundFormat = q.Get("inbound")
 	f.Modality = q.Get("modality")
 	f.StructureHash = q.Get("structure_hash")
+	f.ClientIP = q.Get("client_ip")
 	if v := q.Get("has_images"); v != "" {
 		b := v == "true" || v == "1"
 		f.HasImages = &b

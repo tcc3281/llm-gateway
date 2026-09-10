@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"llm-gateway/internal/adapter/canonical"
 	"llm-gateway/internal/db"
@@ -30,6 +31,10 @@ type PluginContext struct {
 	InboundFormat  string
 	Model          string
 	Provider       string
+	ClientIP       string
+	StartTime      time.Time
+	Duration       time.Duration
+	StatusCode     int
 	ResponseWriter http.ResponseWriter
 	Redis          *db.RedisClient
 	Postgres       *db.PostgresDB
@@ -64,6 +69,13 @@ type PreRoutingPlugin interface {
 type PostUpstreamPlugin interface {
 	Name() string
 	ExecPostUpstream(pctx *PluginContext, resp *canonical.CanonicalResponse, cfg map[string]any) error
+}
+
+// AsyncPostUpstreamPlugin is an optional interface that PostUpstreamPlugins can implement
+// to indicate that their execution is pure observability (e.g. metrics, logs, webhooks) and should
+// run asynchronously in a background goroutine without blocking the client response.
+type AsyncPostUpstreamPlugin interface {
+	IsAsyncPostUpstream() bool
 }
 
 // BasePlugin defines metadata for any plugin implementation.

@@ -21,23 +21,7 @@ func (p *RateLimitingPlugin) Hooks() []plugin.HookType {
 }
 
 func (p *RateLimitingPlugin) ExecPostAuth(pctx *plugin.PluginContext, cfg map[string]any) error {
-	rpmRaw, ok := cfg["requests_per_minute"]
-	if !ok {
-		return nil
-	}
-
-	var rpm int
-	switch v := rpmRaw.(type) {
-	case float64:
-		rpm = int(v)
-	case int:
-		rpm = v
-	case int64:
-		rpm = int(v)
-	default:
-		return nil
-	}
-
+	rpm := getIntConfig(cfg, "requests_per_minute", 0)
 	if rpm <= 0 || pctx.Redis == nil {
 		return nil
 	}

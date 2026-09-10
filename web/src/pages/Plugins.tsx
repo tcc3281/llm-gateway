@@ -603,289 +603,205 @@ export default function Plugins() {
         </div>
       )}
 
-      {/* Bento Grid: 2 Columns Plugin Cards + 1 Column Hierarchy & Active Instances */}
+      {/* Scope Hierarchy Banner (Horizontal Bar) */}
       {activeTab === "catalog" && !loading && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr)) xl:grid-cols-3", gap: "1.5rem" }}>
-          {/* Main Column: Available Plugins (2 spans on desktop) */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "1.25rem", gridColumn: "span 2" }}>
-            {filteredPlugins.map((p) => {
-              const pluginBindings = bindings.filter((b) => b.plugin_name === p.name);
-              const activeCount = pluginBindings.filter((b) => b.is_active).length;
-              const isEnabled = activeCount > 0;
+        <div
+          style={{
+            background: "var(--surface-raised, #181a20)",
+            border: "1px solid var(--border, #2d3139)",
+            borderRadius: "8px",
+            padding: "0.75rem 1.25rem",
+            marginBottom: "1.25rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: "16px", color: "var(--primary, #22d3ee)" }}>
+              account_tree
+            </span>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--text, #dde4e5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              7-Tier Scope Hierarchy:
+            </span>
+          </div>
 
-              return (
-                <div
-                  key={p.name}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }} className="mono">
+            {SCOPE_HIERARCHY.map((s, idx) => (
+              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span
                   style={{
-                    background: "var(--surface-raised, #181a20)",
-                    border: isEnabled ? "1px solid var(--border-strong, #3c494c)" : "1px solid var(--border, #2d3139)",
-                    borderRadius: "8px",
-                    padding: "1.25rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: "1rem",
-                    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    padding: "2px 8px",
+                    borderRadius: "4px",
+                    background: "rgba(255, 255, 255, 0.03)",
+                    border: `1px solid ${s.color}33`,
+                    fontSize: "11px",
+                    color: s.color,
                   }}
                 >
-                  <div className="stack stack--gap-sm">
-                    {/* Card Header */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600, color: "var(--text, #dde4e5)" }}>
-                          {p.display_name}
-                        </h3>
-                        <code style={{ fontSize: "11px", color: "var(--primary, #22d3ee)", opacity: 0.85 }}>
-                          {p.name}
-                        </code>
-                      </div>
-
-                      <span
-                        className="mono"
-                        style={{
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          color: isEnabled ? "#10b981" : "var(--text-muted, #859397)",
-                          background: isEnabled ? "rgba(16, 185, 129, 0.12)" : "rgba(133, 147, 151, 0.1)",
-                          border: `1px solid ${isEnabled ? "rgba(16, 185, 129, 0.3)" : "rgba(133, 147, 151, 0.2)"}`,
-                        }}
-                      >
-                        {isEnabled ? "[ENABLED]" : "[STANDBY]"}
-                      </span>
-                    </div>
-
-                    {/* Description */}
-                    <p style={{ margin: "0.25rem 0", fontSize: "13px", color: "var(--text-muted, #859397)", minHeight: "38px", lineHeight: 1.4 }}>
-                      {p.description}
-                    </p>
-
-                    {/* Metadata & Hooks */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", borderTop: "1px dashed var(--border, #2d3139)", paddingTop: "0.6rem" }}>
-                      <span style={{ color: "var(--text-muted, #859397)" }}>Category:</span>
-                      <span className="mono" style={{ textTransform: "uppercase", fontSize: "11px", color: "var(--text, #dde4e5)", fontWeight: 600 }}>
-                        {p.category}
-                      </span>
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
-                      <span style={{ color: "var(--text-muted, #859397)" }}>Lifecycle Hooks:</span>
-                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                        {p.hooks.map((h) => (
-                          <span
-                            key={h}
-                            className="mono"
-                            style={{
-                              fontSize: "10px",
-                              color: "var(--primary-soft, #8aebff)",
-                              background: "rgba(34, 211, 238, 0.08)",
-                              border: "1px solid rgba(34, 211, 238, 0.2)",
-                              padding: "1px 5px",
-                              borderRadius: "3px",
-                            }}
-                          >
-                            [{h.toUpperCase()}]
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
-                      <span style={{ color: "var(--text-muted, #859397)" }}>Active Bindings:</span>
-                      <span className="mono" style={{ fontWeight: 700, color: isEnabled ? "var(--emerald, #10b981)" : "var(--text-muted, #859397)" }}>
-                        {activeCount} {activeCount === 1 ? "scope" : "scopes"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Card Actions */}
-                  <div
-                    style={{
-                      borderTop: "1px solid var(--border, #2d3139)",
-                      paddingTop: "0.75rem",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="btn btn--sm btn--ghost"
-                      style={{ fontSize: "12px", padding: "4px 8px", color: "var(--text-muted, #859397)" }}
-                      onClick={() => {
-                        setScopeFilter("all");
-                        setStatusFilter("all");
-                        setSearch(p.name);
-                        setActiveTab("bindings");
-                      }}
-                    >
-                      View Bindings ({pluginBindings.length})
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn btn--sm btn--primary"
-                      style={{ fontSize: "12px", padding: "4px 12px" }}
-                      onClick={() => {
-                        setEditingBinding(null);
-                        setSelectedPlugin(p);
-                        setModalOpen(true);
-                      }}
-                    >
-                      + Bind to Scope
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>{s.icon}</span>
+                  <strong>{s.label}</strong> ({s.level})
+                </span>
+                {idx < SCOPE_HIERARCHY.length - 1 && (
+                  <span style={{ color: "var(--text-faint, #5c6a6e)", fontSize: "10px", fontWeight: 700 }}>&gt;</span>
+                )}
+              </div>
+            ))}
           </div>
 
-          {/* Right Side Column: 7-Level Scope Hierarchy + Live Active Instances */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            {/* 7-Level Scope Hierarchy Tree Card */}
-            <div
-              style={{
-                background: "var(--surface-raised, #181a20)",
-                border: "1px solid var(--border, #2d3139)",
-                borderRadius: "8px",
-                padding: "1.25rem",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "var(--text, #dde4e5)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  Inheritance Hierarchy
-                </h3>
-                <span className="mono" style={{ fontSize: "10px", color: "var(--primary, #22d3ee)" }}>
-                  7 TIERS
-                </span>
-              </div>
+          <span style={{ fontSize: "11px", color: "var(--text-muted, #859397)" }}>
+            High-level scopes override general scopes
+          </span>
+        </div>
+      )}
 
-              <p style={{ margin: "0 0 1rem 0", fontSize: "12px", color: "var(--text-muted, #859397)", lineHeight: 1.4 }}>
-                Specific scopes take precedence. Configurations at higher levels override general scopes.
-              </p>
+      {/* Full-Width Plugin Cards Grid */}
+      {activeTab === "catalog" && !loading && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+            gap: "1.25rem",
+            width: "100%",
+          }}
+        >
+          {filteredPlugins.map((p) => {
+            const pluginBindings = bindings.filter((b) => b.plugin_name === p.name);
+            const activeCount = pluginBindings.filter((b) => b.is_active).length;
+            const isEnabled = activeCount > 0;
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }} className="mono">
-                {SCOPE_HIERARCHY.map((s, idx) => (
-                  <div
-                    key={s.key}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      padding: "4px 8px",
-                      borderRadius: "4px",
-                      background: "rgba(255, 255, 255, 0.02)",
-                      border: "1px solid rgba(255, 255, 255, 0.04)",
-                      fontSize: "12px",
-                    }}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: "14px", color: s.color }}>
-                      {s.icon}
-                    </span>
-                    <span style={{ color: "var(--text, #dde4e5)", fontWeight: 600 }}>{s.label}</span>
-                    <span style={{ marginLeft: "auto", fontSize: "11px", color: s.color }}>{s.level}</span>
-                    {idx < SCOPE_HIERARCHY.length - 1 && (
-                      <span style={{ color: "var(--text-faint, #5c6a6e)", fontSize: "10px" }}>&gt;</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-
+            return (
               <div
+                key={p.name}
                 style={{
-                  marginTop: "0.75rem",
-                  padding: "6px 8px",
-                  borderRadius: "4px",
-                  background: "rgba(34, 211, 238, 0.05)",
-                  border: "1px solid rgba(34, 211, 238, 0.15)",
-                  fontSize: "11px",
-                  color: "var(--text-muted, #859397)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                Resolution: <strong>Key</strong> &gt; <strong>User</strong> &gt; <strong>Role</strong> &gt; <strong>Tenant</strong> &gt; <strong>Model</strong> &gt; <strong>Provider</strong> &gt; <strong>Global</strong>
-              </div>
-            </div>
-
-            {/* Quick Active Instances Table Card */}
-            <div
-              style={{
-                background: "var(--surface-raised, #181a20)",
-                border: "1px solid var(--border, #2d3139)",
-                borderRadius: "8px",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <div
-                style={{
-                  padding: "0.75rem 1rem",
-                  borderBottom: "1px solid var(--border, #2d3139)",
-                  background: "var(--surface-high, #1f2229)",
+                  background: "var(--surface-raised, #181a20)",
+                  border: isEnabled ? "1px solid var(--border-strong, #3c494c)" : "1px solid var(--border, #2d3139)",
+                  borderRadius: "8px",
+                  padding: "1.25rem",
                   display: "flex",
+                  flexDirection: "column",
                   justifyContent: "space-between",
-                  alignItems: "center",
+                  gap: "1rem",
+                  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
                 }}
               >
-                <h3 style={{ margin: 0, fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text, #dde4e5)" }}>
-                  Active Instances
-                </h3>
-                <span className="mono" style={{ fontSize: "11px", color: "var(--emerald, #10b981)" }}>
-                  {activeBindingsCount} LIVE
-                </span>
-              </div>
+                <div className="stack stack--gap-sm">
+                  {/* Card Header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600, color: "var(--text, #dde4e5)" }}>
+                        {p.display_name}
+                      </h3>
+                      <code style={{ fontSize: "11px", color: "var(--primary, #22d3ee)", opacity: 0.85 }}>
+                        {p.name}
+                      </code>
+                    </div>
 
-              <div style={{ maxHeight: "320px", overflowY: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--border, #2d3139)", color: "var(--text-muted, #859397)", textAlign: "left" }}>
-                      <th style={{ padding: "6px 12px", fontFamily: "var(--font-mono)", fontSize: "10px", textTransform: "uppercase" }}>Plugin</th>
-                      <th style={{ padding: "6px 12px", fontFamily: "var(--font-mono)", fontSize: "10px", textTransform: "uppercase" }}>Scope</th>
-                      <th style={{ padding: "6px 12px", fontFamily: "var(--font-mono)", fontSize: "10px", textTransform: "uppercase", textAlign: "right" }}>Pri</th>
-                    </tr>
-                  </thead>
-                  <tbody className="mono">
-                    {bindings.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} style={{ padding: "1.5rem", textAlign: "center", color: "var(--text-muted, #859397)" }}>
-                          No active bindings configured yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      bindings.slice(0, 8).map((b) => (
-                        <tr
-                          key={b.id}
+                    <span
+                      className="mono"
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        color: isEnabled ? "#10b981" : "var(--text-muted, #859397)",
+                        background: isEnabled ? "rgba(16, 185, 129, 0.12)" : "rgba(133, 147, 151, 0.1)",
+                        border: `1px solid ${isEnabled ? "rgba(16, 185, 129, 0.3)" : "rgba(133, 147, 151, 0.2)"}`,
+                      }}
+                    >
+                      {isEnabled ? "[ENABLED]" : "[STANDBY]"}
+                    </span>
+                  </div>
+
+                  {/* Description */}
+                  <p style={{ margin: "0.25rem 0", fontSize: "13px", color: "var(--text-muted, #859397)", minHeight: "38px", lineHeight: 1.4 }}>
+                    {p.description}
+                  </p>
+
+                  {/* Metadata & Hooks */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", borderTop: "1px dashed var(--border, #2d3139)", paddingTop: "0.6rem" }}>
+                    <span style={{ color: "var(--text-muted, #859397)" }}>Category:</span>
+                    <span className="mono" style={{ textTransform: "uppercase", fontSize: "11px", color: "var(--text, #dde4e5)", fontWeight: 600 }}>
+                      {p.category}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", gap: "0.5rem" }}>
+                    <span style={{ color: "var(--text-muted, #859397)", whiteSpace: "nowrap", flexShrink: 0 }}>Hooks:</span>
+                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {p.hooks.map((h) => (
+                        <span
+                          key={h}
+                          className="mono"
                           style={{
-                            borderBottom: "1px solid rgba(45, 49, 57, 0.5)",
-                            background: "transparent",
+                            fontSize: "10px",
+                            color: "var(--primary-soft, #8aebff)",
+                            background: "rgba(34, 211, 238, 0.08)",
+                            border: "1px solid rgba(34, 211, 238, 0.2)",
+                            padding: "1px 5px",
+                            borderRadius: "3px",
+                            whiteSpace: "nowrap",
                           }}
                         >
-                          <td style={{ padding: "8px 12px", color: "var(--text, #dde4e5)" }}>
-                            <div style={{ fontWeight: 600 }}>{b.plugin_name}</div>
-                          </td>
-                          <td style={{ padding: "8px 12px" }}>
-                            <span
-                              style={{
-                                color: b.scope_level === "global" ? "var(--amber-soft, #ffb957)" : "var(--emerald, #10b981)",
-                                textTransform: "capitalize",
-                              }}
-                            >
-                              {b.scope_level}
-                            </span>
-                          </td>
-                          <td style={{ padding: "8px 12px", textAlign: "right", color: "var(--primary, #22d3ee)" }}>
-                            {b.priority}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                          [{h.toUpperCase()}]
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
+                    <span style={{ color: "var(--text-muted, #859397)" }}>Active Bindings:</span>
+                    <span className="mono" style={{ fontWeight: 700, color: isEnabled ? "var(--emerald, #10b981)" : "var(--text-muted, #859397)" }}>
+                      {activeCount} {activeCount === 1 ? "scope" : "scopes"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card Actions */}
+                <div
+                  style={{
+                    borderTop: "1px solid var(--border, #2d3139)",
+                    paddingTop: "0.75rem",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn--sm btn--ghost"
+                    style={{ fontSize: "12px", padding: "4px 8px", color: "var(--text-muted, #859397)" }}
+                    onClick={() => {
+                      setScopeFilter("all");
+                      setStatusFilter("all");
+                      setSearch(p.name);
+                      setActiveTab("bindings");
+                    }}
+                  >
+                    View Bindings ({activeCount})
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn--sm btn--primary"
+                    style={{ fontSize: "12px", padding: "4px 12px" }}
+                    onClick={() => {
+                      setEditingBinding(null);
+                      setSelectedPlugin(p);
+                      setModalOpen(true);
+                    }}
+                  >
+                    + Bind to Scope
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
       )}
 

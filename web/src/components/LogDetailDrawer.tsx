@@ -229,6 +229,23 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
               >
                 [IN: {log.inbound_format}]
               </span>
+              {log.client_ip && (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background: "rgba(99, 102, 241, 0.12)",
+                    color: "var(--primary)",
+                    border: "1px solid rgba(99, 102, 241, 0.3)",
+                    fontWeight: 600,
+                  }}
+                  title="Client IP Address"
+                >
+                  IP: {log.client_ip}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1056,6 +1073,20 @@ export default function LogDetailDrawer({ logId, initialLog, onClose }: LogDetai
                   >
                     <span style={{ color: "var(--text-muted)" }}>{t("drawer.created_at", "Created At")}</span>
                     <span style={{ color: "var(--text)" }}>{fmtDate(log.created_at)}</span>
+                  </li>
+
+                  <li
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      borderBottom: "1px solid var(--border)",
+                      paddingBottom: 6,
+                    }}
+                  >
+                    <span style={{ color: "var(--text-muted)" }}>{t("drawer.client_ip", "Client IP")}</span>
+                    <span style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>
+                      {log.client_ip || "—"}
+                    </span>
                   </li>
                 </ul>
               </div>

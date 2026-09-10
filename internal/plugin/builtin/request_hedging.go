@@ -21,12 +21,8 @@ func (p *RequestHedgingPlugin) Hooks() []plugin.HookType {
 }
 
 func (p *RequestHedgingPlugin) ExecPreRouting(pctx *plugin.PluginContext, cfg map[string]any) error {
-	delayMs := 300
-	if v, ok := cfg["hedging_delay_ms"].(float64); ok && v > 0 {
-		delayMs = int(v)
-	}
-
-	secProvider, _ := cfg["secondary_provider"].(string)
+	delayMs := getIntConfig(cfg, "hedging_delay_ms", 300)
+	secProvider := getStringConfig(cfg, "secondary_provider", "")
 
 	if pctx.ExtraHeaders == nil {
 		pctx.ExtraHeaders = make(map[string]string)

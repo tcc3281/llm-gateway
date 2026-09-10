@@ -226,7 +226,7 @@ export default function Login() {
       </div>
 
       <div style={{ marginTop: "24px", display: "flex", alignItems: "center", gap: "16px", fontSize: "11px", fontFamily: "JetBrains Mono, monospace", color: "#64748b" }}>
-        <span>v1.0.0</span>
+        <span>v0.3.2</span>
         <span>•</span>
         <span style={{ color: "#10b981", display: "flex", alignItems: "center", gap: "6px" }}>
           <span style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: "#10b981", display: "inline-block" }}></span>

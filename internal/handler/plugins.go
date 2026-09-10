@@ -245,6 +245,8 @@ func (h *AdminHandler) CreatePluginBinding(w http.ResponseWriter, r *http.Reques
 		"priority":    b.Priority,
 	})
 
+	h.broadcastPluginBindingChange(r)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(b)
@@ -291,6 +293,8 @@ func (h *AdminHandler) UpdatePluginBinding(w http.ResponseWriter, r *http.Reques
 		"priority":  updated.Priority,
 	})
 
+	h.broadcastPluginBindingChange(r)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updated)
 }
@@ -321,6 +325,18 @@ func (h *AdminHandler) DeletePluginBinding(w http.ResponseWriter, r *http.Reques
 
 	h.logAudit(r, "admin", "delete_plugin_binding", "plugin_binding", id.String(), nil)
 
+	h.broadcastPluginBindingChange(r)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+// broadcastPluginBindingChange notifies distributed proxies via Redis Pub/Sub and invalidates local cache.
+func (h *AdminHandler) broadcastPluginBindingChange(r *http.Request) {
+	if h.redis != nil {
+		_ = h.redis.PublishPluginBindingsChanged(r.Context())
+	}
+	if h.gwService != nil && h.gwService.PluginEngine() != nil {
+		_ = h.gwService.PluginEngine().ReloadBindings(r.Context())
+	}
 }

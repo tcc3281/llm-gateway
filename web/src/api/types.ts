@@ -196,6 +196,7 @@ export interface UsageLog {
   total_latency_ms: number;
   status_code: number;
   error_message?: string;
+  client_ip?: string;
   request_shape?: RequestShape;
 }
 
