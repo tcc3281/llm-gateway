@@ -44,46 +44,29 @@ func (p *PromptGuardPlugin) ExecPreRouting(pctx *plugin.PluginContext, cfg map[s
 		return nil
 	}
 
-	checkInjection := true
-	if v, ok := cfg["check_injection"].(bool); ok {
-		checkInjection = v
-	}
-
-	checkJailbreak := true
-	if v, ok := cfg["check_jailbreak"].(bool); ok {
-		checkJailbreak = v
-	}
-
-	checkLeak := true
-	if v, ok := cfg["check_system_leak"].(bool); ok {
-		checkLeak = v
-	}
-
-	action := "block"
-	if v, ok := cfg["action"].(string); ok && v != "" {
-		action = strings.ToLower(v)
-	}
+	checkInjection := getBoolConfig(cfg, "check_injection", true)
+	checkJailbreak := getBoolConfig(cfg, "check_jailbreak", true)
+	checkLeak := getBoolConfig(cfg, "check_system_leak", true)
+	action := strings.ToLower(getStringConfig(cfg, "action", "block"))
 
 	var bannedKeywords []string
-	if rawKeywords, ok := cfg["banned_keywords"].([]any); ok {
-		for _, item := range rawKeywords {
-			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-				bannedKeywords = append(bannedKeywords, strings.ToLower(strings.TrimSpace(s)))
-			}
+	for _, kw := range getStringSliceConfig(cfg, "banned_keywords") {
+		if trimmed := strings.ToLower(strings.TrimSpace(kw)); trimmed != "" {
+			bannedKeywords = append(bannedKeywords, trimmed)
 		}
 	}
 
 	// Helper to inspect string for guardrail violations
 	detectViolation := func(text string) (string, bool) {
 		if checkInjection || checkJailbreak {
-			for _, re := range pctxTextFind(p.injectionPatterns, text) {
-				return fmt.Sprintf("Prompt injection / jailbreak detected (matched pattern: %s)", re), true
+			if pattern, matched := findFirstPatternMatch(p.injectionPatterns, text); matched {
+				return fmt.Sprintf("Prompt injection / jailbreak detected (matched pattern: %s)", pattern), true
 			}
 		}
 
 		if checkLeak {
-			for _, re := range pctxTextFind(p.leakPatterns, text) {
-				return fmt.Sprintf("System prompt leakage attempt detected (matched pattern: %s)", re), true
+			if pattern, matched := findFirstPatternMatch(p.leakPatterns, text); matched {
+				return fmt.Sprintf("System prompt leakage attempt detected (matched pattern: %s)", pattern), true
 			}
 		}
 
@@ -143,12 +126,11 @@ func (p *PromptGuardPlugin) ExecPreRouting(pctx *plugin.PluginContext, cfg map[s
 	return nil
 }
 
-func pctxTextFind(regexes []*regexp.Regexp, text string) []string {
-	var matched []string
+func findFirstPatternMatch(regexes []*regexp.Regexp, text string) (string, bool) {
 	for _, re := range regexes {
 		if re.MatchString(text) {
-			matched = append(matched, re.String())
+			return re.String(), true
 		}
 	}
-	return matched
+	return "", false
 }

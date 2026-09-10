@@ -166,12 +166,59 @@ Khả năng cách ly hạ tầng vật lý theo Tenant là "mỏ vàng" để th
 2. **Blast Radius Containment (Khoanh vùng sự cố)**:
    - Sự cố vòng lặp của một AI Agent hay script thử nghiệm của dev chỉ gây ảnh hưởng cục bộ trên shard đó. Cổng AI phục vụ khách hàng chính vẫn hoạt động ổn định 100%.
 3. **Guaranteed Concurrency (Cam kết luồng đồng thời)**:
-   - Phân bổ tài nguyên chính xác: Shard nội bộ tối đa 20 luồng, Shard ứng dụng core luôn được bảo đảm 500 luồng trực tiếp không bị tranh chấp.
-4. **Tối ưu hóa hạ tầng GPU Hybrid (Smart Cost Arbitrage)**:
-   - **Internal Node Group**: Toàn bộ request từ IDE lập trình viên và tác vụ thử nghiệm chuyển thẳng về cụm GPU on-premise (vLLM / SGLang) $\rightarrow$ Chi phí cận biên bằng 0.
-   - **Production Node Group**: Giao dịch quan trọng của khách hàng trả phí được ưu tiên đẩy sang API đám mây độ ổn định cao (OpenAI, Anthropic).
+   - Phân bổ tài nguyên chính xác: Shard nội bộ tối đa 20 luồng, Shard ứng dụng core luôn được bảo đảm 500 luồng trực tiếp không bị tranh chấp qua cơ chế Concurrency Semaphore trên RAM/Redis.
+4. **Tối ưu hóa hạ tầng GPU Hybrid (Smart Cost Arbitrage & Smart Spilling)**:
+   - **Internal Node Group**: Toàn bộ request từ IDE lập trình viên và tác vụ thử nghiệm chuyển thẳng về cụm GPU on-premise (vLLM / SGLang / Ollama) $\rightarrow$ Chi phí cận biên bằng 0.
+   - **Cơ chế Smart Spilling**: Gateway chủ động thăm dò endpoint metrics thời gian thực từ vLLM (`vllm:gpu_cache_usage_factor`). Khi GPU cache $> 85\%$ hoặc nghẽn hàng đợi, Gateway tự động tràn (spill) request sang Cloud API (OpenAI / Anthropic) tức thì trong suốt với người dùng.
 5. **Cơ chế "Dynamic Quarantine" (Tự động chuyển vùng suy thoái)**:
-   - Khi phát hiện một tenant tăng đột biến bất thường, Gateway không ngắt kết nối thô bạo (429) mà tự động chuyển hướng các request tiếp theo sang **Degraded Pool**. Tenant vi phạm vẫn được phục vụ với tốc độ vừa phải, còn các tenant chuẩn hoàn toàn không bị ảnh hưởng độ trễ.
+   - Khi phát hiện một tenant tăng đột biến bất thường, tỷ lệ lỗi $> 40\%$ hoặc latency $> 10\text{s}$, Gateway không ngắt kết nối thô bạo (429) mà tự động gắn cờ cách ly, chuyển hướng các request tiếp theo sang **Degraded Pool**. Tenant vi phạm vẫn được phục vụ với tốc độ vừa phải, còn các tenant chuẩn hoàn toàn không bị ảnh hưởng độ trễ.
+
+### 🛠️ Kiến Trúc Triển Khai Kép (Dual-Tier Architecture: App & Infrastructure)
+
+Để đáp ứng linh hoạt từ Startup nhỏ đến Ngân hàng/Tập đoàn lớn, hệ thống phân định rạch ròi giữa **Logic Ứng Dụng (Go Code)** và **Đóng Gói Hạ Tầng (Docker / K8s)**:
+
+```
+               [ Khách hàng / Client Request ]
+                              │
+           ┌──────────────────┴──────────────────┐
+           ▼                                     ▼
+   【 Lựa chọn 1: Docker Compose 】       【 Lựa chọn 2: Kubernetes (K8s) 】
+   (Dành cho On-Premise / VPS)           (Dành cho Doanh nghiệp lớn)
+           │                                     │
+    [ Nginx Reverse Proxy ]                [ K8s Ingress Controller ]
+    (Routing theo Header/API Key)         (Routing theo Subdomain / Header)
+           │                                     │
+     ┌─────┴─────┐                         ┌─────┴─────┐
+     ▼           ▼                         ▼           ▼
+[Container: [Container:               [Pod: Shared] [Pod: VIP Enterprise]
+  Shared]     VIP Shard]              (Standard Nodes) (Pinned GPU Nodes)
+     │           │                         │           │
+     └─────┬─────┘                         └─────┬─────┘
+           │                                     │
+           └──────────────────┬──────────────────┘
+                              ▼
+           【 Phần App: LLM Gateway (Go Core) 】
+           - Nhận biết biến môi trường SHARD_TIER (shared, enterprise-vip)
+           - Giới hạn Concurrency Semaphore theo Tenant
+           - Tự đo metrics vLLM để Smart Spilling
+           - Dynamic Quarantine cách ly tenant spam
+```
+
+#### 1. Tầng Ứng Dụng (Application Layer - Code Go):
+- Giữ bản chất **Stateless** và điều khiển qua Biến Môi Trường (Environment Variables):
+  - `SHARD_TIER=shared`: Áp dụng giới hạn concurrency nghiêm ngặt, chia sẻ hạn mức chung.
+  - `SHARD_TIER=enterprise`: Tối ưu concurrency cao, kết nối upstream API Key cấp cao (Azure PTU / Tier 5).
+  - `VLLM_METRICS_URL`: Endpoint giám sát tải VRAM GPU on-premise cho thuật toán Smart Spilling.
+
+#### 2. Tầng Hạ Tầng (Infrastructure Layer - Đóng gói linh hoạt):
+Cung cấp sẵn 2 bộ cấu hình đóng gói chuẩn trong thư mục `deploy/`:
+* **📦 Gói 1: Docker Compose Sharded (`deploy/docker-compose/docker-compose.sharded.yml`):**
+  - Dành cho Startup, SME, chạy thử nghiệm (PoC), hoặc server đơn lẻ có gắn GPU on-premise.
+  - Khởi chạy 2 cụm container (`gateway-shared` và `gateway-vip`) kèm Nginx Reverse Proxy đứng trước để phân luồng theo API Key prefix (`sk-vip-...` hoặc header `X-Tenant-Tier`).
+* **☸️ Gói 2: Kubernetes Manifests & Helm Chart (`deploy/kubernetes/helm/`):**
+  - Dành cho Enterprise, Cloud-Native (AWS EKS, GCP GKE, OpenShift).
+  - Tích hợp **Node Affinity / GPU Pinning** (`nodeSelector: tier=enterprise`) để ghim Pod VIP trên phần cứng riêng biệt.
+  - Tích hợp K8s Ingress Controller và cấu hình HPA (Horizontal Pod Autoscaler) tự động co giãn theo số lượng kết nối đồng thời.
 
 ---
 
@@ -231,9 +278,9 @@ Loại bỏ việc quản lý username/password thủ công nội bộ, đáp �
 | :--- | :--- | :--- | :---: |
 | **v0.2.x** | Enterprise Foundation | Distributed Architecture, AWS IAM, Multi-tenancy, Alerting, i18n, MIT License | **Đã hoàn thành** |
 | **v0.3.x** | **Virtual Models & Plugins** | Virtual Model Aliasing, Fallback Chains, 10 Modular Plugins, Scope Bindings | **Đã hoàn thành (v0.3.1)** |
-| **v0.4.0** | **CLI Tooling & Live Logs** | Quản lý Profile đa môi trường, `llmgw plugins` CLI, Live Tail Logs | *Kế hoạch kế tiếp* |
-| **v0.5.0** | **Advanced Intelligence Plugins** | Plugins: `semantic-cache` (Vector Embedding), `pii-masking`, `prompt-guard`, `langfuse-exporter` | *Kế hoạch* |
-| **v0.6.0** | **Cell-Based Isolation & Sharding** | Dedicated Shard Pool, Dynamic Quarantine, Blast Radius Containment, Hybrid GPU Routing | *Kế hoạch* |
+| **v0.4.0** | **Agentic CLI Bridge & Modular Architecture** | FastMCP stdio server, `env-sync`, Model Allow/Deny CLI, 8 New Core Plugins, DB/Gateway Modularization | **Đã hoàn thành (v0.4.0)** |
+| **v0.5.0** | **Advanced Intelligence & Dynamic Routing** | Plugins: Vector Cache, Live Logs Tail, Smart GPU Spilling | *Kế hoạch kế tiếp* |
+| **v0.6.0** | **Cell-Based Isolation & Sharding** | Dedicated Shard Pool (Docker Compose + K8s Helm), Dynamic Quarantine, Smart GPU Spilling | *Kế hoạch* |
 | **v0.7.0** | **Cluster-Native Mesh Scaling** | Gossip Protocol Mesh (`memberlist`), Local Quota Token-Leasing, Cluster-Aware KV-Cache Routing | *Nghiên cứu* |
 | **v1.0.0** | **Enterprise Production Ready** | Enterprise SSO (SAML 2.0 / OIDC), Custom WASM/Go Plugin SDK, Zero-Knowledge Engine | *Mục tiêu dài hạn* |
 

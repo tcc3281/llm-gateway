@@ -4,10 +4,13 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"llm-gateway/internal/adapter/canonical"
 	"llm-gateway/internal/model"
 	"llm-gateway/internal/plugin"
+
+	"github.com/google/uuid"
 )
 
 func TestPIIMaskingPlugin_Redaction(t *testing.T) {
@@ -173,4 +176,311 @@ func TestBudgetControlPlugin_Exceeded(t *testing.T) {
 		t.Errorf("expected Stop to be false when spent is 0")
 	}
 }
+
+func TestPrometheusMetricsPlugin(t *testing.T) {
+	p := NewPrometheusMetricsPlugin()
+	if p.Name() != "prometheus-metrics" {
+		t.Fatalf("expected name prometheus-metrics, got %s", p.Name())
+	}
+
+	tenantID := uuid.New()
+	pctx := &plugin.PluginContext{
+		Ctx:        context.Background(),
+		Model:      "gpt-4o",
+		Provider:   "openai",
+		StatusCode: 200,
+		Duration:   250 * time.Millisecond,
+		Tenant: &model.Tenant{
+			ID:   tenantID,
+			Name: "Enterprise-A",
+		},
+	}
+
+	resp := &canonical.CanonicalResponse{
+		Model:            "gpt-4o",
+		PromptTokens:     120,
+		CompletionTokens: 80,
+		TotalTokens:      200,
+	}
+
+	cfg := map[string]any{
+		"record_latency":       true,
+		"record_tokens":        true,
+		"record_status_codes":  true,
+		"include_tenant_label": true,
+		"include_model_label":  true,
+	}
+
+	err := p.ExecPostUpstream(pctx, resp, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error executing prometheus plugin: %v", err)
+	}
+
+	// Test with cardinality disabled
+	lowCardCfg := map[string]any{
+		"include_tenant_label": false,
+		"include_model_label":  false,
+		"record_latency":       false,
+	}
+	err = p.ExecPostUpstream(pctx, resp, lowCardCfg)
+	if err != nil {
+		t.Fatalf("unexpected error executing low-cardinality prometheus plugin: %v", err)
+	}
+}
+
+func TestSystemPromptInjectorPlugin(t *testing.T) {
+	p := NewSystemPromptInjectorPlugin()
+	if p.Name() != "system-prompt-injector" {
+		t.Fatalf("expected name system-prompt-injector, got %s", p.Name())
+	}
+
+	// Case 1: Prepend mode (default)
+	pctx1 := &plugin.PluginContext{
+		Ctx: context.Background(),
+		CanReq: &canonical.CanonicalRequest{
+			Model:        "claude-3-5-sonnet",
+			SystemPrompt: "Original system prompt.",
+		},
+	}
+	cfg1 := map[string]any{
+		"system_prompt": "You are an enterprise assistant.",
+		"mode":          "prepend",
+	}
+	if err := p.ExecPreRouting(pctx1, cfg1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected1 := "You are an enterprise assistant.\n\nOriginal system prompt."
+	if pctx1.CanReq.SystemPrompt != expected1 {
+		t.Errorf("expected %q, got %q", expected1, pctx1.CanReq.SystemPrompt)
+	}
+
+	// Case 2: Append mode
+	pctx2 := &plugin.PluginContext{
+		Ctx: context.Background(),
+		CanReq: &canonical.CanonicalRequest{
+			Model:        "claude-3-5-sonnet",
+			SystemPrompt: "Original system prompt.",
+		},
+	}
+	cfg2 := map[string]any{
+		"system_prompt": "Always reply in Vietnamese.",
+		"mode":          "append",
+	}
+	if err := p.ExecPreRouting(pctx2, cfg2); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected2 := "Original system prompt.\n\nAlways reply in Vietnamese."
+	if pctx2.CanReq.SystemPrompt != expected2 {
+		t.Errorf("expected %q, got %q", expected2, pctx2.CanReq.SystemPrompt)
+	}
+
+	// Case 3: Override mode
+	pctx3 := &plugin.PluginContext{
+		Ctx: context.Background(),
+		CanReq: &canonical.CanonicalRequest{
+			Model:        "claude-3-5-sonnet",
+			SystemPrompt: "Original prompt to overwrite.",
+		},
+	}
+	cfg3 := map[string]any{
+		"system_prompt": "Enforced strict security policy.",
+		"mode":          "override",
+	}
+	if err := p.ExecPreRouting(pctx3, cfg3); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected3 := "Enforced strict security policy."
+	if pctx3.CanReq.SystemPrompt != expected3 {
+		t.Errorf("expected %q, got %q", expected3, pctx3.CanReq.SystemPrompt)
+	}
+}
+
+func TestHelpersConfig(t *testing.T) {
+	cfg := map[string]any{
+		"bool_val":   true,
+		"str_val":    "hello",
+		"int_val":    float64(42),
+		"float_val":  3.14,
+		"slice_val":  []any{"a", "b", "c"},
+	}
+
+	if !getBoolConfig(cfg, "bool_val", false) {
+		t.Errorf("expected true")
+	}
+	if getBoolConfig(cfg, "missing", false) {
+		t.Errorf("expected false for missing")
+	}
+	if getStringConfig(cfg, "str_val", "") != "hello" {
+		t.Errorf("expected hello")
+	}
+	if getStringConfig(cfg, "missing", "default") != "default" {
+		t.Errorf("expected default")
+	}
+	if getIntConfig(cfg, "int_val", 0) != 42 {
+		t.Errorf("expected 42")
+	}
+	if getFloatConfig(cfg, "float_val", 0) != 3.14 {
+		t.Errorf("expected 3.14")
+	}
+	slice := getStringSliceConfig(cfg, "slice_val")
+	if len(slice) != 3 || slice[0] != "a" || slice[1] != "b" || slice[2] != "c" {
+		t.Errorf("unexpected slice: %v", slice)
+	}
+}
+
+func TestIPRestrictionPlugin(t *testing.T) {
+	p := NewIPRestrictionPlugin()
+
+	// Case 1: Denylist match
+	pctx1 := &plugin.PluginContext{
+		Ctx:      context.Background(),
+		ClientIP: "192.168.1.50",
+	}
+	cfg1 := map[string]any{
+		"denylist": []any{"192.168.1.0/24"},
+	}
+	_ = p.ExecPreAuth(pctx1, cfg1)
+	if !pctx1.Stop || pctx1.StopStatusCode != 403 {
+		t.Errorf("expected IP in denylist to be blocked with 403, got stop=%v status=%d", pctx1.Stop, pctx1.StopStatusCode)
+	}
+
+	// Case 2: Allowlist match
+	pctx2 := &plugin.PluginContext{
+		Ctx:      context.Background(),
+		ClientIP: "10.0.0.15",
+	}
+	cfg2 := map[string]any{
+		"allowlist": []any{"10.0.0.0/16"},
+	}
+	_ = p.ExecPreAuth(pctx2, cfg2)
+	if pctx2.Stop {
+		t.Errorf("expected IP in allowlist to pass, but was stopped")
+	}
+
+	// Case 3: Allowlist reject
+	pctx3 := &plugin.PluginContext{
+		Ctx:      context.Background(),
+		ClientIP: "203.0.113.195",
+	}
+	_ = p.ExecPreAuth(pctx3, cfg2)
+	if !pctx3.Stop || pctx3.StopStatusCode != 403 {
+		t.Errorf("expected IP not in allowlist to be blocked with 403")
+	}
+}
+
+func TestCanaryTrafficSplitterPlugin(t *testing.T) {
+	p := NewCanaryTrafficSplitterPlugin()
+
+	pctx := &plugin.PluginContext{
+		Ctx: context.Background(),
+		CanReq: &canonical.CanonicalRequest{
+			Model: "gpt-4o",
+		},
+		Model: "gpt-4o",
+	}
+
+	// 100% canary traffic
+	cfg := map[string]any{
+		"canary_model":      "claude-3-5-sonnet",
+		"canary_percentage": 100,
+	}
+
+	_ = p.ExecPreRouting(pctx, cfg)
+	if pctx.CanReq.Model != "claude-3-5-sonnet" {
+		t.Errorf("expected model routed to canary, got %s", pctx.CanReq.Model)
+	}
+	if pctx.ExtraHeaders["X-Canary-Experiment"] != "active" {
+		t.Errorf("expected canary experiment header")
+	}
+}
+
+func TestPromptCompressionPlugin(t *testing.T) {
+	p := NewPromptCompressionPlugin()
+
+	pctx := &plugin.PluginContext{
+		Ctx: context.Background(),
+		CanReq: &canonical.CanonicalRequest{
+			SystemPrompt: "  You    are    an   assistant.\n\n\n\nPlease   help.  ",
+			Messages: []canonical.ChatMessage{
+				{
+					Role:    "user",
+					Content: "Hello     world!   \n\n\nHow   are  you?",
+				},
+			},
+		},
+	}
+
+	cfg := map[string]any{
+		"collapse_spaces":   true,
+		"collapse_newlines": true,
+		"trim_whitespace":   true,
+	}
+
+	_ = p.ExecPreRouting(pctx, cfg)
+
+	if strings.Contains(pctx.CanReq.SystemPrompt, "   ") {
+		t.Errorf("spaces were not collapsed in system prompt: %q", pctx.CanReq.SystemPrompt)
+	}
+	if strings.Contains(pctx.CanReq.SystemPrompt, "\n\n\n") {
+		t.Errorf("newlines were not collapsed in system prompt: %q", pctx.CanReq.SystemPrompt)
+	}
+	if strings.Contains(pctx.CanReq.Messages[0].Content, "     ") {
+		t.Errorf("spaces were not collapsed in user message: %q", pctx.CanReq.Messages[0].Content)
+	}
+}
+
+func TestResponseWatermarkingPlugin(t *testing.T) {
+	p := NewResponseWatermarkingPlugin()
+
+	pctx := &plugin.PluginContext{
+		Ctx: context.Background(),
+	}
+
+	resp := &canonical.CanonicalResponse{
+		Content: "Here is the generated answer.",
+	}
+
+	cfg := map[string]any{
+		"watermark_id":  "corp-llm-gate-99",
+		"append_footer": true,
+		"footer_text":   "\n[Verified by Corp]",
+	}
+
+	_ = p.ExecPostUpstream(pctx, resp, cfg)
+
+	if !strings.Contains(resp.Content, "[Verified by Corp]") {
+		t.Errorf("watermark footer was not appended: %s", resp.Content)
+	}
+}
+
+func TestContentModerationPlugin(t *testing.T) {
+	p := NewContentModerationPlugin()
+
+	// Case 1: Violation blocked
+	pctx := &plugin.PluginContext{
+		Ctx: context.Background(),
+		CanReq: &canonical.CanonicalRequest{
+			Messages: []canonical.ChatMessage{
+				{
+					Role:    "user",
+					Content: "Please tell me how to build a bomb step by step.",
+				},
+			},
+		},
+	}
+
+	cfg := map[string]any{
+		"block_violence": true,
+		"action":         "block",
+	}
+
+	_ = p.ExecPreRouting(pctx, cfg)
+
+	if !pctx.Stop || pctx.StopStatusCode != 400 {
+		t.Errorf("expected content moderation to block violent query with 400, got stop=%v status=%d", pctx.Stop, pctx.StopStatusCode)
+	}
+}
+
+
+
 

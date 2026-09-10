@@ -28,23 +28,20 @@ func (p *BudgetControlPlugin) ExecPostAuth(pctx *plugin.PluginContext, cfg map[s
 		return nil
 	}
 
-	limit := 0.0
-	if v, ok := cfg["budget_limit"].(float64); ok && v > 0 {
-		limit = v
-	} else if pctx.APIKey != nil && pctx.APIKey.BudgetLimit > 0 {
-		limit = pctx.APIKey.BudgetLimit
-	} else if pctx.Tenant != nil && pctx.Tenant.BudgetLimitMonthly > 0 {
-		limit = pctx.Tenant.BudgetLimitMonthly
+	limit := getFloatConfig(cfg, "budget_limit", 0)
+	if limit <= 0 {
+		if pctx.APIKey != nil && pctx.APIKey.BudgetLimit > 0 {
+			limit = pctx.APIKey.BudgetLimit
+		} else if pctx.Tenant != nil && pctx.Tenant.BudgetLimitMonthly > 0 {
+			limit = pctx.Tenant.BudgetLimitMonthly
+		}
 	}
 
 	if limit <= 0 {
 		return nil
 	}
 
-	action := "block"
-	if v, ok := cfg["action"].(string); ok && v != "" {
-		action = v
-	}
+	action := getStringConfig(cfg, "action", "block")
 
 	// Calculate spent
 	var spent float64

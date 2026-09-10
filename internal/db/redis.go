@@ -198,3 +198,23 @@ func (r *RedisClient) ReleaseTenantCreditHold(ctx context.Context, tenantID stri
 	}
 	return nil
 }
+
+// Distributed Plugin Bindings Invalidation Event Bus (Pub/Sub)
+const PluginBindingsChannel = "llmgw:events:plugin_bindings"
+
+// PublishPluginBindingsChanged sends an invalidation message to all listening gateway proxies.
+func (r *RedisClient) PublishPluginBindingsChanged(ctx context.Context) error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	return r.client.Publish(ctx, PluginBindingsChannel, "reload").Err()
+}
+
+// SubscribePluginBindings returns a PubSub instance listening for plugin binding invalidation events.
+func (r *RedisClient) SubscribePluginBindings(ctx context.Context) *redis.PubSub {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	return r.client.Subscribe(ctx, PluginBindingsChannel)
+}
+

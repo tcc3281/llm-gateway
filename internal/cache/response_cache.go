@@ -36,15 +36,15 @@ func CacheKey(req *canonical.CanonicalRequest) string {
 		Temperature *float64                    `json:"temperature,omitempty"`
 		Tools       []canonical.ToolDefinition `json:"tools,omitempty"`
 	}
-	b, _ := json.Marshal(fingerprint{
+	h := sha256.New()
+	_ = json.NewEncoder(h).Encode(fingerprint{
 		Model:       req.Model,
 		Messages:    req.Messages,
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
 		Tools:       req.Tools,
 	})
-	sum := sha256.Sum256(b)
-	return "llmcache:" + hex.EncodeToString(sum[:])
+	return "llmcache:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // EffectiveTTL returns the TTL to use for this key's cache entries.

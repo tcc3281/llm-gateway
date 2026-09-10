@@ -55,30 +55,27 @@ func ParsePolicy(data []byte) (*PolicyDocument, error) {
 //   - "model:claude-*" matches "model:claude-3-5-sonnet"
 //   - exact match (case-insensitive)
 func MatchPattern(pattern, target string) bool {
+	return MatchCleanPattern(pattern, strings.ToLower(strings.TrimSpace(target)))
+}
+
+// MatchCleanPattern checks pattern match assuming target is already trimmed and lowercased.
+func MatchCleanPattern(pattern, targetLower string) bool {
 	pattern = strings.ToLower(strings.TrimSpace(pattern))
-	target = strings.ToLower(strings.TrimSpace(target))
-
-	if pattern == "*" || pattern == target {
-		return true
-	}
-
-	// Action wildcards like "*:*"
-	if pattern == "*:*" {
+	if pattern == "*" || pattern == targetLower || pattern == "*:*" {
 		return true
 	}
 
 	// path.Match style wildcard matching (handles * and ?)
-	// Replace colons temporarily if needed or match directly
 	if strings.Contains(pattern, "*") {
 		// If pattern ends with "*", check prefix
 		if strings.HasSuffix(pattern, "*") {
 			prefix := strings.TrimSuffix(pattern, "*")
-			if strings.HasPrefix(target, prefix) {
+			if strings.HasPrefix(targetLower, prefix) {
 				return true
 			}
 		}
 		// Try standard filepath / pattern match
-		if matched, err := path.Match(pattern, target); err == nil && matched {
+		if matched, err := path.Match(pattern, targetLower); err == nil && matched {
 			return true
 		}
 	}
@@ -88,8 +85,9 @@ func MatchPattern(pattern, target string) bool {
 
 // ActionMatches returns true if action matches any of the statement action patterns.
 func ActionMatches(patterns []string, action string) bool {
+	cleanAction := strings.ToLower(strings.TrimSpace(action))
 	for _, p := range patterns {
-		if MatchPattern(p, action) {
+		if MatchCleanPattern(p, cleanAction) {
 			return true
 		}
 	}
@@ -98,8 +96,9 @@ func ActionMatches(patterns []string, action string) bool {
 
 // ResourceMatches returns true if resource matches any of the statement resource patterns.
 func ResourceMatches(patterns []string, resource string) bool {
+	cleanResource := strings.ToLower(strings.TrimSpace(resource))
 	for _, p := range patterns {
-		if MatchPattern(p, resource) {
+		if MatchCleanPattern(p, cleanResource) {
 			return true
 		}
 	}

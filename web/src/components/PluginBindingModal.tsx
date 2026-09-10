@@ -134,6 +134,58 @@ export default function PluginBindingModal({
   const [auditDest, setAuditDest] = useState<string>(binding?.config?.destination ?? "log");
   const [auditWebhook, setAuditWebhook] = useState<string>(binding?.config?.webhook_url ?? "");
 
+  // 11. prometheus-metrics
+  const [promLatency, setPromLatency] = useState<boolean>(binding?.config?.record_latency ?? true);
+  const [promTokens, setPromTokens] = useState<boolean>(binding?.config?.record_tokens ?? true);
+  const [promStatusCodes, setPromStatusCodes] = useState<boolean>(binding?.config?.record_status_codes ?? true);
+  const [promTenantLabel, setPromTenantLabel] = useState<boolean>(binding?.config?.include_tenant_label ?? true);
+  const [promModelLabel, setPromModelLabel] = useState<boolean>(binding?.config?.include_model_label ?? true);
+  const [promProviderLabel, setPromProviderLabel] = useState<boolean>(binding?.config?.include_provider_label ?? true);
+
+  // 12. system-prompt-injector
+  const [systemPromptText, setSystemPromptText] = useState<string>(binding?.config?.system_prompt ?? "");
+  const [injectorMode, setInjectorMode] = useState<string>(binding?.config?.mode ?? "prepend");
+
+  // 13. ip-restriction
+  const [ipAllowlist, setIpAllowlist] = useState<string>(
+    binding?.config?.allowlist ? (binding.config.allowlist as string[]).join("\n") : ""
+  );
+  const [ipDenylist, setIpDenylist] = useState<string>(
+    binding?.config?.denylist ? (binding.config.denylist as string[]).join("\n") : ""
+  );
+
+  // 14. canary-traffic-splitter
+  const [canaryModel, setCanaryModel] = useState<string>(binding?.config?.canary_model ?? "");
+  const [canaryPercentage, setCanaryPercentage] = useState<number>(binding?.config?.canary_percentage ?? 10);
+  const [canaryProvider, setCanaryProvider] = useState<string>(binding?.config?.canary_provider ?? "");
+
+  // 15. prompt-compression
+  const [collapseSpaces, setCollapseSpaces] = useState<boolean>(binding?.config?.collapse_spaces ?? true);
+  const [collapseNewlines, setCollapseNewlines] = useState<boolean>(binding?.config?.collapse_newlines ?? true);
+  const [trimWhitespace, setTrimWhitespace] = useState<boolean>(binding?.config?.trim_whitespace ?? true);
+
+  // 16. response-watermarking
+  const [watermarkId, setWatermarkId] = useState<string>(binding?.config?.watermark_id ?? "llm-gw-verified");
+  const [watermarkHeader, setWatermarkHeader] = useState<string>(binding?.config?.header_name ?? "X-Gateway-Watermark");
+  const [appendFooter, setAppendFooter] = useState<boolean>(binding?.config?.append_footer ?? false);
+  const [footerText, setFooterText] = useState<string>(binding?.config?.footer_text ?? "\n\n---\n*Verified by LLM Gateway*");
+
+  // 17. webhook-notifier
+  const [alertWebhookUrl, setAlertWebhookUrl] = useState<string>(binding?.config?.webhook_url ?? "");
+  const [notifyErrors, setNotifyErrors] = useState<boolean>(binding?.config?.notify_on_errors ?? true);
+  const [notifySlow, setNotifySlow] = useState<boolean>(binding?.config?.notify_on_slow ?? true);
+  const [slowThreshold, setSlowThreshold] = useState<number>(binding?.config?.slow_threshold_seconds ?? 5.0);
+  const [minTokensThreshold, setMinTokensThreshold] = useState<number>(binding?.config?.min_tokens_threshold ?? 0);
+
+  // 18. content-moderation
+  const [modBlockHate, setModBlockHate] = useState<boolean>(binding?.config?.block_hate ?? true);
+  const [modBlockViolence, setModBlockViolence] = useState<boolean>(binding?.config?.block_violence ?? true);
+  const [modBlockSelfHarm, setModBlockSelfHarm] = useState<boolean>(binding?.config?.block_self_harm ?? true);
+  const [modAction, setModAction] = useState<string>(binding?.config?.action ?? "block");
+  const [customBannedWords, setCustomBannedWords] = useState<string>(
+    binding?.config?.custom_banned_words ? (binding.config.custom_banned_words as string[]).join(", ") : ""
+  );
+
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -240,6 +292,76 @@ export default function PluginBindingModal({
       return {
         destination: auditDest,
         webhook_url: auditWebhook,
+      };
+    }
+
+    if (selectedPluginName === "prometheus-metrics") {
+      return {
+        record_latency: promLatency,
+        record_tokens: promTokens,
+        record_status_codes: promStatusCodes,
+        include_tenant_label: promTenantLabel,
+        include_model_label: promModelLabel,
+        include_provider_label: promProviderLabel,
+      };
+    }
+
+    if (selectedPluginName === "system-prompt-injector") {
+      return {
+        system_prompt: systemPromptText,
+        mode: injectorMode,
+      };
+    }
+
+    if (selectedPluginName === "ip-restriction") {
+      return {
+        allowlist: ipAllowlist.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
+        denylist: ipDenylist.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
+      };
+    }
+
+    if (selectedPluginName === "canary-traffic-splitter") {
+      return {
+        canary_model: canaryModel,
+        canary_percentage: Number(canaryPercentage),
+        canary_provider: canaryProvider || undefined,
+      };
+    }
+
+    if (selectedPluginName === "prompt-compression") {
+      return {
+        collapse_spaces: collapseSpaces,
+        collapse_newlines: collapseNewlines,
+        trim_whitespace: trimWhitespace,
+      };
+    }
+
+    if (selectedPluginName === "response-watermarking") {
+      return {
+        watermark_id: watermarkId,
+        header_name: watermarkHeader,
+        append_footer: appendFooter,
+        footer_text: footerText,
+      };
+    }
+
+    if (selectedPluginName === "webhook-notifier") {
+      return {
+        webhook_url: alertWebhookUrl,
+        notify_on_errors: notifyErrors,
+        notify_on_slow: notifySlow,
+        slow_threshold_seconds: Number(slowThreshold),
+        min_tokens_threshold: Number(minTokensThreshold),
+      };
+    }
+
+    if (selectedPluginName === "content-moderation") {
+      return {
+        block_hate: modBlockHate,
+        block_violence: modBlockViolence,
+        block_self_harm: modBlockSelfHarm,
+        action: modAction,
+        custom_banned_words: customBannedWords.split(",").map((s) => s.trim()).filter(Boolean),
       };
     }
 
@@ -868,6 +990,367 @@ export default function PluginBindingModal({
                 </div>
               )}
 
+              {/* 11. prometheus-metrics UI */}
+              {selectedPluginName === "prometheus-metrics" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Metrics Collection</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", marginTop: "0.25rem" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={promStatusCodes}
+                          onChange={(e) => setPromStatusCodes(e.target.checked)}
+                        />
+                        Record Status Codes
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={promLatency}
+                          onChange={(e) => setPromLatency(e.target.checked)}
+                        />
+                        Record Latency Histogram
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={promTokens}
+                          onChange={(e) => setPromTokens(e.target.checked)}
+                        />
+                        Record Token Usage
+                      </label>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Label Cardinality (Prometheus Dimensions)</label>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", marginTop: "0.25rem" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={promTenantLabel}
+                          onChange={(e) => setPromTenantLabel(e.target.checked)}
+                        />
+                        Include Tenant Label
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={promModelLabel}
+                          onChange={(e) => setPromModelLabel(e.target.checked)}
+                        />
+                        Include Model Label
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={promProviderLabel}
+                          onChange={(e) => setPromProviderLabel(e.target.checked)}
+                        />
+                        Include Provider Label
+                      </label>
+                    </div>
+                    <span className="field__help">Disable labels for public API keys to avoid high TSDB cardinality.</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 12. system-prompt-injector UI */}
+              {selectedPluginName === "system-prompt-injector" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Injection Mode</label>
+                    <select
+                      className="select"
+                      value={injectorMode}
+                      onChange={(e) => setInjectorMode(e.target.value)}
+                    >
+                      <option value="prepend">Prepend (Add before user system instructions)</option>
+                      <option value="append">Append (Add after user system instructions)</option>
+                      <option value="override">Override (Completely replace system instructions)</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="field__label">System Prompt Content</label>
+                    <textarea
+                      className="textarea"
+                      rows={4}
+                      value={systemPromptText}
+                      onChange={(e) => setSystemPromptText(e.target.value)}
+                      placeholder="Enter company policies, behavioral constraints, or system prompt guidelines..."
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 13. ip-restriction UI */}
+              {selectedPluginName === "ip-restriction" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">IP / CIDR Allowlist (One per line)</label>
+                    <textarea
+                      className="textarea"
+                      rows={3}
+                      value={ipAllowlist}
+                      onChange={(e) => setIpAllowlist(e.target.value)}
+                      placeholder="192.168.1.0/24&#10;10.0.0.50"
+                    />
+                    <span className="field__help">If specified, only requests from these IPs/subnets are allowed.</span>
+                  </div>
+                  <div className="field">
+                    <label className="field__label">IP / CIDR Denylist (One per line)</label>
+                    <textarea
+                      className="textarea"
+                      rows={3}
+                      value={ipDenylist}
+                      onChange={(e) => setIpDenylist(e.target.value)}
+                      placeholder="203.0.113.0/24&#10;198.51.100.25"
+                    />
+                    <span className="field__help">Requests matching these IPs will be blocked immediately (403 Forbidden).</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 14. canary-traffic-splitter UI */}
+              {selectedPluginName === "canary-traffic-splitter" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Canary Target Model</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={canaryModel}
+                      onChange={(e) => setCanaryModel(e.target.value)}
+                      placeholder="claude-3-5-sonnet or gpt-4o-mini"
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Canary Traffic Split: {canaryPercentage}%</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={100}
+                      className="range"
+                      value={canaryPercentage}
+                      onChange={(e) => setCanaryPercentage(Number(e.target.value))}
+                    />
+                    <span className="field__help">{canaryPercentage}% of traffic is routed to the canary model, {100 - canaryPercentage}% to primary.</span>
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Canary Upstream Provider (Optional)</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={canaryProvider}
+                      onChange={(e) => setCanaryProvider(e.target.value)}
+                      placeholder="anthropic or custom-deepseek"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 15. prompt-compression UI */}
+              {selectedPluginName === "prompt-compression" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Compression Options</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.25rem" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={collapseSpaces}
+                          onChange={(e) => setCollapseSpaces(e.target.checked)}
+                        />
+                        Collapse multiple consecutive spaces/tabs into a single space
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={collapseNewlines}
+                          onChange={(e) => setCollapseNewlines(e.target.checked)}
+                        />
+                        Collapse 3+ consecutive newlines into 2 (double newline)
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={trimWhitespace}
+                          onChange={(e) => setTrimWhitespace(e.target.checked)}
+                        />
+                        Trim leading &amp; trailing whitespace
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 16. response-watermarking UI */}
+              {selectedPluginName === "response-watermarking" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Watermark ID / Signature</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={watermarkId}
+                      onChange={(e) => setWatermarkId(e.target.value)}
+                      placeholder="corp-gateway-v1"
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field__label">HTTP Verification Header Name</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={watermarkHeader}
+                      onChange={(e) => setWatermarkHeader(e.target.value)}
+                      placeholder="X-Gateway-Watermark"
+                    />
+                  </div>
+                  <div className="field">
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={appendFooter}
+                        onChange={(e) => setAppendFooter(e.target.checked)}
+                      />
+                      Append verification footer disclaimer to text completions
+                    </label>
+                  </div>
+                  {appendFooter && (
+                    <div className="field">
+                      <label className="field__label">Footer Disclaimer Text</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={footerText}
+                        onChange={(e) => setFooterText(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 17. webhook-notifier UI */}
+              {selectedPluginName === "webhook-notifier" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Webhook Endpoint URL</label>
+                    <input
+                      type="url"
+                      className="input"
+                      value={alertWebhookUrl}
+                      onChange={(e) => setAlertWebhookUrl(e.target.value)}
+                      placeholder="https://hooks.slack.com/services/... or https://api.corp.internal/alert"
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Trigger Conditions</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.25rem" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={notifyErrors}
+                          onChange={(e) => setNotifyErrors(e.target.checked)}
+                        />
+                        Notify on HTTP Error Responses (&gt;= 400)
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={notifySlow}
+                          onChange={(e) => setNotifySlow(e.target.checked)}
+                        />
+                        Notify on Slow Requests
+                      </label>
+                    </div>
+                  </div>
+                  {notifySlow && (
+                    <div className="field">
+                      <label className="field__label">Slow Latency Threshold (Seconds)</label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0.5"
+                        className="input"
+                        value={slowThreshold}
+                        onChange={(e) => setSlowThreshold(Number(e.target.value))}
+                      />
+                    </div>
+                  )}
+                  <div className="field">
+                    <label className="field__label">Surge Token Threshold (0 = disabled)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input"
+                      value={minTokensThreshold}
+                      onChange={(e) => setMinTokensThreshold(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 18. content-moderation UI */}
+              {selectedPluginName === "content-moderation" && (
+                <div className="stack stack--gap-md">
+                  <div className="field">
+                    <label className="field__label">Safety Categories to Block</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.25rem" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={modBlockHate}
+                          onChange={(e) => setModBlockHate(e.target.checked)}
+                        />
+                        Hate Speech &amp; Extremism
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={modBlockViolence}
+                          onChange={(e) => setModBlockViolence(e.target.checked)}
+                        />
+                        Weapons &amp; Violence Directives
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={modBlockSelfHarm}
+                          onChange={(e) => setModBlockSelfHarm(e.target.checked)}
+                        />
+                        Self-Harm &amp; Suicide Content
+                      </label>
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Enforcement Action</label>
+                    <select
+                      className="select"
+                      value={modAction}
+                      onChange={(e) => setModAction(e.target.value)}
+                    >
+                      <option value="block">Block Request (400 Bad Request)</option>
+                      <option value="warn">Warn Only (Emit X-Moderation-Warning header)</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Custom Banned Keywords (Comma-separated)</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={customBannedWords}
+                      onChange={(e) => setCustomBannedWords(e.target.value)}
+                      placeholder="internal-codename, confidential-project"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Fallback for unlisted generic plugins */}
               {![
                 "rate-limiting",
@@ -880,6 +1363,14 @@ export default function PluginBindingModal({
                 "retry-circuit-breaker",
                 "langfuse-exporter",
                 "audit-trail",
+                "prometheus-metrics",
+                "system-prompt-injector",
+                "ip-restriction",
+                "canary-traffic-splitter",
+                "prompt-compression",
+                "response-watermarking",
+                "webhook-notifier",
+                "content-moderation",
               ].includes(selectedPluginName) && (
                 <div className="field">
                   <label className="field__label">Plugin Config (JSON)</label>

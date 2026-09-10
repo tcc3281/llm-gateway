@@ -10,10 +10,10 @@ We actively maintain and provide security patches for the following versions:
 
 | Version | Supported | Security Patch Policy |
 | :--- | :---: | :--- |
-| `v0.3.x` | ✅ | Current Stable Release, all security patches |
-| `v0.2.x` | ✅ | Critical vulnerabilities and high-severity bug fixes |
-| `v0.1.x` | ❌ | End of Life (EOL) — Please upgrade to `v0.2.x` or later |
-| `< v0.1.0` | ❌ | Unsupported |
+| `v0.4.x` | ✅ | Current Stable Release, all security patches |
+| `v0.3.x` | ✅ | Critical vulnerabilities and high-severity bug fixes |
+| `v0.2.x` | ❌ | End of Life (EOL) — Please upgrade to `v0.3.x` or later |
+| `< v0.2.0` | ❌ | Unsupported |
 
 ---
 

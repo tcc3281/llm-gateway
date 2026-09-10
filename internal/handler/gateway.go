@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -71,6 +72,7 @@ func (h *GatewayHandler) HandleOpenAIChatCompletions(w http.ResponseWriter, r *h
 		RequestBody:    body,
 		ApiKey:         apiKey,
 		UpstreamAPIKey: r.Header.Get("x-upstream-api-key"),
+		ClientIP:       getClientIP(r),
 		ResponseWriter: w,
 	}
 
@@ -106,6 +108,7 @@ func (h *GatewayHandler) HandleEmbeddings(w http.ResponseWriter, r *http.Request
 		RequestBody:    body,
 		ApiKey:         apiKey,
 		UpstreamAPIKey: r.Header.Get("x-upstream-api-key"),
+		ClientIP:       getClientIP(r),
 		ResponseWriter: w,
 	}
 
@@ -141,6 +144,7 @@ func (h *GatewayHandler) HandleAnthropicMessages(w http.ResponseWriter, r *http.
 		RequestBody:    body,
 		ApiKey:         apiKey,
 		UpstreamAPIKey: r.Header.Get("x-upstream-api-key"),
+		ClientIP:       getClientIP(r),
 		ResponseWriter: w,
 	}
 
@@ -148,6 +152,21 @@ func (h *GatewayHandler) HandleAnthropicMessages(w http.ResponseWriter, r *http.
 		span.RecordError(err)
 		h.writeServiceError(w, "anthropic", err)
 	}
+}
+
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+		return strings.TrimSpace(xrip)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // OpenAI Models Endpoint: GET /v1/models (auth required, live provider list)

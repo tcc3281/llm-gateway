@@ -30,11 +30,12 @@ func (p *AuditTrailPlugin) Hooks() []plugin.HookType {
 	return []plugin.HookType{plugin.HookPostUpstream}
 }
 
+func (p *AuditTrailPlugin) IsAsyncPostUpstream() bool {
+	return true
+}
+
 func (p *AuditTrailPlugin) ExecPostUpstream(pctx *plugin.PluginContext, resp *canonical.CanonicalResponse, cfg map[string]any) error {
-	dest, _ := cfg["destination"].(string)
-	if dest == "" {
-		dest = "log"
-	}
+	dest := getStringConfig(cfg, "destination", "log")
 
 	record := map[string]any{
 		"timestamp": time.Now().UTC().Format(time.RFC3339Nano),
@@ -57,7 +58,7 @@ func (p *AuditTrailPlugin) ExecPostUpstream(pctx *plugin.PluginContext, resp *ca
 	}
 
 	if dest == "webhook" {
-		webhookURL, _ := cfg["webhook_url"].(string)
+		webhookURL := getStringConfig(cfg, "webhook_url", "")
 		if webhookURL != "" {
 			data, err := json.Marshal(record)
 			if err == nil {

@@ -95,6 +95,14 @@ func main() {
 	// so new upstream models resolve without an admin touching the UI.
 	go gwService.StartModelDiscoveryLoop(context.Background(), time.Hour)
 
+	// Start in-memory plugin cache background sync & distributed Redis Pub/Sub listener
+	if pe := gwService.PluginEngine(); pe != nil {
+		pe.StartBackgroundSync(context.Background(), 30*time.Second)
+		if redisClient != nil {
+			pe.StartRedisSubscriber(context.Background(), redisClient)
+		}
+	}
+
 	// 5. Initialize Handlers
 	gwHandler := handler.NewGatewayHandler(authService, gwService, redisClient, pg)
 	adminHandler := handler.NewAdminHandler(pg, authService, keyStore, costCalc, redisClient, cfg.AdminAllowedIPs, cfg, gwService, permEngine, alertEngine)

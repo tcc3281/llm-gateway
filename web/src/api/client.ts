@@ -234,6 +234,7 @@ export const api = {
     has_images?: boolean;
     has_audio?: boolean;
     structure_hash?: string;
+    client_ip?: string;
     limit?: number;
     offset?: number;
   }) =>

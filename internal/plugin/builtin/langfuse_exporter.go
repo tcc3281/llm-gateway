@@ -30,18 +30,18 @@ func (p *LangfuseExporterPlugin) Hooks() []plugin.HookType {
 	return []plugin.HookType{plugin.HookPostUpstream}
 }
 
+func (p *LangfuseExporterPlugin) IsAsyncPostUpstream() bool {
+	return true
+}
+
 func (p *LangfuseExporterPlugin) ExecPostUpstream(pctx *plugin.PluginContext, resp *canonical.CanonicalResponse, cfg map[string]any) error {
-	publicKey, _ := cfg["public_key"].(string)
-	secretKey, _ := cfg["secret_key"].(string)
+	publicKey := getStringConfig(cfg, "public_key", "")
+	secretKey := getStringConfig(cfg, "secret_key", "")
 	if publicKey == "" || secretKey == "" {
 		return nil
 	}
 
-	host, _ := cfg["host"].(string)
-	if host == "" {
-		host = "https://cloud.langfuse.com"
-	}
-	host = strings.TrimRight(host, "/")
+	host := strings.TrimRight(getStringConfig(cfg, "host", "https://cloud.langfuse.com"), "/")
 
 	traceID := ""
 	if pctx.CanReq != nil {

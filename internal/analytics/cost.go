@@ -1,7 +1,6 @@
 package analytics
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -116,8 +115,8 @@ type CostResult struct {
 }
 
 func (c *CostCalculator) CalculateCost(provider, modelName string, promptTokens, completionTokens, cachedInputTokens, reasoningTokens int) CostResult {
+	key := provider + ":" + modelName
 	c.mu.RLock()
-	key := fmt.Sprintf("%s:%s", provider, modelName)
 	pricing, exists := c.pricings[key]
 	c.mu.RUnlock()
 
@@ -186,8 +185,8 @@ func (c *CostCalculator) CalculateCost(provider, modelName string, promptTokens,
 // EstimateMaxCost estimates worst-case cost for pre-flight hold reservation (Hold & Settle).
 // It assumes 0% prompt cache hit and conservative output token buffer.
 func (c *CostCalculator) EstimateMaxCost(provider, modelName string, estimatedInputTokens, maxOutputTokens int) float64 {
+	key := provider + ":" + modelName
 	c.mu.RLock()
-	key := fmt.Sprintf("%s:%s", provider, modelName)
 	pricing, exists := c.pricings[key]
 	c.mu.RUnlock()
 

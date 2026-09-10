@@ -33,22 +33,12 @@ func (p *PIIMaskingPlugin) ExecPreRouting(pctx *plugin.PluginContext, cfg map[st
 		return nil
 	}
 
-	replacement := "[REDACTED]"
-	if rep, ok := cfg["replacement"].(string); ok && rep != "" {
-		replacement = rep
-	}
+	replacement := getStringConfig(cfg, "replacement", "[REDACTED]")
 
 	// Determine active pattern matchers
 	patternsToRun := []string{"email", "phone", "credit_card", "national_id", "api_key"}
-	if rawPatterns, ok := cfg["patterns"].([]any); ok && len(rawPatterns) > 0 {
-		patternsToRun = nil
-		for _, rp := range rawPatterns {
-			if str, ok := rp.(string); ok {
-				patternsToRun = append(patternsToRun, str)
-			}
-		}
-	} else if strSlice, ok := cfg["patterns"].([]string); ok && len(strSlice) > 0 {
-		patternsToRun = strSlice
+	if configuredPatterns := getStringSliceConfig(cfg, "patterns"); len(configuredPatterns) > 0 {
+		patternsToRun = configuredPatterns
 	}
 
 	maskString := func(input string) string {
