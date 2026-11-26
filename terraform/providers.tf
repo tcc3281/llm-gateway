@@ -1,6 +1,12 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  backend "gcs" {
+    bucket      = "gdgdevfest2026-515408-tfstate"
+    prefix      = "llm-gateway/state"
+    credentials = "gdgdevfest2026-515408-6b41e29434d7.json"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"

@@ -40,7 +40,16 @@ jobs:
             vpcaccess.googleapis.com \
             servicenetworking.googleapis.com \
             compute.googleapis.com \
+            storage.googleapis.com \
             --project=gdgdevfest2026-515408
+
+      - name: Ensure GCS Bucket for Terraform State Exists
+        run: |
+          gcloud storage buckets describe gs://gdgdevfest2026-515408-tfstate --project=gdgdevfest2026-515408 || \
+          gcloud storage buckets create gs://gdgdevfest2026-515408-tfstate \
+            --location=asia-east1 \
+            --project=gdgdevfest2026-515408 \
+            --uniform-bucket-level-access
 
       - name: Ensure Artifact Registry Repository Exists
         run: |
@@ -93,13 +102,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: terraform
-        run: terraform init
-
-      - name: Import Existing Resources into Terraform State
-        working-directory: terraform
-        run: |
-          terraform import google_artifact_registry_repository.app_repo projects/gdgdevfest2026-515408/locations/asia-east1/repositories/llm-gateway-repo || true
-          terraform import google_cloud_run_v2_service.gateway projects/gdgdevfest2026-515408/locations/asia-east1/services/llm-gateway || true
+        run: terraform init -reconfigure
 
       - name: Terraform Apply Infrastructure & Cloud Run
         working-directory: terraform
