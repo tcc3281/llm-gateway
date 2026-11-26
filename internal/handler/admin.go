@@ -1049,89 +1049,96 @@ func (h *AdminHandler) SyncModelsFromCatalog(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	providerParam := r.URL.Query().Get("provider")
+	providerParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("provider")))
 	if providerParam == "" {
 		providerParam = "all"
 	}
 
-	var providers []string
+	// Providers to sync
+	providerSet := make(map[string]bool)
 	if providerParam == "all" {
-		providers = []string{"openai", "anthropic", "gemini"}
+		providerSet["openai"] = true
+		providerSet["anthropic"] = true
+		providerSet["gemini"] = true
+		providerSet["deepseek"] = true
+		providerSet["groq"] = true
+		providerSet["mistral"] = true
+		providerSet["cohere"] = true
 		if h.keyStore != nil {
 			if active, err := h.keyStore.ListActiveProviders(); err == nil {
 				for _, ap := range active {
-					found := false
-					for _, existing := range providers {
-						if existing == ap.Provider {
-							found = true
-							break
-						}
-					}
-					if !found {
-						providers = append(providers, ap.Provider)
-					}
+					providerSet[strings.ToLower(ap.Provider)] = true
 				}
 			}
 		}
 	} else {
-		providers = []string{providerParam}
+		providerSet[providerParam] = true
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	totalSynced := 0
 
-	for _, p := range providers {
-		url := fmt.Sprintf("https://api.litellm.ai/model_catalog?provider=%s", p)
-		resp, err := client.Get(url)
-		if err != nil {
-			log.Printf("Error fetching catalog for %s: %v", p, err)
-			continue
-		}
+	// LiteLLM canonical pricing repository
+	resp, err := client.Get("https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json")
+	var catalogMap map[string]struct {
+		InputCostPerToken       *float64 `json:"input_cost_per_token"`
+		OutputCostPerToken      *float64 `json:"output_cost_per_token"`
+		CacheReadInputTokenCost *float64 `json:"cache_read_input_token_cost"`
+		LiteLLMProvider         string   `json:"litellm_provider"`
+		Mode                    string   `json:"mode"`
+	}
+
+	fetchedOk := false
+	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("Non-OK status from LiteLLM for %s: %d", p, resp.StatusCode)
-			continue
+		if err := json.NewDecoder(resp.Body).Decode(&catalogMap); err == nil && len(catalogMap) > 0 {
+			fetchedOk = true
 		}
+	}
 
-		var catalog struct {
-			Data []struct {
-				ID                 string   `json:"id"`
-				Provider           string   `json:"provider"`
-				Mode               string   `json:"mode"`
-				InputCostPerToken  *float64 `json:"input_cost_per_token"`
-				OutputCostPerToken *float64 `json:"output_cost_per_token"`
-			} `json:"data"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
-			log.Printf("Error decoding LiteLLM response for %s: %v", p, err)
-			continue
-		}
-
-		for _, item := range catalog.Data {
-			if item.ID == "" {
+	if fetchedOk {
+		for rawModelName, item := range catalogMap {
+			if rawModelName == "sample_spec" || rawModelName == "" {
 				continue
 			}
 
-			// Clean provider prefix
-			modelName := item.ID
-			prefix := p + "/"
-			if strings.HasPrefix(modelName, prefix) {
-				modelName = strings.TrimPrefix(modelName, prefix)
+			// Determine provider
+			p := strings.ToLower(item.LiteLLMProvider)
+			modelName := rawModelName
+
+			// Clean provider prefixes e.g. "openai/gpt-4o" -> "gpt-4o", "deepseek/deepseek-chat" -> "deepseek-chat"
+			if slashIdx := strings.Index(rawModelName, "/"); slashIdx != -1 {
+				prefix := strings.ToLower(rawModelName[:slashIdx])
+				if p == "" {
+					p = prefix
+				}
+				modelName = rawModelName[slashIdx+1:]
+			}
+
+			if p == "vertex_ai" || p == "google" {
+				p = "gemini"
+			}
+
+			if p == "" {
+				continue
+			}
+
+			if !providerSet[p] && !providerSet["all"] {
+				continue
 			}
 
 			var promptPrice, completionPrice float64
 			if item.InputCostPerToken != nil {
 				promptPrice = (*item.InputCostPerToken) * 1_000_000
-			} else {
-				promptPrice = 0.0 // Default fallback so user can edit manually
 			}
-
 			if item.OutputCostPerToken != nil {
 				completionPrice = (*item.OutputCostPerToken) * 1_000_000
-			} else {
-				completionPrice = 0.0
+			}
+
+			var cacheReadPrice *float64
+			if item.CacheReadInputTokenCost != nil {
+				val := (*item.CacheReadInputTokenCost) * 1_000_000
+				cacheReadPrice = &val
 			}
 
 			modelPricing := &model.ModelPricing{
@@ -1139,6 +1146,7 @@ func (h *AdminHandler) SyncModelsFromCatalog(w http.ResponseWriter, r *http.Requ
 				ModelName:            modelName,
 				PromptPricePer1M:     promptPrice,
 				CompletionPricePer1M: completionPrice,
+				CacheReadPricePer1M:  cacheReadPrice,
 			}
 
 			if err := h.pg.UpsertModelPricing(modelPricing); err != nil {
@@ -1146,6 +1154,35 @@ func (h *AdminHandler) SyncModelsFromCatalog(w http.ResponseWriter, r *http.Requ
 				continue
 			}
 			totalSynced++
+		}
+	}
+
+	// If remote catalog failed or yielded 0 models (e.g. offline/network blocked), seed essential standard models
+	if totalSynced == 0 {
+		baselineModels := []*model.ModelPricing{
+			{Provider: "openai", ModelName: "gpt-4o", PromptPricePer1M: 2.50, CompletionPricePer1M: 10.00},
+			{Provider: "openai", ModelName: "gpt-4o-mini", PromptPricePer1M: 0.15, CompletionPricePer1M: 0.60},
+			{Provider: "openai", ModelName: "o1", PromptPricePer1M: 15.00, CompletionPricePer1M: 60.00},
+			{Provider: "openai", ModelName: "o1-mini", PromptPricePer1M: 3.00, CompletionPricePer1M: 12.00},
+			{Provider: "openai", ModelName: "o3-mini", PromptPricePer1M: 1.10, CompletionPricePer1M: 4.40},
+			{Provider: "anthropic", ModelName: "claude-3-5-sonnet-20241022", PromptPricePer1M: 3.00, CompletionPricePer1M: 15.00},
+			{Provider: "anthropic", ModelName: "claude-3-5-haiku-20241022", PromptPricePer1M: 0.80, CompletionPricePer1M: 4.00},
+			{Provider: "anthropic", ModelName: "claude-3-opus-20240229", PromptPricePer1M: 15.00, CompletionPricePer1M: 75.00},
+			{Provider: "gemini", ModelName: "gemini-1.5-pro", PromptPricePer1M: 1.25, CompletionPricePer1M: 5.00},
+			{Provider: "gemini", ModelName: "gemini-1.5-flash", PromptPricePer1M: 0.075, CompletionPricePer1M: 0.30},
+			{Provider: "gemini", ModelName: "gemini-2.0-flash", PromptPricePer1M: 0.10, CompletionPricePer1M: 0.40},
+			{Provider: "deepseek", ModelName: "deepseek-chat", PromptPricePer1M: 0.14, CompletionPricePer1M: 0.28},
+			{Provider: "deepseek", ModelName: "deepseek-reasoner", PromptPricePer1M: 0.55, CompletionPricePer1M: 2.19},
+			{Provider: "groq", ModelName: "llama-3.3-70b-versatile", PromptPricePer1M: 0.59, CompletionPricePer1M: 0.79},
+			{Provider: "groq", ModelName: "llama-3.1-8b-instant", PromptPricePer1M: 0.05, CompletionPricePer1M: 0.08},
+		}
+
+		for _, bm := range baselineModels {
+			if providerSet[bm.Provider] || providerSet["all"] {
+				if err := h.pg.UpsertModelPricing(bm); err == nil {
+					totalSynced++
+				}
+			}
 		}
 	}
 

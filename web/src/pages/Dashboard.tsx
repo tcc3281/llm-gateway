@@ -72,6 +72,7 @@ export default function Dashboard() {
   const [modelFilter, setModelFilter] = useState("");
   const [modelInput, setModelInput] = useState("");
   const [selectedLogId, setSelectedLogId] = useState<number | null>(null);
+  const [copiedCurl, setCopiedCurl] = useState(false);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -262,6 +263,80 @@ export default function Dashboard() {
       {error && <div className="error-banner">{error}</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* ── Recruiter & Developer Quickstart Card ── */}
+        <div
+          className="card"
+          style={{
+            margin: 0,
+            background: "linear-gradient(135deg, rgba(34, 211, 238, 0.04) 0%, rgba(16, 185, 129, 0.04) 100%)",
+            border: "1px solid rgba(34, 211, 238, 0.2)",
+            padding: "14px 18px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14, color: "#22d3ee" }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>rocket_launch</span>
+                <span>🚀 Live Gateway Endpoint & Test cURL</span>
+                <span className="tag" style={{ background: "rgba(16, 185, 129, 0.15)", color: "#10b981", fontSize: 11, border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+                  ONLINE
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                Target: <strong style={{ color: "#dde4e5" }}>https://vin-ai-t205.io.vn/v1/chat/completions</strong> (OpenAI & Anthropic Protocol)
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn--sm"
+                style={{
+                  background: copiedCurl ? "#10b981" : "rgba(34, 211, 238, 0.15)",
+                  color: copiedCurl ? "#ffffff" : "#22d3ee",
+                  border: "1px solid rgba(34, 211, 238, 0.3)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 12,
+                }}
+                onClick={() => {
+                  const curlCmd = `curl.exe -X POST https://vin-ai-t205.io.vn/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer <YOUR_API_KEY>" \\\n  -d '{\n    "model": "deepseek-chat",\n    "messages": [{"role": "user", "content": "Hello from VinAI Gateway!"}]\n  }'`;
+                  navigator.clipboard.writeText(curlCmd);
+                  setCopiedCurl(true);
+                  setTimeout(() => setCopiedCurl(false), 2000);
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                  {copiedCurl ? "check" : "content_copy"}
+                </span>
+                <span>{copiedCurl ? "Đã copy cURL!" : "Copy cURL Demo"}</span>
+              </button>
+              <Link to="/keys" className="btn btn--ghost btn--sm" style={{ fontSize: 12 }}>
+                Tạo Key Mới →
+              </Link>
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 10,
+              background: "#111318",
+              border: "1px solid #232730",
+              borderRadius: 6,
+              padding: "8px 12px",
+              fontFamily: "var(--font-mono, monospace)",
+              fontSize: 11,
+              color: "#a5b4fc",
+              overflowX: "auto",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+            }}
+          >
+            {`curl.exe -X POST https://vin-ai-t205.io.vn/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer <YOUR_API_KEY>" \\\n  -d '{"model": "deepseek-chat", "messages": [{"role": "user", "content": "Hello from VinAI Gateway!"}]}'`}
+          </div>
+        </div>
+
         {/* ── Row 1 · Hero KPIs ─────────────────────────────────────────── */}
         <div className="kpi-grid" style={{ marginBottom: 0 }}>
           <HeroKpi

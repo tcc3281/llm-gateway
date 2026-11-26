@@ -3,18 +3,42 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
+[![GCP Cloud Run](https://img.shields.io/badge/Deploy-GCP%20Cloud%20Run-4285F4?logo=googlecloud)](https://cloud.google.com/run)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform)](https://www.terraform.io)
 [![i18n: vi/en](https://img.shields.io/badge/i18n-VI%20%7C%20EN-blue)](web/src/i18n)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-> 🌐 **Language:** **English** | [Tiếng Việt](README.vi.md)
+> 🌐 **Language:** **English** | [Tiếng Việt](README.vi.md)  
+> 🚀 **Live Production Demo:** **[https://vin-ai-t205.io.vn](https://vin-ai-t205.io.vn)**  
+> 🔑 **Recruiter / Demo 1-Click Login:** Click the **`🚀 Đăng nhập nhanh (Nhà tuyển dụng / Demo)`** button on the login screen (pre-fills `admin@llm-gateway.internal` / `admin`).
 
-An enterprise-grade, high-performance distributed LLM Gateway written in **Go**. Unified OpenAI & Anthropic protocol adaptation, AWS IAM-style statement policies, multi-tenant B2B accounting with prepaid credit ledgers, proactive multi-channel alerting (Slack, Discord, PagerDuty, HMAC Webhooks), and zero-leak multimodal telemetry.
+An enterprise-grade, high-performance distributed LLM Gateway written in **Go**. Features unified OpenAI & Anthropic protocol adaptation, extensible Guardrail Plugin Engine (Prompt Injection, PII Masking, Semantic Caching), AWS IAM-style statement policies, dynamic upstream model discovery & LiteLLM pricing catalog sync, multi-tenant B2B accounting with prepaid credit ledgers, proactive multi-channel alerting (Slack, Discord, PagerDuty, HMAC Webhooks), and zero-leak multimodal telemetry.
 
 ---
 
-## ⚡ 60-Second Quickstart
+## ⚡ Live Demo & Quick Test
 
-Get the entire stack (Gateway, Admin Web UI, PostgreSQL, Redis) running in under a minute with Docker:
+You can test the live gateway running on Google Cloud Run right away:
+
+```bash
+# 1. Test unified OpenAI-compatible Chat Completion via the Gateway
+curl -s -X POST https://vin-ai-t205.io.vn/v1/chat/completions \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Explain VinAI LLM Gateway in one sentence!"}]
+  }'
+```
+
+👉 **Access Admin Web UI**: Open **[https://vin-ai-t205.io.vn](https://vin-ai-t205.io.vn)** in your browser.  
+👉 **1-Click Recruiter Login**: Use the quick demo button on the login screen to explore the full dashboard, IAM policies, tenants, and telemetry.
+
+---
+
+## ⚡ 60-Second Local Quickstart
+
+Get the entire stack (Gateway, Admin Web UI, PostgreSQL, Redis) running locally in under a minute with Docker:
 
 ```bash
 # 1. Clone repository
@@ -24,7 +48,7 @@ cd llm-gateway
 # 2. Launch with Docker Compose
 docker compose up -d
 
-# 3. Test a unified chat completion through the gateway (Port 8080)
+# 3. Test a unified chat completion through local gateway (Port 8080)
 curl -s http://localhost:8080/v1/chat/completions \
   -H "Authorization: Bearer sk-gw-8f7a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a" \
   -H "Content-Type: application/json" \
@@ -34,7 +58,7 @@ curl -s http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-👉 **Access Admin Web UI**: Open [http://localhost:8081](http://localhost:8081) in your browser.  
+👉 **Local Admin Web UI**: Open [http://localhost:8081](http://localhost:8081) (or port 8080).  
 🔑 **Default Admin Key**: `sk-admin-secret-key-change-me` (configured in `docker-compose.yml`).
 
 ---

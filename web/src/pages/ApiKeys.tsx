@@ -384,8 +384,43 @@ export default function ApiKeys() {
                     toast.info("Virtual API key copied to clipboard", "[COPIED]");
                   }}
                 >
-                  {t("common.copy", "Copy")}
+                  {t("common.copy", "Copy Key")}
                 </button>
+              </div>
+
+              <div style={{ marginTop: 14 }}>
+                <label className="field__label">🚀 Quick Test with cURL (https://vin-ai-t205.io.vn)</label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      background: "#111318",
+                      border: "1px solid #232730",
+                      borderRadius: 6,
+                      padding: "8px 12px",
+                      fontFamily: "var(--font-mono, monospace)",
+                      fontSize: 11,
+                      color: "#a5b4fc",
+                      overflowX: "auto",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {`curl.exe -X POST https://vin-ai-t205.io.vn/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${createdSecret}" \\\n  -d '{"model": "deepseek-chat", "messages": [{"role": "user", "content": "Hello LLM Gateway!"}]}'`}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    style={{ flexShrink: 0 }}
+                    onClick={() => {
+                      const curlStr = `curl.exe -X POST https://vin-ai-t205.io.vn/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${createdSecret}" \\\n  -d '{\n    "model": "deepseek-chat",\n    "messages": [{"role": "user", "content": "Hello LLM Gateway!"}]\n  }'`;
+                      navigator.clipboard.writeText(curlStr);
+                      toast.info("cURL command copied to clipboard", "[COPIED]");
+                    }}
+                  >
+                    Copy cURL
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

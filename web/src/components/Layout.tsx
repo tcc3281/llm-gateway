@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useLanguage } from "../i18n";
@@ -23,6 +24,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const current = NAV_ITEMS.find((n) => pathname.startsWith(n.to));
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -84,6 +86,47 @@ export default function Layout() {
           </div>
 
           <div className="topbar__spacer" />
+
+          {/* Gateway Live Endpoint Pill */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              background: "rgba(34, 211, 238, 0.08)",
+              border: "1px solid rgba(34, 211, 238, 0.25)",
+              borderRadius: 6,
+              padding: "3px 10px",
+              fontSize: 12,
+              fontFamily: "var(--font-mono, monospace)",
+              color: "#22d3ee",
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>link</span>
+            <span>https://vin-ai-t205.io.vn</span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText("https://vin-ai-t205.io.vn");
+                setCopiedUrl(true);
+                setTimeout(() => setCopiedUrl(false), 2000);
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: copiedUrl ? "#10b981" : "#22d3ee",
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0 2px",
+              }}
+              title="Copy Gateway Endpoint URL"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                {copiedUrl ? "check" : "content_copy"}
+              </span>
+            </button>
+          </div>
 
           {/* Instant Language Switcher */}
           <LanguageSwitcher />

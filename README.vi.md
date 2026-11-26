@@ -1,13 +1,37 @@
-# LLM Gateway (Go + Docker)
+# LLM Gateway (Go + Docker + GCP Cloud Run)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
+[![GCP Cloud Run](https://img.shields.io/badge/Deploy-GCP%20Cloud%20Run-4285F4?logo=googlecloud)](https://cloud.google.com/run)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform)](https://www.terraform.io)
 [![i18n: vi/en](https://img.shields.io/badge/i18n-VI%20%7C%20EN-blue)](web/src/i18n)
 
-> 🌐 **Ngôn ngữ:** [English](README.md) | **Tiếng Việt**
+> 🌐 **Ngôn ngữ:** [English](README.md) | **Tiếng Việt**  
+> 🚀 **Live Production Demo:** **[https://vin-ai-t205.io.vn](https://vin-ai-t205.io.vn)**  
+> 🔑 **Đăng Nhập Nhanh (Nhà Tuyển Dụng / Demo):** Nhấp nút **`🚀 Đăng nhập nhanh (Nhà tuyển dụng / Demo)`** ngay tại màn hình đăng nhập (tài khoản mẫu `admin@llm-gateway.internal` / `admin`).
 
-Một **LLM Gateway** hiệu năng cao được phát triển bằng ngôn ngữ **Go**, hỗ trợ Proxy & Protocol Adapter cho 3 nhà cung cấp LLM chính: **OpenAI**, **Anthropic**, và **Google Gemini**. Gateway cung cấp chuẩn đầu vào/đầu ra tương thích với cả **OpenAI API** (`/v1/chat/completions`) và **Anthropic API** (`/v1/messages`).
+Một **LLM Gateway** cấp doanh nghiệp, hiệu năng cao được phát triển bằng ngôn ngữ **Go**, hỗ trợ Proxy & Protocol Adapter đa nhà cung cấp (**OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Groq**), hệ thống Guardrails Plugins (Prompt Guard, PII Masking, Semantic Caching), chính sách bảo mật IAM granular, Virtual Models thông minh và hạ tầng chuẩn Cloud Native trên **GCP Cloud Run & Terraform**.
+
+---
+
+## ⚡ Live Demo & Test Nhanh
+
+Bạn có thể gọi trực tiếp tới Production Gateway đang chạy trên Google Cloud Run:
+
+```bash
+# 1. Gọi Chat Completion qua Gateway
+curl -s -X POST https://vin-ai-t205.io.vn/v1/chat/completions \
+  -H "Authorization: Bearer <API_KEY_CỦA_BẠN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Xin chào từ VinAI LLM Gateway!"}]
+  }'
+```
+
+👉 **Giao diện Quản trị (Admin Web UI)**: Mở **[https://vin-ai-t205.io.vn](https://vin-ai-t205.io.vn)**  
+👉 **1-Click Đăng nhập Demo**: Sử dụng nút đăng nhập nhanh trên giao diện để trải nghiệm toàn bộ tính năng Dashboard, IAM Policy, Plugin Guardrails và Telemetry.
 
 ---
 
