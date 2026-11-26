@@ -16,6 +16,7 @@ import (
 	"llm-gateway/internal/cache"
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
+	"llm-gateway/internal/docs"
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
@@ -120,9 +121,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-public"}`))
 	})
+	docs.RegisterRoutes(publicMux, true)
 
 	// 7. Router Setup: Admin Management Mux (Port 8081)
 	adminMux := http.NewServeMux()
+	docs.RegisterRoutes(adminMux, false)
 	// Only the /admin/* paths are registered as API routes: the bare paths
 	// (/users, /keys, /providers, /models, /analytics/*) are owned by the React
 	// Auth & Profile

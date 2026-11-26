@@ -1,0 +1,652 @@
+openapi: 3.0.3
+info:
+  title: LLM Gateway - Data Plane (Inference API)
+  description: |
+    High-performance, zero-allocation AI proxy and inference plane for LLM Gateway.
+    Provides OpenAI- and Anthropic-compatible routing, fallback execution, streaming SSE,
+    embeddings, semantic caching, rate limiting, and structural telemetry.
+  version: 0.4.0
+  contact:
+    name: LLM Gateway Team
+    url: https://github.com/tcc3281/llm-gateway
+
+servers:
+  - url: http://localhost:8080
+    description: Local Data Plane Proxy (AI Traffic)
+  - url: https://gateway.internal.company.com:8080
+    description: Production Data Plane Cluster
+
+tags:
+  - name: Chat & Messages
+    description: OpenAI and Anthropic compatible chat completion and message endpoints.
+  - name: Embeddings
+    description: Vector embeddings generation for search and RAG workflows.
+  - name: Models
+    description: Available physical and virtual model catalogs.
+  - name: System
+    description: Health and Prometheus telemetry endpoints.
+
+paths:
+  /v1/chat/completions:
+    post:
+      tags:
+        - Chat & Messages
+      summary: OpenAI Compatible Chat Completions
+      description: |
+        Processes chat completion requests with automatic multi-provider fallback,
+        virtual model routing, and SSE token streaming.
+      operationId: createChatCompletion
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: x-upstream-api-key
+          in: header
+          required: false
+          description: Optional provider API key override (BYOK - Bring Your Own Key).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAIChatCompletionRequest'
+      responses:
+        '200':
+          description: Successful chat completion (or SSE chunk stream if stream=true).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: "Server-Sent Events (SSE) data stream format (`data: {...}\n\ndata: [DONE]\n\n`)."
+        '400':
+          description: Invalid request payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '402':
+          description: Insufficient tenant or user balance/budget.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '403':
+          description: IAM model policy or IP restriction forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: Requested model or alias not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '429':
+          description: Rate limit (RPM) or quota exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Upstream provider failure or connection timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: Provider key missing or backend degraded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/messages:
+    post:
+      tags:
+        - Chat & Messages
+      summary: Anthropic Compatible Messages
+      description: |
+        Processes Anthropic Claude format message requests with tool use and streaming.
+      operationId: createAnthropicMessage
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: anthropic-version
+          in: header
+          required: false
+          description: Anthropic API version (e.g., `2023-06-01`).
+          schema:
+            type: string
+            default: '2023-06-01'
+        - name: x-upstream-api-key
+          in: header
+          required: false
+          description: Optional upstream API key override.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnthropicMessageRequest'
+      responses:
+        '200':
+          description: Successful Anthropic message response or SSE event stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicMessageResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: "Anthropic SSE events (`event: content_block_delta\ndata: {...}\n\n`)."
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+        '403':
+          description: Permission denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+        '429':
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+        '500':
+          description: Internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+
+  /v1/embeddings:
+    post:
+      tags:
+        - Embeddings
+      summary: OpenAI Compatible Embeddings
+      description: Generates vector representations for input text strings or token arrays.
+      operationId: createEmbeddings
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: x-upstream-api-key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAIEmbeddingRequest'
+      responses:
+        '200':
+          description: Successfully generated embeddings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIEmbeddingResponse'
+        '400':
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/models:
+    get:
+      tags:
+        - Models
+      summary: List Available Models
+      description: Returns the unified list of discovered provider models and virtual model aliases.
+      operationId: listModels
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of models.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                    example: list
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderModel'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/models/{id}:
+    get:
+      tags:
+        - Models
+      summary: Retrieve Model
+      description: Retrieves details of a specific model or virtual model alias.
+      operationId: getModel
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Model identifier or virtual model alias.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Model found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderModel'
+        '404':
+          description: Model not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Data Plane Health Check
+      description: Verifies readiness and operational status of the proxy engine.
+      operationId: getDataPlaneHealth
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: llm-gateway-data-plane
+
+  /metrics:
+    get:
+      tags:
+        - System
+      summary: Prometheus Metrics
+      description: Exposes Prometheus operational telemetry for traffic, latency, and tokens.
+      operationId: getDataPlaneMetrics
+      responses:
+        '200':
+          description: Raw Prometheus metric exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+      description: "LLM Gateway API key (`Authorization: Bearer sk-gw-...`)."
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: "Alternative API key header (`x-api-key: sk-gw-...`)."
+
+  schemas:
+    OpenAIChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: Target model name or Virtual Model alias (e.g. `fast-chat`, `gpt-4o-mini`).
+          example: fast-chat
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenAIChatMessage'
+        temperature:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 2
+          default: 1.0
+        top_p:
+          type: number
+          format: float
+        max_tokens:
+          type: integer
+        stream:
+          type: boolean
+          default: false
+        tools:
+          type: array
+          items:
+            type: object
+        tool_choice:
+          oneOf:
+            - type: string
+            - type: object
+        presence_penalty:
+          type: number
+          format: float
+        frequency_penalty:
+          type: number
+          format: float
+        user:
+          type: string
+
+    OpenAIChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool, function]
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+        name:
+          type: string
+        tool_call_id:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            type: object
+
+    OpenAIChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: chatcmpl-9xAbcDef123
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+          format: int64
+          example: 1716383000
+        model:
+          type: string
+          example: gpt-4o-mini
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              message:
+                $ref: '#/components/schemas/OpenAIChatMessage'
+              finish_reason:
+                type: string
+                example: stop
+        usage:
+          $ref: '#/components/schemas/OpenAIUsage'
+
+    OpenAIUsage:
+      type: object
+      properties:
+        prompt_tokens:
+          type: integer
+          example: 24
+        completion_tokens:
+          type: integer
+          example: 52
+        total_tokens:
+          type: integer
+          example: 76
+        prompt_tokens_details:
+          type: object
+          properties:
+            cached_tokens:
+              type: integer
+        completion_tokens_details:
+          type: object
+          properties:
+            reasoning_tokens:
+              type: integer
+
+    AnthropicMessageRequest:
+      type: object
+      required:
+        - model
+        - messages
+        - max_tokens
+      properties:
+        model:
+          type: string
+          example: claude-3-5-sonnet-20241022
+        messages:
+          type: array
+          items:
+            type: object
+            required:
+              - role
+              - content
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                oneOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: object
+        max_tokens:
+          type: integer
+          example: 1024
+        system:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+        temperature:
+          type: number
+          format: float
+        stream:
+          type: boolean
+          default: false
+        tools:
+          type: array
+          items:
+            type: object
+
+    AnthropicMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: msg_01ABC123
+        type:
+          type: string
+          example: message
+        role:
+          type: string
+          example: assistant
+        content:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                example: text
+              text:
+                type: string
+        model:
+          type: string
+        stop_reason:
+          type: string
+          example: end_turn
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
+
+    OpenAIEmbeddingRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          example: text-embedding-3-small
+        input:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        encoding_format:
+          type: string
+          enum: [float, base64]
+          default: float
+        dimensions:
+          type: integer
+
+    OpenAIEmbeddingResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              object:
+                type: string
+                example: embedding
+              index:
+                type: integer
+              embedding:
+                type: array
+                items:
+                  type: number
+                  format: float
+        model:
+          type: string
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+
+    ProviderModel:
+      type: object
+      properties:
+        id:
+          type: string
+          example: gpt-4o-mini
+        object:
+          type: string
+          example: model
+        created:
+          type: integer
+          format: int64
+          example: 1716383000
+        owned_by:
+          type: string
+          example: openai
+
+    OpenAIErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: Invalid API key or model not found.
+            type:
+              type: string
+              example: invalid_request_error
+            param:
+              type: string
+              nullable: true
+            code:
+              type: string
+              example: invalid_api_key
+
+    AnthropicErrorResponse:
+      type: object
+      properties:
+        type:
+          type: string
+          example: error
+        error:
+          type: object
+          properties:
+            type:
+              type: string
+              example: authentication_error
+            message:
+              type: string
+              example: Invalid x-api-key provided.

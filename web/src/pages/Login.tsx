@@ -17,6 +17,26 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const handleRecruiterAutoLogin = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      setEmail("admin@llm-gateway.internal");
+      setPassword("admin");
+      await loginWithPassword("admin@llm-gateway.internal", "admin");
+      navigate("/dashboard");
+    } catch (err) {
+      try {
+        await login("sk-admin-secret-key-change-me");
+        navigate("/dashboard");
+      } catch (rootErr) {
+        setError(err instanceof Error ? err.message : "Auto-login failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleMemberSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -222,6 +242,38 @@ export default function Login() {
               </p>
             </form>
           )}
+
+          {/* One-Click Auto Login for Recruiters */}
+          <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px dashed #2d3139", textAlign: "center" }}>
+            <button
+              type="button"
+              onClick={handleRecruiterAutoLogin}
+              disabled={busy}
+              style={{
+                width: "100%",
+                padding: "10px 16px",
+                backgroundColor: "rgba(34, 211, 238, 0.12)",
+                color: "#22d3ee",
+                border: "1px solid rgba(34, 211, 238, 0.4)",
+                borderRadius: "4px",
+                fontFamily: "JetBrains Mono, monospace",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span>🚀</span>
+              <span>{t("login.recruiter_auto_login", "Đăng nhập nhanh (Nhà tuyển dụng / Demo)")}</span>
+            </button>
+            <span style={{ display: "block", marginTop: "6px", fontSize: "11px", color: "#64748b", fontFamily: "JetBrains Mono, monospace" }}>
+              {t("login.recruiter_hint", "Tự động đăng nhập tài khoản Admin để trải nghiệm Dashboard")}
+            </span>
+          </div>
         </div>
       </div>
 

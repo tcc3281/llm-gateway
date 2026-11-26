@@ -1,0 +1,3208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Skill Evaluation Review: code-review-solid (Iteration 1)</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #0f172a; color: #f8fafc; }
+  header { background: #1e293b; padding: 20px 30px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+  h1 { margin: 0; font-size: 22px; color: #38bdf8; }
+  .badge { background: #0284c7; color: white; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: bold; }
+  .container { display: flex; height: calc(100vh - 75px); }
+  .sidebar { width: 280px; background: #1e293b; border-right: 1px solid #334155; padding: 20px 10px; overflow-y: auto; }
+  .sidebar button { width: 100%; text-align: left; padding: 12px 16px; margin-bottom: 8px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: #94a3b8; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+  .sidebar button:hover { background: #334155; color: #f8fafc; }
+  .sidebar button.active { background: #0284c7; color: white; font-weight: 600; }
+  .main { flex: 1; padding: 30px; overflow-y: auto; background: #0f172a; }
+  .prompt-box { background: #1e293b; border-left: 4px solid #38bdf8; padding: 16px; border-radius: 6px; margin-bottom: 25px; font-size: 15px; line-height: 1.5; }
+  .split-view { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .card { background: #1e293b; border-radius: 8px; border: 1px solid #334155; overflow: hidden; display: flex; flex-direction: column; }
+  .card-header { padding: 12px 20px; background: #243248; border-bottom: 1px solid #334155; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .card-body { padding: 20px; overflow-y: auto; max-height: 600px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; color: #cbd5e1; }
+  .table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+  .table th, .table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #334155; }
+  .table th { background: #1e293b; color: #38bdf8; }
+  .tag-pass { color: #4ade80; font-weight: bold; }
+  .tag-fail { color: #f87171; font-weight: bold; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Skill Review: <code>code-review-solid</code></h1>
+    <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">Iteration 1 &bull; Automated SOLID Principles & Design Pattern Analysis</div>
+  </div>
+  <span class="badge">Pass Rate: 100% (15/15)</span>
+</header>
+<div class="container">
+  <div class="sidebar">
+    <button class="tab-btn active" onclick="showTab('benchmark')">📊 Benchmark Overview</button>
+    <div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold; padding: 15px 12px 8px 12px;">Test Evaluations</div>
+    <button class="tab-btn" onclick="showTab('eval-0')">Eval 0: Gateway Service (SRP)</button>
+    <button class="tab-btn" onclick="showTab('eval-1')">Eval 1: Provider Extensibility (OCP)</button>
+    <button class="tab-btn" onclick="showTab('eval-2')">Eval 2: Plugin Architecture (ISP &amp; DIP)</button>
+  </div>
+  <div class="main">
+    <div id="tab-benchmark" class="tab-pane" style="display: block;">
+      <h2>Iteration 1 Benchmark Summary</h2>
+      <p style="color: #94a3b8; font-size: 15px;">Comparative performance across 3 distinct test scenarios evaluated with and without the <code>code-review-solid</code> skill.</p>
+      
+      <table class="table" style="margin-bottom: 30px;">
+        <thead>
+          <tr>
+            <th>Evaluation Task</th>
+            <th>With Skill Pass</th>
+            <th>Baseline Pass</th>
+            <th>With Skill Duration</th>
+            <th>Baseline Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Eval 0: Gateway Service (SRP)</strong></td>
+            <td><span class="tag-pass">100% (5/5)</span></td>
+            <td><span class="tag-pass">100% (5/5)</span></td>
+            <td>95.0s</td>
+            <td>65.0s</td>
+          </tr>
+          <tr>
+            <td><strong>Eval 1: Provider Extensibility (OCP)</strong></td>
+            <td><span class="tag-pass">100% (5/5)</span></td>
+            <td><span class="tag-pass">100% (5/5)</span></td>
+            <td>85.0s</td>
+            <td>81.0s</td>
+          </tr>
+          <tr>
+            <td><strong>Eval 2: Plugin Architecture (ISP &amp; DIP)</strong></td>
+            <td><span class="tag-pass">100% (5/5)</span></td>
+            <td><span class="tag-pass">100% (5/5)</span></td>
+            <td>97.0s</td>
+            <td>141.0s</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Analyst Key Observations</h3>
+      <ul style="line-height: 1.8; font-size: 14px; color: #cbd5e1;">
+        <li><strong style="color: #38bdf8;">Consistency & Structure:</strong> The With-Skill evaluations strictly followed the 4-phase review structure (Scope & Scan &rarr; SOLID Audit with severity badges &rarr; Design Pattern Opportunities with trade-off justification &rarr; Standardized Summary Table with surgical before/after snippets).</li>
+        <li><strong style="color: #38bdf8;">Surgical Before/After Diffs:</strong> With-skill outputs generated isolated, minimal code revisions annotated with <code>// &check; added</code> and <code>// &cross; removed</code> comments, making them immediately ready to convert into pull requests.</li>
+        <li><strong style="color: #38bdf8;">Language-Agnostic Pseudocode:</strong> In architectural discussions, the skill appropriately balanced idiomatic Go code with clean pseudocode illustrating the design pattern mechanisms.</li>
+      </ul>
+    </div>
+    <div id="tab-eval-0" class="tab-pane" style="display: none;">
+      <h2>Eval 0: Gateway Service (SRP)</h2>
+      <div class="prompt-box">
+        <strong style="color: #38bdf8;">Eval Prompt:</strong> Can you review internal/service/gateway.go for SOLID principle violations and suggest design pattern improvements? It&#x27;s our main gateway service file and I feel like it&#x27;s doing too many things.
+      </div>
+      
+      <div class="split-view">
+        <div class="card">
+          <div class="card-header">
+            <span>&check; With Skill (<code>code-review-solid</code>)</span>
+            <span class="tag-pass">100% Passed</span>
+          </div>
+          <div class="card-body"># Code Review Report: SOLID &amp; Design Patterns
+
+## Scope
+- **Target File**: `internal/service/gateway.go` (and associated `GatewayService` methods in `internal/service/`)
+- **Language**: Go (Go 1.22+, module `llm-gateway`)
+- **Existing Architectural Patterns**: Layered proxy architecture (`cmd/gateway` → `internal/proxy` → `service.GatewayService` → adapters/db/plugins/telemetry). `GatewayService` acts as the primary data-plane coordinator for inbound LLM API calls, transforming protocols, validating permissions, enforcing multi-tenant boundaries, caching responses, resolving virtual models, routing to upstream providers (OpenAI, Anthropic, Gemini, custom), executing plugins, and logging telemetry.
+
+---
+
+## SOLID Audit
+
+### ⚠️ S — Single Responsibility Principle
+**File**: `internal/service/gateway.go` (lines 86–106, 166–213, 224–493, 495–586)
+
+`GatewayService` is a classic **God Object** with 17 struct fields, and its primary method `HandleRequest` is a 270-line procedural coordinator that violates SRP by taking on at least 10 disparate responsibilities:
+1. **HTTP Transport Handling**: Directly binds to `http.ResponseWriter`, writes HTTP status codes, formats JSON error envelopes, and sets headers (`Content-Type`, `X-Cache`).
+2. **In-Memory Cache Management**: Manages entity caching and TTL eviction for users and tenants (`userCache sync.Map`, `tenantCache sync.Map`, `getCachedUser`, `getCachedTenant`).
+3. **Protocol Inbound/Outbound Transformation**: Directly executes decoding and encoding for OpenAI and Anthropic wire formats.
+4. **Authorization &amp; Security**: Executes key model policies and IAM group access checks via `PermissionEngine`.
+5. **Multi-Tenancy &amp; Financial Quotas**: Enforces tenant isolation boundaries and performs credit hold reservations and Redis releases.
+6. **Plugin Lifecycle Orchestration**: Dispatches pre-auth, post-auth, pre-routing, and post-upstream plugin interceptors.
+7. **Distributed Tracing**: Inspects payload shapes and records prompt/completion events on OpenTelemetry spans.
+8. **Response Caching (L2 Cache)**: Checks exact-match cache hits, sets cache headers, and writes entries to `ResponseCache`.
+9. **Upstream Routing &amp; Resiliency**: Resolves models/aliases and executes fallback ladders via `sendWithFallback`.
+10. **Telemetry &amp; Billing Side-Effects**: Calculates costs, emits token metrics, checks agent runaway loop thresholds, and asynchronously deducts prepaid tenant credits.
+
+Any change to transport protocols, caching policies, billing logic, or plugin hooks forces modifications to `gateway.go`.
+
+**Before:**
+```go
+// internal/service/gateway.go:224-271
+func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
+    startTime := time.Now()
+
+    // ❌ Concern 1: Plugin Context Setup &amp; Pre-Auth Plugin execution
+    var pctx *plugin.PluginContext
+    if g.pluginEngine != nil {
+        user, _ := g.getCachedUser(params.ApiKey.UserID) // ❌ Concern 2: In-memory DB entity cache
+        // ... plugin execution ...
+        if pctx.Stop {
+            params.ResponseWriter.WriteHeader(pctx.StopStatusCode) // ❌ Concern 3: Direct HTTP transport writing
+            params.ResponseWriter.Write(pctx.StopErrorBody)
+            return nil
+        }
+    }
+
+    // ❌ Concern 4: Inbound Protocol Wire Decoding
+    var canReq *canonical.CanonicalRequest
+    if params.InboundFormat == &quot;openai&quot; {
+        canReq, err = openai.DecodeInboundRequest(params.RequestBody)
+    } // ...
+
+    // ❌ Concern 5: IAM Permission Enforcement
+    if g.permEngine != nil &amp;&amp; params.ApiKey != nil {
+        allowed, pErr := g.permEngine.CheckKeyModelAccess(ctx, params.ApiKey.ID, canReq.Model)
+        // ...
+    }
+
+    // ❌ Concern 6: Multi-Tenant Credit Reservation &amp; Redis Hold Management
+    heldAmount, hErr := g.reserveTenantHold(ctx, params.ApiKey, primaryTarget.Name, targetModelName, ...)
+    // ...
+}
+```
+
+**After:**
+```go
+// ✅ Solution: Decompose into focused domain components and an execution pipeline.
+// GatewayService coordinates high-level execution; transport and concerns are delegated.
+
+type RequestPipeline interface {
+    Execute(ctx context.Context, req *GatewayContext) (*GatewayResult, error)
+}
+
+// GatewayContext decouples the core domain from HTTP net/http abstractions
+type GatewayContext struct {
+    Context        context.Context
+    InboundFormat  string
+    RequestBody    []byte
+    APIKey         *model.APIKey
+    ClientIP       string
+    CanonicalReq   *canonical.CanonicalRequest
+    Tenant         *model.Tenant
+    User           *model.User
+}
+
+// ✅ GatewayService has a single responsibility: orchestrate request processing through the pipeline
+type GatewayService struct {
+    pipeline RequestPipeline
+}
+
+func (g *GatewayService) HandleRequest(ctx context.Context, req *GatewayContext) (*GatewayResult, error) {
+    // ℹ️ Single reason to change: alterations in the top-level pipeline execution flow
+    return g.pipeline.Execute(ctx, req)
+}
+```
+
+---
+
+### ⚠️ O — Open/Closed Principle
+**File**: `internal/service/gateway.go` (lines 277–287, 503–511, 528–536)
+
+The service is closed to extension and open to constant modification. Whenever a new wire protocol (e.g. AWS Bedrock, Cohere, Mistral, Ollama) or upstream provider is supported, developers must edit `gateway.go` in multiple `if-else` branches and `switch` statements:
+- Lines 277–283: `if params.InboundFormat == &quot;openai&quot; { ... } else if params.InboundFormat == &quot;anthropic&quot; { ... }`
+- Lines 503–510: `switch target.Provider { case provider.ProviderOpenAI: ... case provider.ProviderAnthropic: ... case provider.ProviderGemini: ... }`
+- Lines 528–533: `if params.InboundFormat == &quot;openai&quot; { ... } else if params.InboundFormat == &quot;anthropic&quot; { ... }`
+
+**Before:**
+```go
+// internal/service/gateway.go:277-287
+// ❌ Adding a new format requires editing core HandleRequest logic
+if params.InboundFormat == &quot;openai&quot; {
+    canReq, err = openai.DecodeInboundRequest(params.RequestBody)
+} else if params.InboundFormat == &quot;anthropic&quot; {
+    canReq, err = anthropic.DecodeInboundRequest(params.RequestBody)
+} else {
+    return fmt.Errorf(&quot;unsupported inbound format: %s&quot;, params.InboundFormat)
+}
+
+// internal/service/gateway.go:503-511
+// ❌ Adding an upstream provider requires editing handleNonStreamResponse
+switch target.Provider {
+case provider.ProviderOpenAI:
+    canResp, err = openai.DecodeUpstreamResponse(bodyBytes)
+case provider.ProviderAnthropic:
+    canResp, err = anthropic.DecodeUpstreamResponse(bodyBytes)
+case provider.ProviderGemini:
+    canResp, err = gemini.DecodeUpstreamResponse(bodyBytes, canReq.Model)
+}
+```
+
+**After:**
+```go
+// ✅ Solution: Define a ProtocolCodec strategy and registry open for extension.
+
+type ProtocolCodec interface {
+    Format() string
+    DecodeRequest(body []byte) (*canonical.CanonicalRequest, error)
+    FormatResponse(resp *canonical.CanonicalResponse) ([]byte, error)
+}
+
+type CodecRegistry struct {
+    codecs map[string]ProtocolCodec
+}
+
+func (r *CodecRegistry) Register(codec ProtocolCodec) {
+    r.codecs[codec.Format()] = codec
+}
+
+func (r *CodecRegistry) Get(format string) (ProtocolCodec, error) {
+    c, ok := r.codecs[format]
+    if !ok {
+        return nil, fmt.Errorf(&quot;unsupported format: %s&quot;, format)
+    }
+    return c, nil
+}
+
+// ℹ️ HandleRequest is now closed for modification; new formats are registered at startup:
+func (g *GatewayService) decodeInbound(format string, body []byte) (*canonical.CanonicalRequest, error) {
+    codec, err := g.codecRegistry.Get(format) // ✅ Dynamic strategy lookup
+    if err != nil {
+        return nil, err
+    }
+    return codec.DecodeRequest(body)
+}
+```
+
+---
+
+### ⚠️ L — Liskov Substitution Principle
+**File**: `internal/service/gateway.go` (lines 174–176, 199–201, 263–270, 467–485, 513–516)
+
+1. **Inconsistent Error/Response Contract**:
+   `HandleRequest` presents an inconsistent return contract regarding `http.ResponseWriter`:
+   - On plugin termination (lines 263–269, 329–335, 342–348) and non-200 upstream responses (lines 467–485), the method writes the HTTP status code and body directly to `params.ResponseWriter` and returns `nil`.
+   - On response decode error (lines 513–516), it writes an HTTP 500 header and body to `ResponseWriter` **and also returns `err`**.
+   - On permission denial or routing failure (lines 282, 300, 423, 458), it writes nothing and returns `err`.
+   This breaks substitutability and caller expectations: callers wrapping `HandleRequest` cannot know whether an error has already written HTTP headers or if the caller must write an error response. Calling `w.WriteHeader(...)` when `err != nil` causes runtime warnings (`http: superfluous response.WriteHeader call`).
+
+2. **Silent Failure / Leaky Nil Checks**:
+   In `getCachedUser` and `getCachedTenant` (lines 174–176, 199–201):
+   When `g.pg == nil`, it returns `nil, nil`. The caller receives no error and `nil` entity, proceeding under the assumption that the entity does not exist or that database validation succeeded without error.
+
+**Before:**
+```go
+// internal/service/gateway.go:512-516
+if err != nil {
+    // ❌ Side effect: writes HTTP response headers and body
+    params.ResponseWriter.WriteHeader(http.StatusInternalServerError)
+    params.ResponseWriter.Write([]byte(fmt.Sprintf(`{&quot;error&quot;: &quot;%s&quot;}`, err.Error())))
+    // ❌ Contract violation: returns err AFTER committing response!
+    return err
+}
+
+// internal/service/gateway.go:471-485
+if upResp.StatusCode != http.StatusOK {
+    params.ResponseWriter.WriteHeader(upResp.StatusCode)
+    params.ResponseWriter.Write(bodyBytes)
+    // ❌ Here it commits response but returns nil!
+    return nil
+}
+```
+
+**After:**
+```go
+// ✅ Solution: Standardize the return contract. The service returns pure results or typed errors.
+// Transport rendering is handled exclusively by the transport layer / HTTP adapter.
+
+type GatewayResponse struct {
+    StatusCode int
+    Headers    map[string]string
+    Body       []byte
+    Stream     io.ReadCloser
+}
+
+// ℹ️ Service never writes to ResponseWriter directly; always returns (*GatewayResponse, error)
+func (g *GatewayService) HandleRequest(ctx context.Context, req *GatewayContext) (*GatewayResponse, error) {
+    // ✅ Either returns a valid domain response OR a typed domain error
+    if err != nil {
+        return nil, fmt.Errorf(&quot;decoding upstream response: %w&quot;, err) // ✅ No transport side effects
+    }
+    return &amp;GatewayResponse{
+        StatusCode: http.StatusOK,
+        Headers:    map[string]string{&quot;Content-Type&quot;: &quot;application/json&quot;},
+        Body:       clientResponseBytes,
+    }, nil
+}
+```
+
+---
+
+### ⚠️ I — Interface Segregation Principle
+**File**: `internal/service/gateway.go` (lines 86–106, 124–157)
+
+`GatewayService` depends directly on monolithic concrete structs that bundle vast amounts of functionality that `gateway.go` never uses:
+- `pg *db.PostgresDB`: Exposes dozens of database query methods across audit logging, keys, aliases, and admin tables. `gateway.go` only requires `GetUserByID` and `GetTenantByID`.
+- `redis *db.RedisClient`: Exposes full Redis commands, caching, pubsub, and rate limiting. `gateway.go` only invokes `ReleaseTenantCreditHold`.
+- Monolithic engines: Depends directly on `*permission.PermissionEngine`, `*analytics.CostCalculator`, `*analytics.TelemetryLogger`, `*alert.Engine`, and `*plugin.PluginEngine`.
+
+Furthermore, `GatewayService` itself does not implement or define an interface. Callers (`internal/proxy/proxy.go`, `cmd/gateway/main.go`) are tightly bound to the concrete `GatewayService` struct, making test doubles or alternative proxy engine implementations impossible.
+
+**Before:**
+```go
+// internal/service/gateway.go:86-106
+type GatewayService struct {
+    providerClient       *provider.ProviderClient      // ❌ Fat concrete struct
+    keyStore             *provider.KeyStore            // ❌ Fat concrete struct
+    costCalc             *analytics.CostCalculator     // ❌ Fat concrete struct
+    telemetry            *analytics.TelemetryLogger    // ❌ Fat concrete struct
+    redis                *db.RedisClient               // ❌ Monolithic Redis struct (only uses hold release)
+    pg                   *db.PostgresDB                // ❌ Monolithic DB struct (only uses 2 query methods)
+    responseCache        *cache.ResponseCache          // ❌ Fat concrete struct
+    permEngine           *permission.PermissionEngine  // ❌ Fat concrete struct
+    // ...
+}
+```
+
+**After:**
+```go
+// ✅ Solution: Define narrow, client-specific interfaces at the consumer site (ISP)
+
+type UserTenantReader interface {
+    GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error)
+    GetTenantByID(ctx context.Context, id uuid.UUID) (*model.Tenant, error)
+}
+
+type CreditHoldManager interface {
+    ReleaseCreditHold(ctx context.Context, tenantID string, amount float64) error
+}
+
+type ModelAuthorizer interface {
+    CheckKeyModelAccess(ctx context.Context, keyID uuid.UUID, model string) (bool, error)
+    CheckModelAccess(ctx context.Context, userID uuid.UUID, model string) (bool, error)
+}
+
+// ✅ GatewayService depends only on the minimal method sets it actually uses
+type GatewayService struct {
+    userTenantRepo UserTenantReader
+    creditHolder   CreditHoldManager
+    authorizer     ModelAuthorizer
+    // ...
+}
+```
+
+---
+
+### ⚠️ D — Dependency Inversion Principle
+**File**: `internal/service/gateway.go` (lines 13–27, 86–106, 138–141)
+
+High-level business orchestration (`GatewayService`) depends directly on low-level detail packages and concrete implementations:
+1. **Direct Package Coupling**: Imports concrete provider adapters (`internal/adapter/openai`, `internal/adapter/anthropic`, `internal/adapter/gemini`) and infrastructure modules (`internal/db`).
+2. **In-Constructor Instantiation**: In `NewGatewayService` (lines 138–141), `GatewayService` directly instantiates `plugin.NewPluginEngine(pg, nil)` rather than receiving an abstraction:
+   ```go
+   var pe *plugin.PluginEngine
+   if pg != nil {
+       pe = plugin.NewPluginEngine(pg, nil) // ❌ Violates DIP: Instantiates concrete dependency
+   }
+   ```
+3. **Untestable Unit Scope**: Because all 12 constructor parameters and struct fields are concrete structs without interfaces, writing a unit test for `HandleRequest` requires initializing live or complex mock instances of Postgres, Redis, and upstream provider clients.
+
+**Before:**
+```go
+// internal/service/gateway.go:124-156
+func NewGatewayService(
+    p *provider.ProviderClient,          // ❌ Concretion
+    k *provider.KeyStore,                // ❌ Concretion
+    c *analytics.CostCalculator,         // ❌ Concretion
+    t *analytics.TelemetryLogger,        // ❌ Concretion
+    redis *db.RedisClient,               // ❌ Concretion
+    pg *db.PostgresDB,                   // ❌ Concretion
+    rc *cache.ResponseCache,             // ❌ Concretion
+    permEngine *permission.PermissionEngine, // ❌ Concretion
+    // ...
+) *GatewayService {
+    var pe *plugin.PluginEngine
+    if pg != nil {
+        pe = plugin.NewPluginEngine(pg, nil) // ❌ Instantiating concrete dependency internally
+    }
+    // ...
+}
+```
+
+**After:**
+```go
+// ✅ Solution: High-level policy depends on abstractions; dependencies are injected from outside.
+
+type UpstreamDispatcher interface {
+    Dispatch(ctx context.Context, targets []ResolvedTarget, req *canonical.CanonicalRequest) (*provider.UpstreamResponse, error)
+}
+
+type PluginRunner interface {
+    RunPreAuth(ctx *plugin.PluginContext) error
+    RunPostAuth(ctx *plugin.PluginContext) error
+    RunPreRouting(ctx *plugin.PluginContext) error
+    RunPostUpstream(ctx *plugin.PluginContext, resp *canonical.CanonicalResponse) error
+}
+
+func NewGatewayService(
+    dispatcher UpstreamDispatcher,
+    plugins PluginRunner,
+    authorizer ModelAuthorizer,
+    codecs CodecRegistry,
+    // ✅ Injected purely as interfaces
+) *GatewayService {
+    return &amp;GatewayService{
+        dispatcher: dispatcher,
+        plugins:    plugins,
+        authorizer: authorizer,
+        codecs:     codecs,
+    }
+}
+```
+
+---
+
+## Design Pattern Opportunities
+
+### Chain of Responsibility (Pipeline / Middleware) in `internal/service/gateway.go`
+**Why:** Decomposes the monolithic 270-line procedural `HandleRequest` execution sequence into discrete, orderable, and independently testable stages (PreAuth, Decrypt/Decode, Auth/Quota, Cache, Routing, Upstream, PostUpstream, Metrics).
+
+**Before:**
+```go
+// internal/service/gateway.go:224-493
+// ❌ 270 lines of sequential, hardcoded procedural stages intermingled in one method
+func (g *GatewayService) HandleRequest(ctx context.Context, params ProxyParams) error {
+    // 1. Plugin PreAuth
+    // 2. Decode Inbound Request
+    // 3. Check IAM
+    // 4. Multi-Tenant Hold
+    // 5. Response Cache Lookup
+    // 6. Target Resolution
+    // 7. Upstream Fallback Dispatch
+    // 8. Decode Upstream Response
+    // 9. Telemetry &amp; Metrics
+}
+```
+
+**After:**
+```go
+// ✅ Define an interceptor/middleware pipeline stage
+type StageHandler func(ctx context.Context, req *RequestContext) (*ResponseContext, error)
+
+type Middleware func(StageHandler) StageHandler
+
+type Pipeline struct {
+    stages []Middleware
+}
+
+func (p *Pipeline) Use(mw Middleware) {
+    p.stages = append(p.stages, mw)
+}
+
+func (p *Pipeline) Execute(ctx context.Context, req *RequestContext, final StageHandler) (*ResponseContext, error) {
+    curr := final
+    for i := len(p.stages) - 1; i &gt;= 0; i-- {
+        curr = p.stages[i](curr)
+    }
+    return curr(ctx, req)
+}
+
+// ℹ️ Handlers are now cleanly separated into isolated, testable middleware components:
+// - AuthMiddleware
+// - ResponseCacheMiddleware
+// - QuotaHoldMiddleware
+// - UpstreamDispatchMiddleware
+```
+
+---
+
+### Strategy Pattern (Protocol Codecs) in `internal/service/gateway.go`
+**Why:** Replaces hardcoded protocol `if/else` checks for inbound requests (`openai`, `anthropic`) and upstream provider `switch` blocks with interchangeable, polymorphic serialization strategies.
+
+**Before:**
+```go
+// internal/service/gateway.go:277-284, 528-533
+if params.InboundFormat == &quot;openai&quot; {
+    canReq, err = openai.DecodeInboundRequest(params.RequestBody)
+} else if params.InboundFormat == &quot;anthropic&quot; {
+    canReq, err = anthropic.DecodeInboundRequest(params.RequestBody)
+}
+
+if params.InboundFormat == &quot;openai&quot; {
+    clientResponseBytes, err = openai.FormatCanonicalToOpenAIResponse(canResp)
+} else if params.InboundFormat == &quot;anthropic&quot; {
+    clientResponseBytes, err = anthropic.FormatCanonicalToAnthropicResponse(canResp)
+}
+```
+
+**After:**
+```go
+// ✅ Strategy interface for inbound client protocols
+type InboundCodec interface {
+    Decode(body []byte) (*canonical.CanonicalRequest, error)
+    Encode(resp *canonical.CanonicalResponse) ([]byte, error)
+}
+
+// ✅ Strategy implementations in their respective adapter packages
+type OpenAICodec struct{}
+func (o *OpenAICodec) Decode(b []byte) (*canonical.CanonicalRequest, error) { return openai.DecodeInboundRequest(b) }
+func (o *OpenAICodec) Encode(r *canonical.CanonicalResponse) ([]byte, error) { return openai.FormatCanonicalToOpenAIResponse(r) }
+
+type AnthropicCodec struct{}
+func (a *AnthropicCodec) Decode(b []byte) (*canonical.CanonicalRequest, error) { return anthropic.DecodeInboundRequest(b) }
+func (a *AnthropicCodec) Encode(r *canonical.CanonicalResponse) ([]byte, error) { return anthropic.FormatCanonicalToAnthropicResponse(r) }
+
+// ℹ️ Execution becomes a single polymorphic strategy invocation:
+codec := g.codecs[params.InboundFormat]
+canReq, err := codec.Decode(params.RequestBody)
+```
+
+---
+
+### Builder / Functional Options Pattern in `internal/service/gateway.go`
+**Why:** Simplifies the error-prone, 12-parameter constructor `NewGatewayService` and ad-hoc setters (`SetAlertEngine`, `SetPluginEngine`), making configuration safe, readable, and backwards-compatible.
+
+**Before:**
+```go
+// internal/service/gateway.go:124-157
+// ❌ 12 positional parameters, easily swapped or broken when adding new options
+func NewGatewayService(
+    p *provider.ProviderClient,
+    k *provider.KeyStore,
+    c *analytics.CostCalculator,
+    t *analytics.TelemetryLogger,
+    redis *db.RedisClient,
+    pg *db.PostgresDB,
+    rc *cache.ResponseCache,
+    permEngine *permission.PermissionEngine,
+    contentCapturePolicy string,
+    sloMaxTTFTMs int,
+    sloMaxTBTMs int,
+    agentMaxToolCalls int,
+) *GatewayService
+
+// ❌ Requires secondary mutation calls after construction
+gw.SetAlertEngine(alertEng)
+gw.SetPluginEngine(pluginEng)
+```
+
+**After:**
+```go
+// ✅ Functional Options Pattern
+type Option func(*GatewayService)
+
+func WithCache(rc ResponseCacher) Option {
+    return func(g *GatewayService) { g.responseCache = rc }
+}
+
+func WithAlertEngine(ae AlertEmitter) Option {
+    return func(g *GatewayService) { g.alertEngine = ae }
+}
+
+func WithSLOThresholds(ttftMs, tbtMs int) Option {
+    return func(g *GatewayService) {
+        g.sloMaxTTFTMs = ttftMs
+        g.sloMaxTBTMs = tbtMs
+    }
+}
+
+// ℹ️ Clean, robust constructor with required dependencies first, followed by variadic options:
+func NewGatewayService(dispatcher UpstreamDispatcher, authorizer ModelAuthorizer, opts ...Option) *GatewayService {
+    g := &amp;GatewayService{
+        dispatcher: dispatcher,
+        authorizer: authorizer,
+    }
+    for _, opt := range opts {
+        opt(g)
+    }
+    return g
+}
+```
+
+---
+
+### Decorator Pattern (Response Caching &amp; Telemetry) in `internal/service/gateway.go`
+**Why:** Extracts cross-cutting caching (L2 response cache) and telemetry logging out of the core upstream dispatch logic and into modular decorators.
+
+**Before:**
+```go
+// internal/service/gateway.go:365-396, 547-549
+// ❌ Cache check, hit header injection, and store logic embedded directly inside HandleRequest
+if !canReq.Stream &amp;&amp; g.responseCache != nil {
+    if cached, hit := g.responseCache.Get(ctx, cacheKey); hit {
+        params.ResponseWriter.Header().Set(&quot;X-Cache&quot;, &quot;HIT&quot;)
+        params.ResponseWriter.Write(cached)
+        g.recordTelemetry(...)
+        return nil
+    }
+}
+// Upstream execution...
+if cacheEnabled {
+    g.responseCache.Set(ctx, cacheKey, clientResponseBytes, cacheTTL)
+}
+```
+
+**After:**
+```go
+// ✅ Decorate the RequestHandler interface with caching
+type CachingDecorator struct {
+    cache   ResponseCacher
+    next    RequestHandler
+}
+
+func (c *CachingDecorator) Handle(ctx context.Context, req *GatewayContext) (*GatewayResponse, error) {
+    if !req.CanonicalReq.Stream {
+        if hit, val := c.cache.Get(ctx, req.CacheKey()); hit {
+            return &amp;GatewayResponse{
+                StatusCode: http.StatusOK,
+                Headers:    map[string]string{&quot;X-Cache&quot;: &quot;HIT&quot;, &quot;Content-Type&quot;: &quot;application/json&quot;},
+                Body:       val,
+            }, nil // ✅ Cache hit short-circuits transparently
+        }
+    }
+
+    resp, err := c.next.Handle(ctx, req)
+    if err == nil &amp;&amp; !req.CanonicalReq.Stream {
+        c.cache.Set(ctx, req.CacheKey(), resp.Body, req.CacheTTL())
+    }
+    return resp, err
+}
+```
+
+---
+
+### Adapter Pattern (Transport Decoupling) in `internal/service/gateway.go`
+**Why:** Decouples `GatewayService` from the HTTP transport layer (`net/http`) by converting HTTP requests into transport-agnostic domain requests and returning structured domain responses.
+
+**Before:**
+```go
+// internal/service/gateway.go:215-224
+// ❌ Service takes raw http.ResponseWriter and writes HTTP status codes and headers
+type ProxyParams struct {
+    InboundFormat  string
+    RequestBody    []byte
+    ApiKey         *model.APIKey
+    UpstreamAPIKey string
+    ClientIP       string
+    ResponseWriter http.ResponseWriter // ❌ Leaks HTTP wire transport directly into service layer
+}
+```
+
+**After:**
+```go
+// ✅ HTTP Transport Adapter (in internal/handler or internal/proxy)
+type HTTPGatewayAdapter struct {
+    service GatewayRunner
+    codecs  CodecRegistry
+}
+
+func (h *HTTPGatewayAdapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+    req, err := h.buildDomainRequest(r)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+
+    res, err := h.service.Execute(r.Context(), req)
+    if err != nil {
+        h.renderError(w, err)
+        return
+    }
+
+    for k, v := range res.Headers {
+        w.Header().Set(k, v)
+    }
+    w.WriteHeader(res.StatusCode)
+    w.Write(res.Body)
+}
+```
+
+---
+
+## Summary Table
+
+| # | Principle/Pattern | Severity | File | Status |
+|---|---|---|---|---|
+| 1 | **SRP (Single Responsibility)** | 🔴 High | `internal/service/gateway.go` | Proposed fix above (decouple transport, caching, billing, and plugin coordination) |
+| 2 | **OCP (Open/Closed)** | 🔴 High | `internal/service/gateway.go` | Proposed fix above (implement `ProtocolCodec` and provider strategy registries) |
+| 3 | **LSP (Liskov Substitution)** | 🟡 Medium | `internal/service/gateway.go` | Proposed fix above (standardize return contract, remove mixed HTTP write side-effects) |
+| 4 | **ISP (Interface Segregation)** | 🔴 High | `internal/service/gateway.go` | Proposed fix above (replace monolithic `*PostgresDB` and `*RedisClient` with narrow role interfaces) |
+| 5 | **DIP (Dependency Inversion)** | 🔴 High | `internal/service/gateway.go` | Proposed fix above (inject abstractions; eliminate internal concretion instantiations) |
+| 6 | **Chain of Responsibility** | 🔴 High | `internal/service/gateway.go` | Proposed pattern above (break 270-line `HandleRequest` into pipeline middleware stages) |
+| 7 | **Strategy Pattern** | 🔴 High | `internal/service/gateway.go` | Proposed pattern above (replace format `if/else` and `switch` blocks with codec strategies) |
+| 8 | **Builder / Functional Options** | 🟡 Medium | `internal/service/gateway.go` | Proposed pattern above (replace 12-argument constructor with functional options) |
+| 9 | **Decorator Pattern** | 🟡 Medium | `internal/service/gateway.go` | Proposed pattern above (extract caching and telemetry as decorators) |
+| 10 | **Adapter Pattern** | 🔴 High | `internal/service/gateway.go` | Proposed pattern above (remove `http.ResponseWriter` from service parameters) |
+
+---
+
+## Recommended Next Steps
+
+1. **Decouple HTTP Transport via Adapter Pattern (Highest Priority)**:
+   Remove `ResponseWriter http.ResponseWriter` from `ProxyParams`. Have `GatewayService` accept a transport-agnostic request model and return a domain `Response` or `error`. Move status code rendering, header setting, and error JSON marshaling into the HTTP handler layer.
+
+2. **Extract Strategy Interfaces for Protocol Codecs (OCP)**:
+   Define `InboundCodec` and `UpstreamCodec` interfaces. Move the `openai`, `anthropic`, and `gemini` request/response transformations into implementations of these strategies. Replace `if params.InboundFormat == ...` with registry lookups.
+
+3. **Invert Dependencies with Role-Based Interfaces (ISP / DIP)**:
+   Define consumer-side interfaces (`UserTenantReader`, `CreditHoldManager`, `ModelAuthorizer`) in `internal/service`. Update `NewGatewayService` to accept these interfaces instead of concrete `*db.PostgresDB` and `*db.RedisClient`. Inject `PluginEngine` from `main.go` instead of instantiating it inside `NewGatewayService`.
+
+4. **Decompose `HandleRequest` into a Middleware Pipeline (Chain of Responsibility)**:
+   Convert the sequential validation, quota reservation, plugin execution, and dispatch steps into composable pipeline stages. This isolates critical concerns like credit holds and plugin executions into unit-testable units.
+
+5. **Adopt Functional Options for `GatewayService` Configuration**:
+   Replace the 12-parameter constructor and mutation setters (`SetAlertEngine`, `SetPluginEngine`) with `NewGatewayService(deps..., WithOption(...))`.
+</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span>Baseline (Without Skill)</span>
+            <span class="tag-pass">100% Passed</span>
+          </div>
+          <div class="card-body"># Architecture Code Review: `internal/service/gateway.go`
+**Focus:** SOLID Principles Violations &amp; Design Pattern Improvements  
+**Target File:** `internal/service/gateway.go`  
+**Date:** September 16, 2026  
+
+---
+
+## 1. Executive Summary
+
+A comprehensive architectural review of `internal/service/gateway.go` confirms the team&#x27;s concern: **`GatewayService` is currently acting as a classic &quot;God Object&quot; anti-pattern**. It has accumulated excessive responsibilities across protocol adaptation, identity &amp; access control, multi-tenant billing, response caching, routing and fallback orchestration, transport writing, and telemetry recording.
+
+### Summary Assessment
+
+| Principle | Status | Severity | Primary Symptoms |
+| :--- | :--- | :--- | :--- |
+| **S** - Single Responsibility | **VIOLATED** | Critical | 10+ distinct responsibilities in one service and method (`HandleRequest`). |
+| **O** - Open/Closed | **VIOLATED** | High | Hardcoded `if/else` and `switch` statements for protocol codecs and upstream providers; modifying or adding a provider/format requires editing core service logic. |
+| **L** - Liskov Substitution | **VIOLATED** | Medium | Direct concrete types prevent polymorphic substitution; nil-checks act as fragile pseudo-polymorphism; inconsistent error/HTTP side effects. |
+| **I** - Interface Segregation | **VIOLATED** | High | Service consumes monolithic database structs (`*db.PostgresDB`, `*db.RedisClient`) instead of role-focused interfaces; no client interface exposed. |
+| **D** - Dependency Inversion | **VIOLATED** | Critical | High-level orchestration depends directly on concrete low-level packages and implementations; 12-parameter constructor couples tightly to internal modules. |
+
+---
+
+## 2. In-Depth SOLID Principle Violations
+
+### 2.1. Single Responsibility Principle (SRP)
+&gt; *&quot;A class or module should have one, and only one, reason to change.&quot;*
+
+`GatewayService` and its primary method `HandleRequest` (lines 224–493) change for at least **10 distinct, unrelated business and operational reasons**:
+
+1. **In-Memory Hot-Path Caching (Lines 76–84, 102–106, 166–213):**
+   Manages `sync.Map` TTL-based caching for users and tenants (`getCachedUser`, `getCachedTenant`).
+   *Reason to change:* Cache invalidation strategy, TTL adjustment, distributed caching migration.
+2. **Plugin Lifecycle Orchestration (Lines 228–271, 318–350, 478–484, 518–525):**
+   Instantiates `PluginContext` and invokes hook phases (`RunPreAuth`, `RunPostAuth`, `RunPreRouting`, `RunPostUpstream`).
+   *Reason to change:* New plugin phase, plugin execution policy, hook error handling.
+3. **Inbound Protocol Translation &amp; Deserialization (Lines 273–288):**
+   Parses raw JSON bytes into `canonical.CanonicalRequest` based on string format tags (`openai`, `anthropic`).
+   *Reason to change:* New client format support (e.g. Gemini, Cohere, Bedrock), schema changes in client wire payloads.
+4. **IAM &amp; Access Control Evaluation (Lines 294–311):**
+   Evaluates per-key allowlist/denylist rules and user IAM group policies via `permEngine`.
+   *Reason to change:* Policy enforcement semantics, role hierarchy changes.
+5. **Multi-Tenant System Boundary &amp; Billing Holds (Lines 313–316, 430–441):**
+   Calculates cost estimates, executes Redis credit holds (`reserveTenantHold`), and registers deferred hold releases.
+   *Reason to change:* Billing logic, quota algorithms, credit hold release mechanisms.
+6. **OpenTelemetry &amp; Semantic Event Auditing (Lines 352–361, 387–391, 455–458, 474–477, 561–568):**
+   Inspects payload shapes, injects trace span attributes, and captures prompt/completion events.
+   *Reason to change:* OpenTelemetry GenAI semantic convention updates, redaction/content-capture policies.
+7. **Response Caching (Lines 364–396, 546–549):**
+   Evaluates caching eligibility, generates cache keys, writes cached responses, sets cache headers (`X-Cache`), and updates cache metrics.
+   *Reason to change:* Cache storage strategy, TTL hierarchy, caching headers specification.
+8. **Upstream Target Resolution &amp; Fallback Scheduling (Lines 398–428, 450–465):**
+   Resolves virtual models, catalog lookups, and dispatches requests across fallback ladders.
+   *Reason to change:* Routing algorithms, fallback strategy, load balancing.
+9. **Outbound Protocol Transcoding (Lines 501–536):**
+   Decodes upstream provider responses (OpenAI, Anthropic, Gemini) and re-encodes them into the client&#x27;s expected format.
+   *Reason to change:* Upstream provider changes, response transformation nuances.
+10. **HTTP Transport Serialization (Lines 264–268, 330–334, 342–346, 374–377, 471–473, 539–544):**
+    Directly writes HTTP status codes, headers, and raw response bytes to `http.ResponseWriter`.
+    *Reason to change:* HTTP transport concerns, streaming/framing mechanisms, header conventions.
+
+#### Impact
+Any PR touching authentication, caching, telemetry, billing, or provider integration must touch `gateway.go`. This causes high merge friction, severe regression risk, and makes comprehensive testing nearly impossible.
+
+---
+
+### 2.2. Open/Closed Principle (OCP)
+&gt; *&quot;Software entities should be open for extension, but closed for modification.&quot;*
+
+The codebase relies heavily on conditional dispatch (`if/else` and `switch` statements) based on type indicators and string identifiers.
+
+#### Code Evidence: Inbound Protocol Parsing (`HandleRequest`, lines 277–283)
+```go
+if params.InboundFormat == &quot;openai&quot; {
+    canReq, err = openai.DecodeInboundRequest(params.RequestBody)
+} else if params.InboundFormat == &quot;anthropic&quot; {
+    canReq, err = anthropic.DecodeInboundRequest(params.RequestBody)
+} else {
+    return fmt.Errorf(&quot;unsupported inbound format: %s&quot;, params.InboundFormat)
+}
+```
+
+#### Code Evidence: Outbound Transcoding (`handleNonStreamResponse`, lines 503–534)
+```go
+switch target.Provider {
+case provider.ProviderOpenAI:
+    canResp, err = openai.DecodeUpstreamResponse(bodyBytes)
+case provider.ProviderAnthropic:
+    canResp, err = anthropic.DecodeUpstreamResponse(bodyBytes)
+case provider.ProviderGemini:
+    canResp, err = gemini.DecodeUpstreamResponse(bodyBytes, canReq.Model)
+}
+
+// ... and later:
+if params.InboundFormat == &quot;openai&quot; {
+    clientResponseBytes, err = openai.FormatCanonicalToOpenAIResponse(canResp)
+} else if params.InboundFormat == &quot;anthropic&quot; {
+    clientResponseBytes, err = anthropic.FormatCanonicalToAnthropicResponse(canResp)
+}
+```
+
+#### Impact
+Adding a new client protocol (e.g., Google Gemini or Ollama format) or a new upstream provider (e.g., Mistral, Bedrock, Vertex AI) requires directly modifying multiple methods in `gateway.go`. The system is closed to extension and constantly forced open for modification.
+
+---
+
+### 2.3. Liskov Substitution Principle (LSP)
+&gt; *&quot;Objects of a superclass should be replaceable with objects of a subclass without affecting the correctness of the program.&quot;*
+
+While Go uses structural interfaces rather than classical inheritance, LSP principles are violated in two major ways:
+
+1. **Defensive Nil Checks as Fragile Pseudo-Polymorphism:**
+   Throughout `gateway.go`, dependencies are frequently checked for `nil`:
+   - `if g.pg == nil` (lines 174, 199)
+   - `if g.permEngine != nil` (line 295)
+   - `if g.pluginEngine != nil` (lines 231, 319, 478, 519)
+   - `if g.responseCache != nil` (lines 368, 547)
+   - `if g.redis != nil` (line 437)
+   
+   Instead of providing valid test doubles or a **Null Object** implementation that satisfies a common interface contract, `GatewayService` dynamically alters its execution branches when dependencies are nil. This makes component substitution unpredictable: a `nil` engine causes silent bypasses in some paths, but could cause a nil pointer panic in un-guarded paths (e.g. `g.costCalc.CalculateCost` at line 558 has no nil check).
+
+2. **Inconsistent Error Propagation and Side Effects:**
+   `HandleRequest` has inconsistent return semantics:
+   - When a plugin triggers a stop (lines 262–270), it writes to `ResponseWriter` and returns `nil`.
+   - When an upstream fails with non-200 (lines 467–485), it writes to `ResponseWriter` and returns `nil`.
+   - When routing fails (lines 423, 458), it records telemetry and returns an `error`.
+   
+   Because `ResponseWriter` is passed directly in `ProxyParams`, the caller (`internal/handler/gateway.go`) cannot know whether the response was already written or if it should write an HTTP error. In `handler/gateway.go:81`:
+   ```go
+   if err := h.gwService.HandleRequest(ctx, params); err != nil {
+       h.writeServiceError(w, &quot;openai&quot;, err) // Risk of writing duplicate HTTP headers/bodies
+   }
+   ```
+
+---
+
+### 2.4. Interface Segregation Principle (ISP)
+&gt; *&quot;Clients should not be forced to depend upon interfaces that they do not use.&quot;*
+
+`GatewayService` depends directly on entire concrete infrastructure packages rather than narrow, client-specific interfaces:
+
+1. **Heavy Concrete Structs:**
+   ```go
+   type GatewayService struct {
+       providerClient       *provider.ProviderClient
+       keyStore             *provider.KeyStore
+       costCalc             *analytics.CostCalculator
+       telemetry            *analytics.TelemetryLogger
+       redis                *db.RedisClient
+       pg                   *db.PostgresDB
+       responseCache        *cache.ResponseCache
+       permEngine           *permission.PermissionEngine
+       alertEngine          *alert.Engine
+       pluginEngine         *plugin.PluginEngine
+       // ...
+   }
+   ```
+   - From `*db.PostgresDB`, `gateway.go` only calls `GetUserByID` and `GetTenantByID`. Yet, `GatewayService` binds to the entire PostgreSQL connection pool, schema migrations, and admin query methods.
+   - From `*db.RedisClient`, `gateway.go` only calls `ReleaseTenantCreditHold`.
+
+2. **Absence of Service Abstraction:**
+   There is no `Gateway` or `ChatCompletionService` interface exposed to handlers. Handlers are forced to bind to the massive `*service.GatewayService` pointer, preventing easy mocking in API handler unit tests.
+
+3. **Violation of Idiomatic Go:**
+   Go&#x27;s core design ethos is: *&quot;Accept interfaces, return structs&quot;*. `GatewayService` accepts only concrete pointers and returns concrete pointers, coupling consumer and producer completely.
+
+---
+
+### 2.5. Dependency Inversion Principle (DIP)
+&gt; *&quot;High-level modules should not depend on low-level modules. Both should depend on abstractions.&quot;*
+
+`GatewayService` is a high-level application orchestrator, yet it depends directly on low-level concrete implementations:
+
+1. **Direct Package Couplings:**
+   The service imports concrete packages for databases (`internal/db`), specific third-party providers (`internal/adapter/openai`, `internal/adapter/anthropic`, `internal/adapter/gemini`), and concrete logging/caching systems.
+
+2. **Constructor Instantiation of Collaborators (Lines 138–141):**
+   ```go
+   func NewGatewayService(...) *GatewayService {
+       var pe *plugin.PluginEngine
+       if pg != nil {
+           pe = plugin.NewPluginEngine(pg, nil) // Direct instantiation violates Inversion of Control
+       }
+       return &amp;GatewayService{ ... }
+   }
+   ```
+   The constructor directly instantiates `plugin.PluginEngine`, tight-coupling `GatewayService` to the concrete plugin engine implementation.
+
+3. **Constructor Parameter Bloat:**
+   `NewGatewayService` requires 13 parameters. Any new dependency requires breaking the constructor signature across all integration points and test suites.
+
+---
+
+## 3. Additional Architectural Smells
+
+### 3.1. Transport Layer Leak (Coupling with `net/http`)
+`ProxyParams` contains `ResponseWriter http.ResponseWriter`. The business service directly writes HTTP headers (`params.ResponseWriter.Header().Set(&quot;X-Cache&quot;, &quot;HIT&quot;)`) and status codes (`params.ResponseWriter.WriteHeader(http.StatusOK)`).
+- **Issue:** The service layer is fundamentally locked to HTTP. It cannot be repurposed for gRPC, CLI utilities, Kafka/RabbitMQ async workers, or background evaluation jobs without mocking the `http.ResponseWriter` interface.
+- **Remedy:** The service layer should return a domain response object (`*GatewayResponse`, `error`) or a stream reader, leaving HTTP status codes and headers to `internal/handler`.
+
+### 3.2. Concurrency &amp; Cache Stampede in Hot-Path Caching
+`userCache` and `tenantCache` use `sync.Map` with manual expiration (`time.Now().Before(item.expiresAt)`).
+- **Issue:** Under high load, when a cache entry expires, multiple concurrent requests will simultaneously query the database for the same user/tenant ID (Cache Stampede).
+- **Remedy:** Use a dedicated caching decorator with `singleflight.Group` or a dedicated caching abstraction.
+
+---
+
+## 4. Proposed Design Pattern Improvements
+
+To transform `GatewayService` into a clean, maintainable, and extensible architecture, four core design patterns are recommended:
+
+```
+                      +------------------------------------------+
+                      |         HTTP Handler / Controller        |
+                      +------------------------------------------+
+                                           |
+                                    (Domain Request)
+                                           v
++----------------------------------------------------------------------------------+
+|                            GATEWAY PIPELINE (Mediator)                           |
+|                                                                                  |
+|  +----------------+   +----------------+   +----------------+   +-------------+  |
+|  | Plugin Stage   |--&gt;| Permission     |--&gt;| Response Cache |--&gt;| Routing     |  |
+|  | (Pre/Post Auth)|   | (IAM / Model)  |   | (Check/Store)  |   | &amp; Fallback  |  |
+|  +----------------+   +----------------+   +----------------+   +-------------+  |
++----------------------------------------------------------------------------------+
+                                           |
+                                           | (Strategy)
+                       +-------------------+-------------------+
+                       v                                       v
+        +-----------------------------+         +-----------------------------+
+        |     Inbound Codec Registry  |         |   Provider Adapter Registry |
+        |   (OpenAI, Anthropic, etc.) |         |  (OpenAI, Anthropic, Gemini)|
+        +-----------------------------+         +-----------------------------+
+```
+
+### Pattern 1: Chain of Responsibility / Pipeline Pattern
+**Target Problem:** Procedural 5-step flow in `HandleRequest` violating SRP and OCP.
+
+Extract each discrete step of request processing into an independent pipeline stage (`Middleware` or `PipelineStage`).
+
+```go
+type RequestContext struct {
+    Ctx            context.Context
+    InboundFormat  string
+    RawRequest     []byte
+    CanonicalReq   *canonical.CanonicalRequest
+    CanonicalResp  *canonical.CanonicalResponse
+    Target         ResolvedTarget
+    APIKey         *model.APIKey
+    User           *model.User
+    Tenant         *model.Tenant
+    Metadata       map[string]any
+}
+
+type Stage func(ctx *RequestContext, next func(*RequestContext) error) error
+
+type Pipeline struct {
+    stages []Stage
+}
+
+func (p *Pipeline) Use(stages ...Stage) {
+    p.stages = append(p.stages, stages...)
+}
+
+func (p *Pipeline) Execute(req *RequestContext) error {
+    // Standard onion-skin / interceptor execution
+}
+```
+
+#### Individual Stage Modules:
+- `AuthAndPluginStage`: Runs pre-auth and post-auth plugins.
+- `PermissionStage`: Evaluates IAM group policies and key permissions.
+- `TenantQuotaStage`: Holds credit balance and releases on completion.
+- `ResponseCacheStage`: Inspects cache, returns early on cache hit, writes to cache on return.
+- `UpstreamDispatchStage`: Invokes the target provider via fallback ladder.
+
+---
+
+### Pattern 2: Strategy &amp; Registry Pattern for Codecs and Providers
+**Target Problem:** `if/else` and `switch` statements for protocol translation violating OCP.
+
+Define explicit strategy interfaces for client codecs and upstream adapters:
+
+```go
+// 1. Client Protocol Codec Strategy
+type InboundCodec interface {
+    Format() string // &quot;openai&quot;, &quot;anthropic&quot;, &quot;gemini&quot;
+    DecodeRequest(body []byte) (*canonical.CanonicalRequest, error)
+    EncodeResponse(resp *canonical.CanonicalResponse) ([]byte, error)
+}
+
+type CodecRegistry interface {
+    Register(codec InboundCodec)
+    Get(format string) (InboundCodec, bool)
+}
+
+// 2. Upstream Provider Adapter Strategy
+type UpstreamAdapter interface {
+    Provider() provider.ProviderType
+    DecodeResponse(body []byte, model string) (*canonical.CanonicalResponse, error)
+}
+
+type AdapterRegistry interface {
+    Register(adapter UpstreamAdapter)
+    Get(provider provider.ProviderType) (UpstreamAdapter, bool)
+}
+```
+*Benefit:* Adding a new inbound protocol or upstream provider requires only implementing the interface and registering it during server bootstrap—**zero modifications** to `GatewayService`.
+
+---
+
+### Pattern 3: Repository / Segregated Interfaces (ISP &amp; DIP)
+**Target Problem:** Coupling to concrete `*db.PostgresDB` and `*db.RedisClient`.
+
+Define narrow, consumer-driven interfaces in the `service` package:
+
+```go
+// IdentityStore segregates user and tenant queries
+type IdentityStore interface {
+    GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error)
+    GetTenantByID(ctx context.Context, id uuid.UUID) (*model.Tenant, error)
+}
+
+// QuotaManager isolates billing holds
+type QuotaManager interface {
+    ReserveTenantHold(ctx context.Context, key *model.APIKey, provider, model string, promptTokens, maxTokens int) (float64, error)
+    ReleaseTenantHold(ctx context.Context, tenantID string, amount float64) error
+    CheckTenantBoundary(ctx context.Context, key *model.APIKey, model string) error
+}
+
+// PermissionChecker isolates access control
+type PermissionChecker interface {
+    CheckKeyModelAccess(ctx context.Context, keyID uuid.UUID, model string) (bool, error)
+    CheckModelAccess(ctx context.Context, userID uuid.UUID, model string) (bool, error)
+}
+```
+
+---
+
+### Pattern 4: Decorator Pattern for Hot-Path Caching
+**Target Problem:** `userCache` and `tenantCache` polluting `GatewayService` with TTL logic.
+
+Wrap `IdentityStore` with a caching decorator:
+
+```go
+type CachedIdentityStore struct {
+    next     IdentityStore
+    userTTL  time.Duration
+    cache    sync.Map
+    group    singleflight.Group
+}
+
+func NewCachedIdentityStore(store IdentityStore, ttl time.Duration) *CachedIdentityStore {
+    return &amp;CachedIdentityStore{next: store, userTTL: ttl}
+}
+
+func (c *CachedIdentityStore) GetUserByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
+    // Check in-memory cache, execute via singleflight on miss, populate cache
+}
+```
+*Benefit:* Caching logic is encapsulated and testable independently. `GatewayService` remains completely unaware of whether user data comes from memory, Redis, or PostgreSQL.
+
+---
+
+## 5. Proposed Architecture: Clean `GatewayService`
+
+With these improvements applied, `GatewayService` shifts from an all-knowing God Object to a clean, focused orchestrator:
+
+```go
+type GatewayService struct {
+    codecs          CodecRegistry
+    adapters        AdapterRegistry
+    pipeline        *Pipeline
+    dispatcher      UpstreamDispatcher
+}
+
+// HandleRequest accepts clean domain parameters and returns a domain response
+func (g *GatewayService) HandleRequest(ctx context.Context, req DomainRequest) (*DomainResponse, error) {
+    codec, ok := g.codecs.Get(req.InboundFormat)
+    if !ok {
+        return nil, fmt.Errorf(&quot;unsupported format: %s&quot;, req.InboundFormat)
+    }
+
+    canReq, err := codec.DecodeRequest(req.Body)
+    if err != nil {
+        return nil, fmt.Errorf(&quot;failed to decode: %w&quot;, err)
+    }
+
+    reqCtx := &amp;RequestContext{
+        Ctx:          ctx,
+        CanonicalReq: canReq,
+        Metadata:     req.Metadata,
+    }
+
+    if err := g.pipeline.Execute(reqCtx); err != nil {
+        return nil, err
+    }
+
+    outBytes, err := codec.EncodeResponse(reqCtx.CanonicalResp)
+    if err != nil {
+        return nil, fmt.Errorf(&quot;failed to encode response: %w&quot;, err)
+    }
+
+    return &amp;DomainResponse{
+        StatusCode: http.StatusOK,
+        Headers:    reqCtx.ResponseHeaders,
+        Body:       outBytes,
+    }, nil
+}
+```
+
+---
+
+## 6. Actionable Refactoring Roadmap
+
+To safely refactor `gateway.go` without breaking existing functionality, execute the refactoring in 4 incremental phases:
+
+### Phase 1: Decouple Transport Layer (Low Risk)
+1. Redefine `ProxyParams` to remove `ResponseWriter http.ResponseWriter`.
+2. Have `HandleRequest` return a struct containing `StatusCode`, `Headers`, `Body []byte`, and `Stream io.ReadCloser`.
+3. Update `internal/handler/gateway.go` to handle writing headers, status codes, and bodies.
+*Outcome: Eliminates double-write bugs and isolates HTTP concerns.*
+
+### Phase 2: Interface Segregation &amp; Codec Registry (Medium Risk)
+1. Define `InboundCodec` and `UpstreamAdapter` interfaces.
+2. Move `openai`, `anthropic`, and `gemini` decode/format logic out of `gateway.go` into dedicated adapter implementations.
+3. Instantiate and inject `CodecRegistry` and `AdapterRegistry`.
+*Outcome: Satisfies OCP; enables unit testing of codecs without `GatewayService`.*
+
+### Phase 3: Extract Identity Caching &amp; Narrow Stores (Low Risk)
+1. Define `IdentityStore` and `QuotaManager` interfaces.
+2. Implement `CachedIdentityStore` decorator and remove `userCache` and `tenantCache` from `GatewayService`.
+3. Replace `*db.PostgresDB` and `*db.RedisClient` fields in `GatewayService` with the new interfaces.
+*Outcome: Satisfies ISP and DIP; eliminates cache stampede risks.*
+
+### Phase 4: Convert Request Lifecycle to Pipeline / Interceptors (Medium Risk)
+1. Implement a lightweight `Pipeline` engine.
+2. Convert Plugins, IAM check, Tenant Quotas, Response Caching, and Fallback Dispatch into composable stages.
+3. Reduce `HandleRequest` to a lean orchestrator that initializes the context and runs the pipeline.
+*Outcome: Satisfies SRP; simplifies lifecycle stage reordering and extensions.*
+</div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-eval-1" class="tab-pane" style="display: none;">
+      <h2>Eval 1: Provider Extensibility (OCP)</h2>
+      <div class="prompt-box">
+        <strong style="color: #38bdf8;">Eval Prompt:</strong> Review the internal/provider package for design patterns. We keep adding new LLM providers (OpenAI, Anthropic, Gemini) and every time we add one we have to touch a bunch of files. There must be a better way.
+      </div>
+      
+      <div class="split-view">
+        <div class="card">
+          <div class="card-header">
+            <span>&check; With Skill (<code>code-review-solid</code>)</span>
+            <span class="tag-pass">100% Passed</span>
+          </div>
+          <div class="card-body"># Code Review Report: SOLID &amp; Design Patterns
+
+## Scope
+
+- **Target Package:** [`internal/provider`](file:///data/per-pro/llm-gateway/internal/provider) ([`client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go), [`keystore.go`](file:///data/per-pro/llm-gateway/internal/provider/keystore.go)) and its direct call-sites across [`internal/service`](file:///data/per-pro/llm-gateway/internal/service) ([`gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go), [`gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go), [`fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go), [`gateway_discovery.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go), [`gateway_embeddings.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_embeddings.go)) and [`internal/adapter`](file:///data/per-pro/llm-gateway/internal/adapter).
+- **Language:** Go (1.22+).
+- **Existing Architectural Patterns:**
+  - **Layered Architecture:** Clear separation between entry handlers (`internal/handler`), orchestration service (`internal/service`), downstream providers (`internal/provider`), protocol adapters (`internal/adapter`), and storage/cache (`internal/db`).
+  - **Canonical Data Model (CDM):** Inter-provider exchange format encapsulated via [`canonical.CanonicalRequest`](file:///data/per-pro/llm-gateway/internal/adapter/canonical/canonical.go#L67-L93), [`canonical.CanonicalResponse`](file:///data/per-pro/llm-gateway/internal/adapter/canonical/canonical.go#L95-L108), and [`canonical.CanonicalStreamChunk`](file:///data/per-pro/llm-gateway/internal/adapter/canonical/canonical.go#L110-L135).
+  - **Secure Keystore:** AES-GCM encrypted provider credentials in PostgreSQL with Redis sub-millisecond caching in [`KeyStore`](file:///data/per-pro/llm-gateway/internal/provider/keystore.go#L21-L33).
+- **Core Problem Statement:** Adding any new LLM provider (or maintaining existing ones like OpenAI, Anthropic, Gemini) currently requires modifying multiple disparate files across the codebase due to tight coupling, absence of abstraction interfaces, and pervasive hardcoded `switch` statements.
+
+---
+
+## SOLID Audit
+
+### ⚠️ S — Single Responsibility Principle
+
+**Finding:**
+[`ProviderClient`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L23-L25) violates the Single Responsibility Principle by accumulating multiple orthogonal concerns:
+1. **HTTP Connection Pooling &amp; Transport Execution:** Managing keep-alives, connection pooling, and issuing raw HTTP requests ([`NewProviderClient`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L27-L47), [`Do`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L50-L52)).
+2. **Vendor-Specific Upstream Request Construction:** Knowledge of wire formats, authorization headers (Bearer vs `x-api-key`), URL endpoints, version headers, and query parameter escaping (e.g. Gemini `alt=sse` query params in [`buildRequestDetails`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L319-L373)).
+3. **Vendor-Specific Catalog Listing:** Querying and decoding JSON responses for upstream model lists across different vendors ([`listAnthropicModels`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L74-L109), [`listOpenAIModels`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L167-L201), [`listGeminiModels`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L203-L238)).
+4. **Model Name Heuristic Resolution:** Parsing model name prefixes via [`ResolveProvider`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L240-L249).
+
+Additionally, [`KeyStore`](file:///data/per-pro/llm-gateway/internal/provider/keystore.go#L21-L33) combines cryptographic key derivation/encryption, Redis cache lifecycle management, and PostgreSQL database queries.
+
+**Before ([`client.go#L319-L373`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L319-L373)):**
+```go
+// ❌ ProviderClient directly builds endpoints, headers, and query strings for every vendor
+func (c *ProviderClient) buildRequestDetails(req UpstreamRequest, apiKey string) (string, map[string]string, error) {
+	headers := map[string]string{&quot;Content-Type&quot;: &quot;application/json&quot;}
+	switch req.Provider {
+	case ProviderOpenAI:
+		return &quot;https://api.openai.com/v1/chat/completions&quot;, headers, nil
+	case ProviderAnthropic:
+		headers[&quot;x-api-key&quot;] = apiKey
+		headers[&quot;anthropic-version&quot;] = &quot;2023-06-01&quot;
+		return &quot;https://api.anthropic.com/v1/messages&quot;, headers, nil
+	case ProviderGemini:
+		query := &quot;key=&quot; + url.QueryEscape(apiKey)
+		endpoint := &quot;generateContent&quot;
+		if req.Stream {
+			endpoint = &quot;streamGenerateContent&quot;
+			query = &quot;alt=sse&amp;&quot; + query
+		}
+		return fmt.Sprintf(&quot;https://generativelanguage.googleapis.com/v1beta/models/%s:%s?%s&quot;, req.Model, endpoint, query), headers, nil
+	default:
+		return &quot;&quot;, nil, fmt.Errorf(&quot;unsupported provider: %s&quot;, req.Provider)
+	}
+}
+```
+
+**After:**
+```go
+// ✅ ProviderClient delegates request building to the provider strategy and only executes HTTP transport
+type ProviderClient struct {
+	httpClient *http.Client
+}
+
+func (c *ProviderClient) Send(ctx context.Context, req *http.Request) (*http.Response, error) {
+	return c.httpClient.Do(req.WithContext(ctx))
+}
+```
+
+---
+
+### ⚠️ O — Open/Closed Principle (Critical Violation 🔴)
+
+**Finding:**
+The codebase is closed to extension and wide open to modification. Every time a new LLM provider is introduced (e.g., Mistral, Cohere, Bedrock, Groq), developers must manually modify at least 6 files containing hardcoded `switch` or `if-else` blocks:
+1. [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L15-L21): Add to `ProviderType` enum.
+2. [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L61-L72): Add `case` in `ListModels` and implement a new `list&lt;Provider&gt;Models` method.
+3. [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L319-L373): Add `case` in `buildRequestDetails` (for both custom base URLs and built-ins).
+4. [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L240-L249): Add model name prefix matching in `ResolveProvider`.
+5. [`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L503-L510): Add `case` in `handleNonStreamResponse` to decode upstream response.
+6. [`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L265): Add `case` in SSE stream parser.
+7. [`internal/service/fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L136-L145): Add `case` in `encodeForTarget`.
+8. [`internal/service/gateway_discovery.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go#L77-L81): Append to hardcoded provider slice in `ListModels`.
+
+**Before ([`internal/service/gateway.go#L501-L511`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L501-L511) &amp; [`internal/service/fallback.go#L131-L146`](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L131-L146)):**
+```go
+// ❌ Gateway and Fallback service must be edited whenever a provider is added
+func encodeForTarget(canReq *canonical.CanonicalRequest, target ResolvedTarget, modelForTarget string) ([]byte, error) {
+	reqCopy := *canReq
+	reqCopy.Model = modelForTarget
+
+	switch target.Provider {
+	case provider.ProviderOpenAI:
+		return openai.EncodeCanonicalRequest(&amp;reqCopy)
+	case provider.ProviderAnthropic:
+		return anthropic.EncodeCanonicalRequest(&amp;reqCopy)
+	case provider.ProviderGemini:
+		return gemini.EncodeCanonicalRequest(&amp;reqCopy)
+	default:
+		return nil, fmt.Errorf(&quot;unsupported provider type %v&quot;, target.Provider)
+	}
+}
+```
+
+**After:**
+```go
+// ✅ Polymorphic dispatch via a Provider interface and Registry: open for extension, closed for modification
+func (s *GatewayService) encodeForTarget(canReq *canonical.CanonicalRequest, target ResolvedTarget, modelForTarget string) ([]byte, error) {
+	reqCopy := *canReq
+	reqCopy.Model = modelForTarget
+
+	// ℹ️ Provider resolved dynamically from registry without switch statements
+	p, err := s.registry.Get(target.Provider)
+	if err != nil {
+		return nil, err
+	}
+	return p.EncodeRequest(&amp;reqCopy)
+}
+```
+
+---
+
+### ⚠️ L — Liskov Substitution Principle
+
+**Finding:**
+There is currently no formal interface contract representing a provider. Concrete behaviors vary drastically and leak into the orchestration layer:
+- In [`internal/service/gateway_stream.go#L214-L265`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L265), the consumer assumes OpenAI streams terminate with `event.Data == &quot;[DONE]&quot;`, while Anthropic streams emit event types (`content_block_delta`, `message_delta`), and Gemini emits raw JSON objects without termination sentinels. The caller must know these implementation details because there is no substitutable stream abstraction.
+- In [`internal/provider/client.go#L54-L56`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L54-L56), `ErrNoModelsEndpoint` was defined as an ad-hoc error contract for Anthropic, while other providers returned valid slices. Later, Anthropic model listing was implemented via a different schema format ([`client.go#L93-L100`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L93-L100)), while Gemini returns IDs with a `&quot;models/&quot;` prefix requiring trimming ([`client.go#L232`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L232)).
+- Any provider implementation must be a drop-in replacement that normalizes streaming events, model IDs, and errors to the canonical domain model.
+
+**Before ([`internal/service/gateway_stream.go#L214-L265`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L265)):**
+```go
+// ❌ Leaky abstraction: caller must know the idiosyncratic streaming semantics of each provider
+switch target.Provider {
+case provider.ProviderOpenAI:
+	if string(event.Data) == &quot;[DONE]&quot; {
+		chunk = &amp;canonical.CanonicalStreamChunk{IsLast: true}
+	} else {
+		c, cErr := openai.DecodeStreamChunk(event.Data, canReq.Model)
+		// ...
+	}
+case provider.ProviderAnthropic:
+	c, cErr := anthropic.DecodeStreamChunk(event.Event, event.Data, canReq.Model)
+	// ...
+case provider.ProviderGemini:
+	c, cErr := gemini.DecodeStreamChunk(event.Data, canReq.Model)
+	// ...
+}
+```
+
+**After:**
+```go
+// ✅ Subtypes satisfy the exact same interface contract; consumers do not inspect wire details
+chunk, err := p.DecodeStreamChunk(event.Event, event.Data, canReq.Model)
+if err != nil {
+	return err
+}
+if chunk.IsLast {
+	// Uniform termination across all providers
+}
+```
+
+---
+
+### ⚠️ I — Interface Segregation Principle
+
+**Finding:**
+Currently, `internal/provider` contains **zero interfaces**; callers depend entirely on concrete types ([`*ProviderClient`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L23-L25), [`*KeyStore`](file:///data/per-pro/llm-gateway/internal/provider/keystore.go#L21-L25)).
+Furthermore, LLM providers do not have identical capabilities:
+- Some providers support Chat Completions + Streaming (OpenAI, Anthropic, Gemini).
+- Some support Embeddings (OpenAI, Gemini), while others do not (Anthropic).
+- Some provide live Model Discovery APIs (OpenAI, Gemini), while others rely on static tables or require different administrative keys.
+
+Forcing all providers into a single fat interface or concrete implementation leads to dummy implementations (`ErrNoModelsEndpoint` or panic stubs). Segregated interfaces allow providers to declare only what they support.
+
+**Before:**
+```go
+// ❌ No interfaces. ProviderClient is a monolithic concrete struct with all capabilities lumped together.
+type ProviderClient struct { httpClient *http.Client }
+func (c *ProviderClient) ListModels(...) ([]string, error)
+func (c *ProviderClient) ListModelsCustom(...) ([]string, error)
+func (c *ProviderClient) SendRequest(...) (*UpstreamResponse, error)
+```
+
+**After:**
+```go
+// ✅ Small, focused capability interfaces defined at the abstraction boundary
+type ChatProvider interface {
+	Name() string
+	BuildChatRequest(ctx context.Context, req *canonical.CanonicalRequest, apiKey, baseURL string) (*http.Request, error)
+	DecodeChatResponse(body []byte) (*canonical.CanonicalResponse, error)
+	DecodeStreamChunk(eventType string, data []byte, model string) (*canonical.CanonicalStreamChunk, error)
+}
+
+type ModelLister interface {
+	ListModels(ctx context.Context, apiKey, baseURL string) ([]string, error)
+}
+
+type EmbeddingProvider interface {
+	BuildEmbeddingRequest(ctx context.Context, model string, inputs []string, apiKey, baseURL string) (*http.Request, error)
+	DecodeEmbeddingResponse(body []byte) (*canonical.EmbeddingResponse, error)
+}
+```
+
+---
+
+### ⚠️ D — Dependency Inversion Principle
+
+**Finding:**
+High-level modules in [`internal/service`](file:///data/per-pro/llm-gateway/internal/service) depend directly on concrete low-level packages:
+- [`GatewayService`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L81-L97) has direct struct fields `providerClient *provider.ProviderClient` and `keyStore *provider.KeyStore`.
+- [`handleNonStreamResponse`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L503-L510), [`fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L136-L145), and [`gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L265) directly import and execute low-level packages:
+  - `&quot;llm-gateway/internal/adapter/openai&quot;`
+  - `&quot;llm-gateway/internal/adapter/anthropic&quot;`
+  - `&quot;llm-gateway/internal/adapter/gemini&quot;`
+- Hardcoded URLs like `&quot;https://api.openai.com/v1/chat/completions&quot;` and `&quot;https://generativelanguage.googleapis.com/v1beta/...&quot;` are directly embedded in [`internal/provider/client.go#L347-L368`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L347-L368).
+
+Both high-level services and low-level adapters should depend on abstractions (interfaces).
+
+**Before ([`internal/service/gateway.go#L501-L511`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L501-L511)):**
+```go
+// ❌ High-level GatewayService directly couples to concrete adapter packages
+import (
+	&quot;llm-gateway/internal/adapter/anthropic&quot;
+	&quot;llm-gateway/internal/adapter/gemini&quot;
+	&quot;llm-gateway/internal/adapter/openai&quot;
+)
+```
+
+**After:**
+```go
+// ✅ High-level GatewayService depends exclusively on the Provider interface/registry
+type ProviderRegistry interface {
+	Get(name string) (ChatProvider, error)
+	ListListers() []ModelLister
+}
+
+type GatewayService struct {
+	providers  ProviderRegistry // ℹ️ Interface injection
+	httpClient HTTPExecutor
+	// ...
+}
+```
+
+---
+
+## Design Pattern Opportunities
+
+### 1. Strategy &amp; Adapter Patterns in `internal/provider`
+
+**Why:** Replace the fragmented encoding/decoding and URL construction scattered across `client.go`, `gateway.go`, `gateway_stream.go`, and `fallback.go` with self-contained, interchangeable provider adapters conforming to a common Strategy interface.
+
+**Before ([`internal/provider/client.go#L345-L373`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L345-L373)):**
+```go
+// ❌ Ad-hoc procedural logic branching on provider enum
+switch req.Provider {
+case ProviderOpenAI:
+	url := &quot;https://api.openai.com/v1/chat/completions&quot;
+	headers[&quot;Authorization&quot;] = &quot;Bearer &quot; + apiKey
+	return url, headers, nil
+case ProviderAnthropic:
+	url := &quot;https://api.anthropic.com/v1/messages&quot;
+	headers[&quot;x-api-key&quot;] = apiKey
+	headers[&quot;anthropic-version&quot;] = &quot;2023-06-01&quot;
+	return url, headers, nil
+case ProviderGemini:
+	query := &quot;key=&quot; + url.QueryEscape(apiKey)
+	endpoint := &quot;generateContent&quot;
+	if req.Stream { endpoint = &quot;streamGenerateContent&quot;; query = &quot;alt=sse&amp;&quot; + query }
+	return fmt.Sprintf(&quot;https://generativelanguage.googleapis.com/v1beta/models/%s:%s?%s&quot;, req.Model, endpoint, query), headers, nil
+}
+```
+
+**After ([`internal/provider/adapter.go`](file:///data/per-pro/llm-gateway/internal/provider/adapter.go)):**
+```go
+// ✅ Adapter Pattern: Each provider encapsulates its wire protocol, endpoints, and translation
+package provider
+
+import (
+	&quot;context&quot;
+	&quot;net/http&quot;
+	&quot;llm-gateway/internal/adapter/canonical&quot;
+)
+
+type Provider interface {
+	Name() string
+	BuildChatRequest(ctx context.Context, req *canonical.CanonicalRequest, apiKey, baseURL string) (*http.Request, error)
+	DecodeChatResponse(body []byte, model string) (*canonical.CanonicalResponse, error)
+	DecodeStreamChunk(eventType string, data []byte, model string) (*canonical.CanonicalStreamChunk, error)
+}
+```
+
+---
+
+### 2. Registry Pattern (Factory Method) in `internal/provider`
+
+**Why:** Eliminate all `switch` statements used for provider dispatch and enable plug-and-play addition of new providers (e.g., `mistral`, `groq`, `bedrock`) without modifying existing gateway logic.
+
+**Before ([`internal/provider/client.go#L61-L72`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L61-L72)):**
+```go
+// ❌ Closed enum dispatch requiring modification of client.go on every new provider
+func (c *ProviderClient) ListModels(ctx context.Context, p ProviderType, apiKey string) ([]string, error) {
+	switch p {
+	case ProviderOpenAI:
+		return c.listOpenAIModels(ctx, apiKey)
+	case ProviderAnthropic:
+		return c.listAnthropicModels(ctx, apiKey)
+	case ProviderGemini:
+		return c.listGeminiModels(ctx, apiKey)
+	default:
+		return nil, ErrNoModelsEndpoint
+	}
+}
+```
+
+**After ([`internal/provider/registry.go`](file:///data/per-pro/llm-gateway/internal/provider/registry.go)):**
+```go
+// ✅ Registry Pattern: Thread-safe, self-registering provider registry
+package provider
+
+import (
+	&quot;fmt&quot;
+	&quot;sync&quot;
+)
+
+type Registry struct {
+	mu        sync.RWMutex
+	providers map[string]Provider
+}
+
+var defaultRegistry = &amp;Registry{providers: make(map[string]Provider)}
+
+func Register(p Provider) {
+	defaultRegistry.mu.Lock()
+	defer defaultRegistry.mu.Unlock()
+	defaultRegistry.providers[p.Name()] = p
+}
+
+func Get(name string) (Provider, error) {
+	defaultRegistry.mu.RLock()
+	defer defaultRegistry.mu.RUnlock()
+	p, ok := defaultRegistry.providers[name]
+	if !ok {
+		return nil, fmt.Errorf(&quot;provider %q not registered&quot;, name)
+	}
+	return p, nil
+}
+
+func All() []Provider {
+	defaultRegistry.mu.RLock()
+	defer defaultRegistry.mu.RUnlock()
+	res := make([]Provider, 0, len(defaultRegistry.providers))
+	for _, p := range defaultRegistry.providers {
+		res = append(res, p)
+	}
+	return res
+}
+```
+
+With this pattern, adding Mistral is as simple as creating `internal/provider/mistral/mistral.go` containing:
+```go
+func init() {
+	provider.Register(&amp;MistralAdapter{})
+}
+```
+No existing gateway, service, or client files are modified.
+
+---
+
+### 3. Facade Pattern in `internal/provider/client.go`
+
+**Why:** Decouple HTTP client connection pooling, metrics, and network execution from vendor wire details. `ProviderClient` becomes a clean Facade that accepts a `Provider` strategy, requests its `http.Request`, and executes it through the pooled transport.
+
+**Before ([`internal/provider/client.go#L282-L317`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L282-L317)):**
+```go
+// ❌ SendRequest directly handles apiKey validation, URL building, header manipulation, and dispatch
+func (c *ProviderClient) SendRequest(ctx context.Context, req UpstreamRequest, apiKey string) (*UpstreamResponse, error) {
+	url, headers, err := c.buildRequestDetails(req, apiKey)
+	// ...
+}
+```
+
+**After:**
+```go
+// ✅ Facade: ProviderClient manages transport execution; delegates wire details to Provider strategy
+func (c *ProviderClient) ExecuteChat(
+	ctx context.Context,
+	p Provider,
+	canReq *canonical.CanonicalRequest,
+	apiKey, baseURL string,
+	extraHeaders map[string]string,
+	removeHeaders []string,
+) (*http.Response, error) {
+	httpReq, err := p.BuildChatRequest(ctx, canReq, apiKey, baseURL)
+	if err != nil {
+		return nil, fmt.Errorf(&quot;%s build request: %w&quot;, p.Name(), err)
+	}
+
+	for k, v := range extraHeaders {
+		httpReq.Header.Set(k, v)
+	}
+	for _, r := range removeHeaders {
+		httpReq.Header.Del(r)
+	}
+
+	return c.httpClient.Do(httpReq)
+}
+```
+
+---
+
+## Summary Table
+
+| # | Principle / Pattern | Severity | Primary Files Affected | Status |
+|---|---|---|---|---|
+| 1 | **Open/Closed Principle (OCP)** | 🔴 High | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go), [`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go), [`internal/service/fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go), [`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go) | Proposed Registry &amp; Strategy patterns |
+| 2 | **Single Responsibility (SRP)** | 🟡 Medium | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go), [`internal/provider/keystore.go`](file:///data/per-pro/llm-gateway/internal/provider/keystore.go) | Propose splitting HTTP pooling from vendor wire logic |
+| 3 | **Dependency Inversion (DIP)** | 🔴 High | [`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go), [`internal/service/fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go) | Propose injecting `ProviderRegistry` interface |
+| 4 | **Interface Segregation (ISP)** | 🟡 Medium | [`internal/provider`](file:///data/per-pro/llm-gateway/internal/provider) | Propose granular `ChatProvider`, `StreamDecoder`, `ModelLister` |
+| 5 | **Liskov Substitution (LSP)** | 🟡 Medium | [`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go), [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go) | Propose uniform chunk &amp; model response contracts |
+| 6 | **Strategy Pattern** | 🔴 High | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go) ➔ `internal/provider/adapter.go` | Proposed interchangeable provider strategy |
+| 7 | **Registry / Factory Pattern** | 🔴 High | `internal/provider/registry.go` (new) | Proposed self-registering provider catalog |
+| 8 | **Facade Pattern** | 🟢 Low | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go) | Simplify client to pure HTTP transport execution |
+
+---
+
+## Recommended Next Steps
+
+1. **Step 1: Define the `Provider` Strategy &amp; Capability Interfaces**
+   Create `internal/provider/provider.go` defining [`ChatProvider`](file:///data/per-pro/llm-gateway/internal/provider), [`ModelLister`](file:///data/per-pro/llm-gateway/internal/provider), and [`EmbeddingProvider`](file:///data/per-pro/llm-gateway/internal/provider). Ensure the methods take canonical types and return standard `*http.Request`, `*canonical.CanonicalResponse`, or `*canonical.CanonicalStreamChunk`.
+
+2. **Step 2: Implement the `ProviderRegistry` (Registry / Factory)**
+   Create `internal/provider/registry.go` providing `Register(name string, p Provider)` and `Get(name string) (Provider, error)`. Replace the hardcoded `ProviderType` enum with string-based dynamic registry lookup.
+
+3. **Step 3: Wrap Existing Adapters into the Provider Interface**
+   In [`internal/adapter/openai`](file:///data/per-pro/llm-gateway/internal/adapter/openai), [`internal/adapter/anthropic`](file:///data/per-pro/llm-gateway/internal/adapter/anthropic), and [`internal/adapter/gemini`](file:///data/per-pro/llm-gateway/internal/adapter/gemini), expose adapter structs satisfying `ChatProvider` and `ModelLister`. Move vendor-specific URL, header, and query string logic from [`client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go) directly into their respective adapter packages.
+
+4. **Step 4: Refactor `GatewayService` to Use Polymorphic Dispatch**
+   In [`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L501-L511), [`gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L265), and [`fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L131-L146), replace the `switch target.Provider` statements with a single call to `provider, err := registry.Get(target.Name)` followed by `provider.DecodeChatResponse(...)` or `provider.DecodeStreamChunk(...)`.
+
+5. **Step 5: Simplify Model Discovery (`gateway_discovery.go`)**
+   In [`internal/service/gateway_discovery.go#L76-L82`](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go#L76-L82), replace the hardcoded `providers := []provider.ProviderType{...}` slice with `registry.AllListers()`, enabling automatic dynamic discovery for any registered provider.
+</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span>Baseline (Without Skill)</span>
+            <span class="tag-pass">100% Passed</span>
+          </div>
+          <div class="card-body"># Code Review &amp; Architecture Analysis: `internal/provider` Package
+
+## 1. Executive Summary
+
+A comprehensive architectural review of [`internal/provider`](file:///data/per-pro/llm-gateway/internal/provider) and its consumers across [`internal/service`](file:///data/per-pro/llm-gateway/internal/service) was conducted to diagnose why introducing new LLM providers (e.g., OpenAI, Anthropic, Gemini) requires modifying numerous disjoint files across the codebase.
+
+The root cause is a fundamental violation of the **Open/Closed Principle (OCP)** (the &quot;O&quot; in SOLID design): the codebase is currently **closed to extension and open to modification**. Provider dispatching, URL construction, authentication headers, request serialization, response deserialization, streaming SSE parsing, model listing, and fallback translation are implemented via hardcoded `switch` statements and `if/else` ladders scattered across at least seven different files.
+
+To support adding new providers without modifying existing core logic, the system should transition to an **Interface Abstraction (Strategy Pattern)** coupled with a **Provider Registry &amp; Factory Pattern**.
+
+---
+
+## 2. Core Problem: Open/Closed Principle (OCP) Violation &amp; Shotgun Surgery
+
+### 2.1 The &quot;Shotgun Surgery&quot; Anti-Pattern
+When adding a new provider (or even tweaking an existing one), developers are forced to touch multiple distinct components across the repository. This anti-pattern is known as **Shotgun Surgery** (Fowler, 1999) and directly stems from violating OCP.
+
+```
+                    +-------------------------------------+
+                    | Adding a New Provider (e.g. Cohere) |
+                    +-------------------------------------+
+                                       |
+       +---------------+---------------+---------------+---------------+
+       |               |               |               |               |
+       v               v               v               v               v
+internal/provider/  internal/service/  internal/service/  internal/service/  internal/service/
+    client.go          gateway.go       gateway_stream.go    fallback.go    gateway_embeddings.go
+ [Switches in:      [Switch in:         [Switch in:         [Switches in:    [Hardcoded if/else
+  - ListModels       - handleNonStream   - DecodeStream      - fallbackChain  for Gemini vs
+  - ListCustom         Response]           Chunk]            - fallbackModel  OpenAI/Anthropic]
+  - buildRequest]                        - tool accumulator] - encodeTarget]
+```
+
+### 2.2 Concrete Manifestations Across the Codebase
+
+#### 1. [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go)
+- **Hardcoded enum**: [`ProviderType`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L15-L21) contains static constants (`ProviderOpenAI`, `ProviderAnthropic`, `ProviderGemini`).
+- **`ListModels` switch**: [`ListModels`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L61-L72) executes a `switch p` over every known provider to call private helper methods (`listOpenAIModels`, `listAnthropicModels`, `listGeminiModels`).
+- **`ListModelsCustom` switch**: [`ListModelsCustom`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L114-L128) hardcodes protocol branches for `ProviderOpenAI` vs `ProviderAnthropic`.
+- **`ResolveProvider` static prefixes**: [`ResolveProvider`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L240-L249) inspects model name prefixes with hardcoded string checks (`&quot;claude&quot;`, `&quot;gemini&quot;`).
+- **`buildRequestDetails` switch**: [`buildRequestDetails`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L319-L373) contains two nested switches: one for custom base URLs and one for upstream endpoints, headers, and query parameter formatting (e.g., Gemini&#x27;s custom `:streamGenerateContent?key=...` query structure).
+
+#### 2. [`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go)
+- **Response decoding switch**: [`handleNonStreamResponse`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L503-L510) uses a `switch target.Provider` to dispatch between `openai.DecodeUpstreamResponse`, `anthropic.DecodeUpstreamResponse`, and `gemini.DecodeUpstreamResponse`.
+
+#### 3. [`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go)
+- **Streaming SSE chunk translation switch**: Lines [214-270](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L270) switch on `target.Provider` to decode SSE events into [`canonical.CanonicalStreamChunk`](file:///data/per-pro/llm-gateway/internal/adapter/canonical/canonical.go) and extract provider-specific token usages.
+- **Provider-specific tool call accumulator**: Lines [285-290](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L285-L290) embed provider-specific branching (`if target.Provider == provider.ProviderGemini { key = &quot;g:&quot; + dtc.Name }`) directly within the generic streaming loop.
+
+#### 4. [`internal/service/fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go)
+- **Fallback provider translation switch**: Lines [58-70](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L58-L70) map provider name strings to `provider.ProviderType`.
+- **Fallback model selection switch**: Lines [98-128](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L98-L128) hardcode provider names (`&quot;anthropic&quot;`, `&quot;gemini&quot;`, `&quot;openai&quot;`) and model families.
+- **Request encoding switch**: Lines [136-146](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L136-L146) switch on `target.Provider` to invoke `openai.EncodeCanonicalRequest`, `anthropic.EncodeCanonicalRequest`, or `gemini.EncodeCanonicalRequest`.
+
+#### 5. [`internal/service/gateway_discovery.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go)
+- **Hardcoded provider slice**: Lines [77-81](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go#L77-L81) hardcode `[]provider.ProviderType{ProviderOpenAI, ProviderAnthropic, ProviderGemini}` for catalog discovery.
+
+#### 6. [`internal/service/gateway_embeddings.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_embeddings.go)
+- **Hardcoded protocol branches**: Lines [125-145](file:///data/per-pro/llm-gateway/internal/service/gateway_embeddings.go#L125-L145) and [291-296](file:///data/per-pro/llm-gateway/internal/service/gateway_embeddings.go#L291-L296) branch on whether `target.Provider` is Gemini, OpenAI, or Anthropic.
+
+---
+
+## 3. Recommended Architecture: Interface Abstraction &amp; Registry Pattern
+
+To eliminate shotgun surgery and adhere to OCP, provider-specific details must be encapsulated behind a **polymorphic interface**, and instances must be managed through a **Provider Registry / Factory**.
+
+### 3.1 Architectural Overview
+
+```
+                      +-----------------------------+
+                      |      Provider Registry      |
+                      |  (Factory / Service Locator)|
+                      +-----------------------------+
+                                     |
+             +-----------------------+-----------------------+
+             |                       |                       |
+             v                       v                       v
+     +---------------+       +---------------+       +---------------+
+     | OpenAIAdapter |       |AnthropicAdapt.|       | GeminiAdapter |
+     | (implements   |       | (implements   |       | (implements   |
+     |   Provider)   |       |   Provider)   |       |   Provider)   |
+     +---------------+       +---------------+       +---------------+
+```
+
+With this architecture:
+1. **Adding a new provider** involves creating a single new struct that implements the `Provider` interface and registering it via `registry.Register(myProvider)`.
+2. **Existing files remain untouched**—`gateway.go`, `gateway_stream.go`, `fallback.go`, and `client.go` execute against the interface abstraction.
+
+---
+
+## 4. Proposed Design &amp; Interface Abstraction
+
+### 4.1 The `Provider` Interface Abstraction
+
+We define a standardized provider interface in `internal/provider` (or unifying with `internal/adapter`) that encapsulates all provider-specific behaviors:
+
+```go
+package provider
+
+import (
+	&quot;context&quot;
+	&quot;net/http&quot;
+
+	&quot;llm-gateway/internal/adapter/canonical&quot;
+)
+
+// Provider defines the contract that each LLM upstream integration must fulfill.
+type Provider interface {
+	// ID returns the unique provider identifier (e.g., &quot;openai&quot;, &quot;anthropic&quot;, &quot;gemini&quot;).
+	ID() ProviderType
+
+	// MatchesModel reports whether this provider handles the given model identifier.
+	MatchesModel(model string) bool
+
+	// BuildChatRequest constructs the upstream HTTP request for chat completions.
+	BuildChatRequest(ctx context.Context, baseURL, apiKey string, req *canonical.CanonicalRequest, stream bool) (*http.Request, error)
+
+	// DecodeResponse deserializes a non-streaming HTTP response into the canonical format.
+	DecodeResponse(statusCode int, body []byte, model string) (*canonical.CanonicalResponse, error)
+
+	// DecodeStreamChunk parses an individual SSE event into a canonical chunk.
+	DecodeStreamChunk(event SSEEvent, model string) (*canonical.CanonicalStreamChunk, error)
+
+	// ToolCallKey returns a stable key for grouping incremental tool call deltas.
+	ToolCallKey(delta canonical.DeltaToolCall) string
+
+	// ListModels queries upstream for available model names.
+	ListModels(ctx context.Context, httpClient *http.Client, baseURL, apiKey string) ([]string, error)
+
+	// FallbackModel returns a suitable alternative model for this provider given an input tier.
+	FallbackModel(originalModel string, isLightTier bool) string
+}
+
+// SSEEvent represents a raw server-sent event line.
+type SSEEvent struct {
+	Event string
+	Data  []byte
+}
+```
+
+### 4.2 The Provider Registry (Factory Pattern)
+
+The Registry acts as a thread-safe factory and catalog for provider implementations.
+
+```go
+package provider
+
+import (
+	&quot;fmt&quot;
+	&quot;sync&quot;
+)
+
+type Registry struct {
+	mu        sync.RWMutex
+	providers map[ProviderType]Provider
+}
+
+var DefaultRegistry = NewRegistry()
+
+func NewRegistry() *Registry {
+	return &amp;Registry{
+		providers: make(map[ProviderType]Provider),
+	}
+}
+
+// Register adds a provider to the registry.
+func (r *Registry) Register(p Provider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.providers[p.ID()] = p
+}
+
+// Get retrieves a provider by its type.
+func (r *Registry) Get(pt ProviderType) (Provider, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	p, ok := r.providers[pt]
+	if !ok {
+		return nil, fmt.Errorf(&quot;unsupported provider: %s&quot;, pt)
+	}
+	return p, nil
+}
+
+// ResolveForModel returns the provider that handles the requested model.
+func (r *Registry) ResolveForModel(model string) (Provider, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, p := range r.providers {
+		if p.MatchesModel(model) {
+			return p, nil
+		}
+	}
+	// Fallback to default (OpenAI protocol)
+	if p, ok := r.providers[ProviderOpenAI]; ok {
+		return p, nil
+	}
+	return nil, fmt.Errorf(&quot;no provider found for model %q&quot;, model)
+}
+
+// All returns a slice of all registered providers.
+func (r *Registry) All() []Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	list := make([]Provider, 0, len(r.providers))
+	for _, p := range r.providers {
+		list = append(list, p)
+	}
+	return list
+}
+```
+
+---
+
+## 5. Concrete Code Comparison: Before vs. After
+
+### 5.1 Request Dispatching &amp; Construction
+
+#### Before ([`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L319-L373))
+Adding a provider requires editing the monolithic `buildRequestDetails` method with unique URL formatting, query strings, and auth schemes:
+```go
+// BEFORE: Monolithic switch requiring modification for every new provider
+func (c *ProviderClient) buildRequestDetails(req UpstreamRequest, apiKey string) (string, map[string]string, error) {
+	headers := map[string]string{&quot;Content-Type&quot;: &quot;application/json&quot;}
+	switch req.Provider {
+	case ProviderOpenAI:
+		return &quot;https://api.openai.com/v1/chat/completions&quot;, headers, nil
+	case ProviderAnthropic:
+		headers[&quot;x-api-key&quot;] = apiKey
+		headers[&quot;anthropic-version&quot;] = &quot;2023-06-01&quot;
+		return &quot;https://api.anthropic.com/v1/messages&quot;, headers, nil
+	case ProviderGemini:
+		query := &quot;key=&quot; + url.QueryEscape(apiKey)
+		endpoint := &quot;generateContent&quot;
+		if req.Stream {
+			endpoint = &quot;streamGenerateContent&quot;
+			query = &quot;alt=sse&amp;&quot; + query
+		}
+		return fmt.Sprintf(&quot;https://generativelanguage.googleapis.com/v1beta/models/%s:%s?%s&quot;, req.Model, endpoint, query), headers, nil
+	default:
+		return &quot;&quot;, nil, fmt.Errorf(&quot;unsupported provider: %s&quot;, req.Provider)
+	}
+}
+```
+
+#### After: Polymorphic Dispatch via Registry &amp; Provider Adapter
+The dispatch code never changes; it delegates directly to the registered `Provider` implementation:
+```go
+// AFTER: Zero modifications required when new providers are added
+func (c *ProviderClient) SendRequest(ctx context.Context, pt ProviderType, req *canonical.CanonicalRequest, apiKey string, stream bool) (*UpstreamResponse, error) {
+	p, err := c.registry.Get(pt)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := p.BuildChatRequest(ctx, c.baseURL, apiKey, req, stream)
+	if err != nil {
+		return nil, fmt.Errorf(&quot;provider %s failed to build request: %w&quot;, pt, err)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf(&quot;failed sending request to %s: %w&quot;, pt, err)
+	}
+
+	return &amp;UpstreamResponse{StatusCode: resp.StatusCode, Header: resp.Header, Body: resp.Body}, nil
+}
+```
+
+---
+
+### 5.2 Non-Streaming Response Handling
+
+#### Before ([`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go#L503-L510))
+```go
+// BEFORE: Hardcoded switch across adapter packages
+switch target.Provider {
+case provider.ProviderOpenAI:
+	canResp, err = openai.DecodeUpstreamResponse(bodyBytes)
+case provider.ProviderAnthropic:
+	canResp, err = anthropic.DecodeUpstreamResponse(bodyBytes)
+case provider.ProviderGemini:
+	canResp, err = gemini.DecodeUpstreamResponse(bodyBytes, canReq.Model)
+}
+```
+
+#### After
+```go
+// AFTER: Single call to the provider interface
+p, err := g.providerRegistry.Get(target.Provider)
+if err != nil {
+	return err
+}
+canResp, err := p.DecodeResponse(upResp.StatusCode, bodyBytes, canReq.Model)
+```
+
+---
+
+### 5.3 Streaming SSE Event Processing
+
+#### Before ([`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L214-L290))
+Each provider has custom logic for `[DONE]`, extra arguments, token counters, and tool-call keys:
+```go
+// BEFORE: 60+ lines of branching in the middle of the streaming loop
+switch target.Provider {
+case provider.ProviderOpenAI:
+	if string(event.Data) == &quot;[DONE]&quot; {
+		chunk = &amp;canonical.CanonicalStreamChunk{IsLast: true}
+	} else {
+		c, cErr := openai.DecodeStreamChunk(event.Data, canReq.Model)
+		// ... token accumulation ...
+	}
+case provider.ProviderAnthropic:
+	c, cErr := anthropic.DecodeStreamChunk(event.Event, event.Data, canReq.Model)
+	// ... token accumulation ...
+case provider.ProviderGemini:
+	c, cErr := gemini.DecodeStreamChunk(event.Data, canReq.Model)
+	// ... token accumulation ...
+}
+
+// Tool call keying has another provider-specific check:
+for _, dtc := range chunk.DeltaToolCalls {
+	key := strconv.Itoa(dtc.Index)
+	if target.Provider == provider.ProviderGemini {
+		key = &quot;g:&quot; + dtc.Name
+	}
+	// ...
+}
+```
+
+#### After
+All provider specifics are encapsulated inside the provider adapter:
+```go
+// AFTER: Clean, uniform stream loop
+p, err := g.providerRegistry.Get(target.Provider)
+if err != nil {
+	return err
+}
+
+chunk, cErr := p.DecodeStreamChunk(SSEEvent{Event: event.Event, Data: event.Data}, canReq.Model)
+if cErr != nil || chunk == nil {
+	continue
+}
+
+// Universal token accounting using normalized fields
+accumulateTokens(chunk)
+
+// Uniform tool-call keying
+for _, dtc := range chunk.DeltaToolCalls {
+	key := p.ToolCallKey(dtc)
+	// ...
+}
+```
+
+---
+
+### 5.4 How a New Provider Is Added (e.g., Mistral / Cohere / DeepSeek)
+
+Under the refactored architecture, adding support for a new provider (e.g. `DeepSeek`) requires **zero modifications** to existing core code. The engineer creates one self-contained file:
+
+```go
+package deepseek
+
+import (
+	&quot;bytes&quot;
+	&quot;context&quot;
+	&quot;encoding/json&quot;
+	&quot;fmt&quot;
+	&quot;net/http&quot;
+	&quot;strings&quot;
+
+	&quot;llm-gateway/internal/adapter/canonical&quot;
+	&quot;llm-gateway/internal/adapter/openai&quot;
+	&quot;llm-gateway/internal/provider&quot;
+)
+
+type DeepSeekProvider struct{}
+
+func init() {
+	provider.DefaultRegistry.Register(&amp;DeepSeekProvider{})
+}
+
+func (d *DeepSeekProvider) ID() provider.ProviderType {
+	return &quot;deepseek&quot;
+}
+
+func (d *DeepSeekProvider) MatchesModel(model string) bool {
+	return strings.HasPrefix(strings.ToLower(model), &quot;deepseek&quot;)
+}
+
+func (d *DeepSeekProvider) BuildChatRequest(ctx context.Context, baseURL, apiKey string, req *canonical.CanonicalRequest, stream bool) (*http.Request, error) {
+	if baseURL == &quot;&quot; {
+		baseURL = &quot;https://api.deepseek.com/v1&quot;
+	}
+	payload, err := openai.EncodeCanonicalRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+&quot;/chat/completions&quot;, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set(&quot;Authorization&quot;, &quot;Bearer &quot;+apiKey)
+	httpReq.Header.Set(&quot;Content-Type&quot;, &quot;application/json&quot;)
+	return httpReq, nil
+}
+
+func (d *DeepSeekProvider) DecodeResponse(status int, body []byte, model string) (*canonical.CanonicalResponse, error) {
+	return openai.DecodeUpstreamResponse(body)
+}
+
+func (d *DeepSeekProvider) DecodeStreamChunk(event provider.SSEEvent, model string) (*canonical.CanonicalStreamChunk, error) {
+	if string(event.Data) == &quot;[DONE]&quot; {
+		return &amp;canonical.CanonicalStreamChunk{IsLast: true}, nil
+	}
+	return openai.DecodeStreamChunk(event.Data, model)
+}
+
+func (d *DeepSeekProvider) ToolCallKey(dtc canonical.DeltaToolCall) string {
+	return fmt.Sprintf(&quot;%d&quot;, dtc.Index)
+}
+
+func (d *DeepSeekProvider) ListModels(ctx context.Context, client *http.Client, baseURL, apiKey string) ([]string, error) {
+	return openai.ListModels(ctx, client, baseURL, apiKey)
+}
+
+func (d *DeepSeekProvider) FallbackModel(orig string, isLight bool) string {
+	if isLight {
+		return &quot;deepseek-chat&quot;
+	}
+	return &quot;deepseek-reasoner&quot;
+}
+```
+
+---
+
+## 6. Structured Summary &amp; Action Items
+
+| ID | Issue / Finding | Severity | Affected Files | Proposed Remedy |
+|:---|:---|:---:|:---|:---|
+| **FIND-01** | **Open/Closed Principle Violation**&lt;br&gt;New providers force modifications across core routing, client, fallback, and streaming logic. | **High** | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go)&lt;br&gt;[`internal/service/gateway.go`](file:///data/per-pro/llm-gateway/internal/service/gateway.go)&lt;br&gt;[`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go) | Define uniform `Provider` interface abstraction and replace all hardcoded switches with polymorphic method calls. |
+| **FIND-02** | **Lack of Central Provider Registry / Factory**&lt;br&gt;Provider instances are instantiated ad-hoc without discovery or dynamic lookup. | **High** | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go)&lt;br&gt;[`internal/service/gateway_discovery.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go) | Introduce `ProviderRegistry` with thread-safe registration (`Register`) and lookup (`Get`, `ResolveForModel`). |
+| **FIND-03** | **Scattered Provider Quirk Handling**&lt;br&gt;Special cases (Gemini tool-call keys, query string formatting, Anthropic header requirements) pollute generic service logic. | **Medium** | [`internal/service/gateway_stream.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_stream.go#L287)&lt;br&gt;[`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L358-L368) | Encapsulate provider quirks inside their respective adapter structs (`ToolCallKey`, `BuildChatRequest`). |
+| **FIND-04** | **Hardcoded Model-to-Provider Prefix Resolution**&lt;br&gt;`ResolveProvider` and fallback matching hardcode `&quot;claude&quot;`, `&quot;gemini&quot;`. | **Medium** | [`internal/provider/client.go`](file:///data/per-pro/llm-gateway/internal/provider/client.go#L240-L249)&lt;br&gt;[`internal/service/fallback.go`](file:///data/per-pro/llm-gateway/internal/service/fallback.go#L98-L128) | Delegate model matching to `Provider.MatchesModel()` and fallback mapping to `Provider.FallbackModel()`. |
+| **FIND-05** | **Hardcoded Provider Slice in Discovery**&lt;br&gt;Discovery only queries OpenAI, Anthropic, and Gemini; new providers are excluded from background model discovery. | **Low** | [`internal/service/gateway_discovery.go`](file:///data/per-pro/llm-gateway/internal/service/gateway_discovery.go#L77-L81) | Iterate over `registry.All()` dynamically rather than using a static slice. |
+
+---
+
+## 7. Migration Plan
+
+1. **Phase 1: Define Interface &amp; Registry**
+   - Create `internal/provider/provider.go` with the [`Provider`](#41-the-provider-interface-abstraction) interface.
+   - Implement the [`Registry`](#42-the-provider-registry-factory-pattern) in `internal/provider/registry.go`.
+2. **Phase 2: Wrap Existing Adapters**
+   - Implement `OpenAIProvider`, `AnthropicProvider`, and `GeminiProvider` implementing `Provider` by wrapping existing packages in `internal/adapter/*`.
+   - Auto-register them in `DefaultRegistry`.
+3. **Phase 3: Refactor Consumer Services**
+   - Update [`GatewayService`](file:///data/per-pro/llm-gateway/internal/service/gateway.go) and [`ProviderClient`](file:///data/per-pro/llm-gateway/internal/provider/client.go) to inject and consume `Registry`.
+   - Replace switches in `handleNonStreamResponse`, `streamResponse`, and `fallback.go` with polymorphic calls.
+4. **Phase 4: Verify &amp; Extend**
+   - Run unit and integration test suites (`go test ./...`).
+   - Add a new test provider (e.g. `mock` or `deepseek`) to verify zero-touch extension.
+</div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-eval-2" class="tab-pane" style="display: none;">
+      <h2>Eval 2: Plugin Architecture (ISP &amp; DIP)</h2>
+      <div class="prompt-box">
+        <strong style="color: #38bdf8;">Eval Prompt:</strong> Quick architecture check on internal/plugin — we have a plugin system but I&#x27;m not sure if it follows good OOP design. Check SOLID and suggest any relevant patterns.
+      </div>
+      
+      <div class="split-view">
+        <div class="card">
+          <div class="card-header">
+            <span>&check; With Skill (<code>code-review-solid</code>)</span>
+            <span class="tag-pass">100% Passed</span>
+          </div>
+          <div class="card-body"># Code Review Report: SOLID &amp; Design Patterns
+
+## Scope
+- **Target Package:** `internal/plugin` and builtin plugins in `internal/plugin/builtin`
+- **Language:** Go (1.22+)
+- **Existing Architectural Patterns Noted:**
+  - **Registry Pattern:** In-memory registration system (`Registry`, `defaultRegistry`, `RegisterGlobal`)
+  - **Lifecycle Hook Abstraction:** Phase-specific plugin interfaces (`PreAuthPlugin`, `PostAuthPlugin`, `PreRoutingPlugin`, `PostUpstreamPlugin`)
+  - **Single-Run Override Engine:** Specificity-based resolution for multi-scope bindings (`ResolveEffectiveBindings`)
+  - **Hybrid In-Memory Cache:** Double-checked locking cache with Redis PubSub invalidation embedded inside `PluginEngine`
+
+---
+
+## SOLID Audit
+
+### ⚠️ S — Single Responsibility Principle
+
+#### 1. `PluginEngine` is a God Class with Mixed Infrastructure and Orchestration Concerns
+`internal/plugin/engine.go:24-165, 294-396`
+
+`PluginEngine` currently has at least five distinct reasons to change:
+1. **Cache storage &amp; invalidation policy:** Managing `cachedBindings`, `lastLoaded`, `cacheTTL`, and double-checked mutex locking.
+2. **Background sync &amp; polling:** Managing a background ticker loop in `StartBackgroundSync`.
+3. **Redis PubSub message consumption:** Managing distributed cache eviction in `StartRedisSubscriber`.
+4. **Scope resolution &amp; precedence calculation:** Managing binding filtering and precedence sorting in `ResolveEffectiveBindings`.
+5. **Pipeline execution &amp; concurrency management:** Iterating through hooks, executing plugins, short-circuiting on `pctx.Stop`, and spawning asynchronous background goroutines with detached contexts for observability plugins.
+
+**Before (`internal/plugin/engine.go:24-48`):**
+```go
+// ❌ Violates SRP: Engine mixes caching, pubsub subscription, database querying,
+// and pipeline execution into one monolithic struct.
+type PluginEngine struct {
+	pg             PostgresReader
+	registry       *Registry
+	mu             sync.RWMutex
+	cachedBindings []model.PluginBinding
+	lastLoaded     time.Time
+	cacheTTL       time.Duration
+}
+
+func (e *PluginEngine) ReloadBindings(ctx context.Context) error { ... }
+func (e *PluginEngine) GetActiveBindings(ctx context.Context) ([]model.PluginBinding, error) { ... }
+func (e *PluginEngine) StartBackgroundSync(ctx context.Context, interval time.Duration) { ... }
+func (e *PluginEngine) StartRedisSubscriber(ctx context.Context, redisClient *db.RedisClient) { ... }
+func (e *PluginEngine) RunPreAuth(pctx *PluginContext, bindings []model.PluginBinding) error { ... }
+func (e *PluginEngine) RunPostUpstream(pctx *PluginContext, resp *canonical.CanonicalResponse, bindings []model.PluginBinding) error { ... }
+```
+
+**After:**
+```go
+// ✅ SRP Refactor: Separate storage/caching from execution orchestration.
+
+// 1. BindingRepository handles retrieval and caching
+type BindingRepository interface {
+	GetActiveBindings(ctx context.Context) ([]model.PluginBinding, error)
+	Reload(ctx context.Context) error
+}
+
+// 2. ScopeResolver handles rule evaluation and specificity ranking
+type ScopeResolver interface {
+	ResolveEffective(all []model.PluginBinding, req *RequestContext) []model.PluginBinding
+}
+
+// 3. PluginEngine focuses strictly on pipeline execution
+type PluginEngine struct {
+	repo     BindingRepository
+	registry PluginRegistry
+	resolver ScopeResolver
+}
+
+func (e *PluginEngine) ExecutePreAuth(ctx context.Context, pctx *PluginContext) error {
+	// Single responsibility: execute plugins matching resolved bindings
+	bindings, err := e.repo.GetActiveBindings(ctx)
+	if err != nil {
+		return err
+	}
+	effective := e.resolver.ResolveEffective(bindings, pctx.ToRequestContext())
+	return e.runHook(pctx, effective, HookPreAuth)
+}
+```
+
+#### 2. `PluginContext` is a Monolithic God Object
+`internal/plugin/plugin.go:24-48`
+
+`PluginContext` mixes low-level transport handles (`http.ResponseWriter`), infrastructure database drivers (`*db.RedisClient`, `*db.PostgresDB`), IAM identity (`*model.User`, `*model.Tenant`, `*model.APIKey`), canonical request payloads, performance metrics (`StartTime`, `Duration`), and pipeline control flags (`Stop`, `StopStatusCode`, `StopErrorBody`). Any change to auth, routing, telemetry, or storage forces modifications to `PluginContext`.
+
+---
+
+### ⚠️ O — Open/Closed Principle
+
+#### 1. Scope Specificity and Matching Are Hardcoded in Switch and Map
+`internal/plugin/engine.go:167-175, 201-229`
+
+The binding resolution logic in `ResolveEffectiveBindings` evaluates scopes using a hardcoded `switch b.ScopeLevel` and a static `scopeSpecificity` map. Adding a new scope level (e.g. `workspace`, `client_ip_range`, `tag`, or `organization`) requires modifying `PluginEngine` directly instead of extending it.
+
+**Before (`internal/plugin/engine.go:167-175, 201-217`):**
+```go
+// ❌ Violates OCP: Hardcoded map and switch statement. Adding new scopes requires modifying engine.go.
+var scopeSpecificity = map[string]int{
+	&quot;global&quot;:   1,
+	&quot;provider&quot;: 2,
+	&quot;model&quot;:    3,
+	&quot;tenant&quot;:   4,
+	&quot;role&quot;:     5,
+	&quot;user&quot;:     6,
+	&quot;api_key&quot;:  7,
+}
+
+switch b.ScopeLevel {
+case &quot;global&quot;:
+	matched = true
+case &quot;provider&quot;:
+	if b.ScopeProvider != nil &amp;&amp; provider != &quot;&quot; &amp;&amp; *b.ScopeProvider == provider {
+		matched = true
+	}
+case &quot;tenant&quot;:
+	if b.ScopeTenantID != nil &amp;&amp; tenantID != nil &amp;&amp; *b.ScopeTenantID == *tenantID {
+		matched = true
+	}
+// ...
+}
+```
+
+**After:**
+```go
+// ✅ OCP Refactor: Strategy Pattern for Scope Evaluation.
+type ScopeEvaluator interface {
+	ScopeLevel() string
+	Specificity() int
+	Matches(binding model.PluginBinding, req *RequestContext) bool
+}
+
+type ScopeRegistry struct {
+	evaluators map[string]ScopeEvaluator
+}
+
+func (r *ScopeRegistry) Register(evaluator ScopeEvaluator) {
+	r.evaluators[evaluator.ScopeLevel()] = evaluator
+}
+
+func (r *ScopeRegistry) Evaluate(b model.PluginBinding, req *RequestContext) (bool, int) {
+	eval, ok := r.evaluators[b.ScopeLevel]
+	if !ok {
+		return false, 0
+	}
+	return eval.Matches(b, req), eval.Specificity()
+}
+// ℹ️ New scopes (e.g., WorkspaceEvaluator) can now be added without editing core engine code.
+```
+
+#### 2. Duplicated Hook Execution Loops Across 4 Hardcoded Lifecycle Methods
+`internal/plugin/engine.go:294-396`
+
+`RunPreAuth`, `RunPostAuth`, `RunPreRouting`, and `RunPostUpstream` repeat the same loop structure: fetch plugin by name, assert hook interface, parse JSON configuration, call execution method, and inspect `pctx.Stop`. Adding a new lifecycle hook (such as `OnStreamChunk`, `OnError`, or `PreFallback`) requires modifying `PluginEngine` with yet another duplicate loop method.
+
+---
+
+### ⚠️ L — Liskov Substitution Principle
+
+#### 1. Untyped Registry Accepts Arbitrary Types Without Contract Validation
+`internal/plugin/registry.go:11, 31-43`
+
+`Registry.Register(name string, instance any)` accepts `any`. Any invalid struct or scalar can be registered without compile-time or registration-time interface validation. At runtime, `engine.go` performs type assertions (`inst.(PreAuthPlugin)`). If an instance does not implement the expected hook interface, it is silently ignored without error, warning, or fallback.
+
+**Before (`internal/plugin/registry.go:11, 31-35`):**
+```go
+// ❌ Violates LSP &amp; Type Safety: plugins map stores untyped `any`.
+type Registry struct {
+	mu      sync.RWMutex
+	plugins map[string]any
+}
+
+func (r *Registry) Register(name string, instance any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.plugins[name] = instance // ⚠️ Accepts anything, e.g. Register(&quot;guard&quot;, 123)
+}
+```
+
+**After:**
+```go
+// ✅ LSP Refactor: Enforce BasePlugin contract at registration time.
+type Plugin interface {
+	Name() string
+}
+
+type Registry struct {
+	mu      sync.RWMutex
+	plugins map[string]Plugin
+}
+
+func (r *Registry) Register(p Plugin) error {
+	if p == nil {
+		return errors.New(&quot;cannot register nil plugin&quot;)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.plugins[p.Name()] = p
+	return nil
+}
+```
+
+#### 2. Async Plugins Violate the Execution Contract of `PostUpstreamPlugin`
+`internal/plugin/plugin.go:74-79`, `internal/plugin/engine.go:368-384`
+
+`AsyncPostUpstreamPlugin` marker interface indicates that a post-upstream plugin is pure observability and should run in the background without delaying the client response. However, `ExecPostUpstream` receives `*PluginContext`, which contains mutable control state (`pctx.Stop`, `pctx.ExtraHeaders`, `pctx.ResponseWriter`).
+- A synchronous `PostUpstreamPlugin` can modify response headers or mutate canonical responses.
+- An `AsyncPostUpstreamPlugin` running in a detached goroutine cannot modify headers or stop the request because the HTTP response has already been flushed to the client.
+- Subtyping `AsyncPostUpstreamPlugin` therefore cannot safely substitute for `PostUpstreamPlugin` under the same signature without silently dropping mutations or inducing race conditions.
+
+#### 3. Unused `BasePlugin.Hooks()` Creates Misleading Implementation Invariants
+`internal/plugin/plugin.go:81-85`
+
+`BasePlugin` declares `Hooks() []HookType`, and multiple plugins in `builtin/` implement it (e.g. `rate_limiting.go:19`, `prompt_guard.go:38`). However, `PluginEngine` never queries `Hooks()`. It only performs dynamic type assertions on the hook interfaces (`inst.(PreAuthPlugin)`). If a plugin declares `Hooks() []HookType{HookPreRouting}` but accidentally omits `ExecPreRouting`, `Hooks()` promises a capability the struct does not provide.
+
+---
+
+### ⚠️ I — Interface Segregation Principle
+
+#### 1. Massive `PluginContext` Passed to Every Plugin Hook
+`internal/plugin/plugin.go:24-72`
+
+Every hook interface accepts the entire `*PluginContext` struct:
+```go
+ExecPreRouting(pctx *PluginContext, cfg map[string]any) error
+```
+- A pure validation plugin like `PromptGuardPlugin` or `ContentModerationPlugin` only needs to read `pctx.CanReq.Messages` and set `pctx.Stop`. Yet it is given access to `pctx.Postgres`, `pctx.Redis`, `pctx.ResponseWriter`, and `pctx.APIKey`.
+- A header transformation plugin like `HeaderTransformPlugin` only needs to inspect and mutate headers, but receives database handles and request bodies.
+- Clients are forced to depend on fields and capabilities they do not require.
+
+**Before (`internal/plugin/plugin.go:50-72`):**
+```go
+// ❌ Violates ISP: Monolithic PluginContext forced into all hook signatures.
+type PreRoutingPlugin interface {
+	Name() string
+	ExecPreRouting(pctx *PluginContext, cfg map[string]any) error
+}
+```
+
+**After:**
+```go
+// ✅ ISP Refactor: Narrow, segregated context interfaces per capability.
+
+type RequestReader interface {
+	Model() string
+	Messages() []canonical.ChatMessage
+	SystemPrompt() string
+	Header(key string) string
+}
+
+type HeaderModifier interface {
+	SetHeader(key, value string)
+	RemoveHeader(key string)
+}
+
+type PipelineController interface {
+	Halt(statusCode int, errResponse any)
+}
+
+// PreRoutingPlugin only requires request inspection and flow control
+type PreRoutingPlugin interface {
+	Name() string
+	ExecPreRouting(req RequestReader, ctrl PipelineController, cfg map[string]any) error
+}
+```
+
+#### 2. `PostgresReader` Interface is Named After a Concretion
+`internal/plugin/engine.go:19-21`
+
+```go
+type PostgresReader interface {
+	ListActivePluginBindings() ([]model.PluginBinding, error)
+}
+```
+While the interface itself is segregated and small (1 method), its name violates the spirit of interface design by baking the storage technology name (`Postgres`) into the consumer&#x27;s interface. If bindings are loaded from Redis, MongoDB, or an Admin API, the type `PostgresReader` becomes an oxymoron. It should be `BindingStore` or `BindingReader`.
+
+---
+
+### ⚠️ D — Dependency Inversion Principle
+
+#### 1. High-Level Plugin Implementations Directly Depend on Low-Level Database Structs
+`internal/plugin/plugin.go:39-40`, `builtin/rate_limiting.go:25-39`, `builtin/budget_control.go:56-68`, `builtin/semantic_cache.go:37-63`
+
+`PluginContext` directly embeds pointers to concrete database clients:
+```go
+Redis    *db.RedisClient
+Postgres *db.PostgresDB
+```
+Builtin plugins directly invoke concrete methods on `pctx.Redis` (`AllowRequest`, `GetCachedBudgetSpent`, `GetRaw`, `SetRaw`) and `pctx.Postgres` (`GetSpentCostByKeyID`).
+
+**Consequences:**
+- Plugins cannot be tested without real database instances or complex test fixtures.
+- In `internal/plugin/builtin/builtin_test.go:154-178` (`TestBudgetControlPlugin_Exceeded`), the test cannot even test the limit-exceeded scenario because `pctx.Redis` and `pctx.Postgres` cannot be mocked!
+
+**Before (`internal/plugin/builtin/budget_control.go:56-68`):**
+```go
+// ❌ Violates DIP: Directly depends on concrete *db.RedisClient and *db.PostgresDB structs.
+if pctx.Redis != nil &amp;&amp; keyID != &quot;&quot; {
+	if cachedSpent, cErr := pctx.Redis.GetCachedBudgetSpent(pctx.Ctx, keyID); cErr == nil {
+		spent = cachedSpent
+		gotFromCache = true
+	}
+}
+
+if !gotFromCache &amp;&amp; pctx.Postgres != nil &amp;&amp; pctx.APIKey != nil {
+	spent, err = pctx.Postgres.GetSpentCostByKeyID(pctx.APIKey.ID)
+	// ...
+}
+```
+
+**After:**
+```go
+// ✅ DIP Refactor: Invert dependencies via domain service interfaces.
+type BudgetTracker interface {
+	GetSpentCost(ctx context.Context, keyID string) (float64, error)
+}
+
+type BudgetControlPlugin struct {
+	tracker BudgetTracker // ℹ️ Injected via constructor or service locator
+}
+
+func NewBudgetControlPlugin(tracker BudgetTracker) *BudgetControlPlugin {
+	return &amp;BudgetControlPlugin{tracker: tracker}
+}
+
+func (p *BudgetControlPlugin) ExecPostAuth(req AuthContext, ctrl PipelineController, cfg map[string]any) error {
+	spent, err := p.tracker.GetSpentCost(req.Context(), req.APIKeyID())
+	if err != nil {
+		return nil // Fail open
+	}
+	if spent &gt;= cfgLimit {
+		ctrl.Halt(http.StatusPaymentRequired, &quot;Budget limit exceeded&quot;)
+	}
+	return nil
+}
+```
+
+#### 2. `PluginEngine` Directly Depends on Concrete `*Registry` and Concrete `*db.RedisClient`
+`internal/plugin/engine.go:26, 139`
+
+`PluginEngine` holds a field `registry *Registry` (concrete struct pointer) rather than an interface. Furthermore, `StartRedisSubscriber` takes `redisClient *db.RedisClient` (concrete struct pointer) rather than a PubSub abstraction like `EventSubscriber`.
+
+#### 3. Package-Level Global Registry Singleton
+`internal/plugin/registry.go:14-21, 45-57`
+
+The global variable `defaultRegistry` is automatically used when `nil` is passed to `NewPluginEngine(pg, nil)`. This creates hidden global state and makes isolated concurrent unit testing error-prone.
+
+---
+
+## Design Pattern Opportunities
+
+### 1. Chain of Responsibility / Pipeline Pattern in `internal/plugin/engine.go`
+**Why:** Replaces duplicated procedural loops across `RunPreAuth`, `RunPostAuth`, `RunPreRouting`, and `RunPostUpstream` with an extensible, reusable middleware execution chain that centralizes error handling, timing metrics, and short-circuit evaluation.
+
+**Before (`internal/plugin/engine.go:334-352`):**
+```go
+// ❌ Duplicated across RunPreAuth, RunPostAuth, RunPreRouting...
+func (e *PluginEngine) RunPreRouting(pctx *PluginContext, bindings []model.PluginBinding) error {
+	for _, b := range bindings {
+		inst, ok := e.registry.Get(b.PluginName)
+		if !ok {
+			continue
+		}
+		if p, ok := inst.(PreRoutingPlugin); ok {
+			cfg := parseBindingConfig(b)
+			if err := p.ExecPreRouting(pctx, cfg); err != nil {
+				return err
+			}
+			if pctx.Stop {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+```
+
+**After:**
+```go
+// ✅ Pipeline / Chain of Responsibility Pattern:
+type StepHandler func(ctx context.Context, pctx *PluginContext, cfg map[string]any) error
+
+type PipelineStep struct {
+	PluginName string
+	Config     map[string]any
+	Handler    StepHandler
+}
+
+type Pipeline struct {
+	steps []PipelineStep
+}
+
+func (p *Pipeline) Execute(ctx context.Context, pctx *PluginContext) error {
+	for _, step := range p.steps {
+		if pctx.Stop {
+			break
+		}
+		if err := step.Handler(ctx, pctx, step.Config); err != nil {
+			return fmt.Errorf(&quot;plugin %s failed: %w&quot;, step.PluginName, err)
+		}
+	}
+	return nil
+}
+```
+
+---
+
+### 2. Strategy Pattern in `internal/plugin/engine.go`
+**Why:** Encapsulates scope matching and precedence ranking behind a polymorphic strategy interface, allowing new binding scopes to be added without modifying the core resolution algorithm.
+
+**Before (`internal/plugin/engine.go:201-228`):**
+```go
+// ❌ Hardcoded switch statement inside resolution loop:
+switch b.ScopeLevel {
+case &quot;global&quot;:
+	matched = true
+case &quot;provider&quot;:
+	if b.ScopeProvider != nil &amp;&amp; provider != &quot;&quot; &amp;&amp; *b.ScopeProvider == provider {
+		matched = true
+	}
+// ...
+}
+```
+
+**After:**
+```go
+// ✅ Strategy Pattern:
+type ScopeStrategy interface {
+	Matches(b model.PluginBinding, req RequestMetadata) bool
+	Specificity() int
+}
+
+type ProviderScopeStrategy struct{}
+func (s *ProviderScopeStrategy) Specificity() int { return 2 }
+func (s *ProviderScopeStrategy) Matches(b model.PluginBinding, req RequestMetadata) bool {
+	return b.ScopeProvider != nil &amp;&amp; req.Provider != &quot;&quot; &amp;&amp; *b.ScopeProvider == req.Provider
+}
+
+type ApiKeyScopeStrategy struct{}
+func (s *ApiKeyScopeStrategy) Specificity() int { return 7 }
+func (s *ApiKeyScopeStrategy) Matches(b model.PluginBinding, req RequestMetadata) bool {
+	return b.ScopeKeyID != nil &amp;&amp; req.ApiKeyID != nil &amp;&amp; *b.ScopeKeyID == *req.ApiKeyID
+}
+```
+
+---
+
+### 3. Repository &amp; Decorator Pattern in `internal/plugin/engine.go`
+**Why:** Decouples database querying from in-memory caching and Redis invalidation, eliminating infrastructure caching logic from `PluginEngine`.
+
+**Before (`internal/plugin/engine.go:79-117`):**
+```go
+// ❌ PluginEngine manually handles caching, TTL expiry, and DB reloads:
+func (e *PluginEngine) GetActiveBindings(ctx context.Context) ([]model.PluginBinding, error) {
+	e.mu.RLock()
+	cached := e.cachedBindings
+	// ... double checked lock, DB reload, fallback to stale cache ...
+}
+```
+
+**After:**
+```go
+// ✅ Repository Pattern with Decorator:
+type BindingRepository interface {
+	ListActiveBindings(ctx context.Context) ([]model.PluginBinding, error)
+}
+
+// Postgres implementation
+type SQLBindingRepository struct { db *sql.DB }
+func (r *SQLBindingRepository) ListActiveBindings(ctx context.Context) ([]model.PluginBinding, error) { ... }
+
+// Cache Decorator wrapping the repository
+type CachedBindingRepository struct {
+	inner    BindingRepository
+	cache    sync.Map
+	ttl      time.Duration
+}
+
+func (c *CachedBindingRepository) ListActiveBindings(ctx context.Context) ([]model.PluginBinding, error) {
+	// Handles in-memory caching transparently
+	return c.inner.ListActiveBindings(ctx)
+}
+```
+
+---
+
+### 4. Adapter Pattern in `internal/plugin/builtin`
+**Why:** Decouples plugins from specific database drivers (`*db.RedisClient`, `*db.PostgresDB`) by providing domain-specific adapters (`RateLimiterAdapter`, `TokenBucketAdapter`, `MetricsCollectorAdapter`).
+
+**Before (`internal/plugin/builtin/rate_limiting.go:39`):**
+```go
+// ❌ Direct dependency on *db.RedisClient concrete API:
+allowed, err := pctx.Redis.AllowRequest(pctx.Ctx, fmt.Sprintf(&quot;plugin:rate_limiting:%s&quot;, keyIdentifier), rpm)
+```
+
+**After:**
+```go
+// ✅ Adapter Pattern:
+type RateLimiter interface {
+	Allow(ctx context.Context, identifier string, limitPerMinute int) (bool, error)
+}
+
+// Redis adapter implementing RateLimiter
+type RedisRateLimiterAdapter struct {
+	client *db.RedisClient
+}
+
+func (a *RedisRateLimiterAdapter) Allow(ctx context.Context, id string, rpm int) (bool, error) {
+	return a.client.AllowRequest(ctx, &quot;plugin:rate_limiting:&quot;+id, rpm)
+}
+```
+
+---
+
+### 5. Config Decorator Pattern in `internal/plugin/engine.go`
+**Why:** Eliminates repeated `json.Unmarshal` calls on every single request in the critical path by parsing and caching validated configuration once during binding resolution.
+
+**Before (`internal/plugin/engine.go:286-292, 302`):**
+```go
+// ❌ Unmarshals JSON raw config on EVERY request in EVERY hook execution!
+func parseBindingConfig(b model.PluginBinding) map[string]any {
+	cfg := make(map[string]any)
+	if len(b.Config) &gt; 0 {
+		_ = json.Unmarshal(b.Config, &amp;cfg)
+	}
+	return cfg
+}
+```
+
+**After:**
+```go
+// ✅ Pre-parsed / Cached Config Decorator:
+type ResolvedBinding struct {
+	Binding model.PluginBinding
+	ParsedConfig map[string]any // ℹ️ Parsed once when loading/resolving bindings, zero JSON unmarshals on hot path
+}
+```
+
+---
+
+## Summary Table
+
+| # | Principle/Pattern | Severity | File | Status |
+|---|---|---|---|---|
+| 1 | **DIP** | 🔴 High | `internal/plugin/plugin.go:39-40`, `internal/plugin/builtin/*.go` | Direct dependency on concrete `*db.RedisClient` &amp; `*db.PostgresDB`; proposed domain service interfaces &amp; adapters |
+| 2 | **ISP** | 🔴 High | `internal/plugin/plugin.go:24-72` | Monolithic `PluginContext` God Object passed to all plugins; proposed segregated capability interfaces (`RequestReader`, `HeaderModifier`, `PipelineController`) |
+| 3 | **SRP** | 🔴 High | `internal/plugin/engine.go:24-165, 294-396` | `PluginEngine` manages caching, background sync, pubsub listeners, scope resolution, and pipeline execution; proposed separating into `BindingRepository`, `ScopeResolver`, and `PipelineEngine` |
+| 4 | **OCP** | 🟡 Medium | `internal/plugin/engine.go:167-175, 201-229` | Hardcoded scope evaluation map &amp; switch statement; proposed Strategy Pattern (`ScopeStrategy`) |
+| 5 | **LSP** | 🟡 Medium | `internal/plugin/registry.go:11, 31-43` | Registry accepts untyped `any` leading to silent runtime skips; proposed typed `Plugin` interface contract |
+| 6 | **LSP** | 🟡 Medium | `internal/plugin/plugin.go:74-79`, `engine.go:368-384` | `AsyncPostUpstreamPlugin` marker breaks behavioral subtyping with mutable context; proposed separating read-only telemetry plugins |
+| 7 | **Chain of Resp.** | 🟡 Medium | `internal/plugin/engine.go:294-396` | Duplicated execution loop logic across 4 hook methods; proposed reusable `Pipeline` abstraction |
+| 8 | **Performance / Decorator** | 🟢 Low | `internal/plugin/engine.go:286-292` | Repeated JSON unmarshaling on request hot path; proposed pre-parsing configuration in `ResolvedBinding` |
+| 9 | **DIP / Naming** | 🟢 Low | `internal/plugin/engine.go:19-21` | `PostgresReader` named after concrete technology; proposed renaming to `BindingStore` or `BindingRepository` |
+
+---
+
+## Recommended Next Steps
+
+1. **Invert Database Dependencies (DIP) [High Impact]:**
+   - Define domain interfaces (`RateLimiter`, `BudgetStore`, `CacheStore`) in `internal/plugin`.
+   - Remove `Redis *db.RedisClient` and `Postgres *db.PostgresDB` from `PluginContext`.
+   - Inject adapters into builtin plugins at initialization time (in `builtin/init.go`), immediately making all builtin plugins 100% unit-testable without database dependencies.
+
+2. **Segregate Plugin Context (ISP) [High Impact]:**
+   - Replace the 20-field `PluginContext` with narrow interfaces (`RequestReader`, `HeaderModifier`, `PipelineController`).
+   - Plugins only receive the specific capabilities they need, preventing unintended mutations and security leaks.
+
+3. **Extract Repository &amp; Caching from `PluginEngine` (SRP) [Medium Impact]:**
+   - Move cache management, TTL expiration, and Redis subscriber into a dedicated `CachedBindingRepository`.
+   - Keep `PluginEngine` lean and focused solely on request-time pipeline execution.
+
+4. **Implement Strategy Pattern for Scope Resolution (OCP) [Medium Impact]:**
+   - Refactor `ResolveEffectiveBindings` to use a `ScopeStrategy` registry, allowing new scope dimensions (e.g. `team`, `ip_subnet`) to be added without modifying the core engine.
+
+5. **Consolidate Hook Execution into a Reusable Pipeline (Chain of Responsibility) [Medium Impact]:**
+   - Unify `RunPreAuth`, `RunPostAuth`, `RunPreRouting`, and `RunPostUpstream` into a standardized pipeline executor that eliminates code duplication and enables uniform error handling, telemetry, and panic recovery.
+</div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span>Baseline (Without Skill)</span>
+            <span class="tag-pass">100% Passed</span>
+          </div>
+          <div class="card-body"># Architecture Code Review: `internal/plugin`
+**Focus:** SOLID Principles Evaluation (ISP &amp; DIP Deep Dive) &amp; Design Pattern Improvements  
+**Target Files:** `internal/plugin/plugin.go`, `internal/plugin/engine.go`, `internal/plugin/registry.go`, and `internal/plugin/builtin/*`  
+**Date:** September 16, 2026  
+
+---
+
+## 1. Executive Summary
+
+An architectural review of the `internal/plugin` subsystem was conducted to evaluate its adherence to Object-Oriented Programming (OOP) best practices and the **SOLID** design principles. 
+
+While the system provides basic pluggability through lifecycle hooks (`PreAuth`, `PostAuth`, `PreRouting`, `PostUpstream`) and multi-tier scope resolution (`global`, `tenant`, `api_key`, etc.), the internal implementation exhibits **critical architectural coupling**. Most notably, it suffers from severe violations of the **Interface Segregation Principle (ISP)** and the **Dependency Inversion Principle (DIP)**.
+
+### Summary Assessment
+
+| Principle | Status | Severity | Primary Symptoms |
+| :--- | :--- | :--- | :--- |
+| **I** - Interface Segregation | **VIOLATED** | **Critical** | Monolithic `PluginContext` (20+ fields) is forced upon all plugin hooks regardless of phase; plugins access fields, DB handles, and transport writers they do not need. |
+| **D** - Dependency Inversion | **VIOLATED** | **Critical** | Low-level concrete types (`*db.RedisClient`, `*db.PostgresDB`, `http.ResponseWriter`) are directly embedded in `PluginContext`; plugins instantiate concrete dependencies internally instead of using constructor injection. |
+| **S** - Single Responsibility | **VIOLATED** | **High** | `PluginEngine` combines binding cache management, DB fallback, Redis pub/sub sync, async goroutine dispatch, and pipeline execution. Builtin plugins mix domain logic, storage access, and HTTP wire formatting. |
+| **O** - Open/Closed | **VIOLATED** | **Medium/High** | Adding new lifecycle phases requires modifying `PluginEngine`, `BasePlugin`, and callers; hardcoded switch statements in scope specificity; untyped `map[string]any` configuration parsing. |
+| **L** - Liskov Substitution | **VIOLATED** | **High** | `AsyncPostUpstreamPlugin` marker changes runtime execution semantics, swallows errors, and introduces data races; inconsistent halt contract (`pctx.Stop` vs. direct `ResponseWriter` writes vs. returning `error`). |
+
+---
+
+## 2. In-Depth SOLID Principle Violations
+
+### 2.1. Interface Segregation Principle (ISP) — *Severity: Critical*
+&gt; *&quot;Clients should not be forced to depend upon interfaces or data contracts that they do not use.&quot;*
+
+#### The &quot;God Context&quot; Anti-Pattern: `PluginContext`
+In [plugin.go](file:///data/per-pro/llm-gateway/internal/plugin/plugin.go#L23-L48), `PluginContext` acts as a monolithic data bucket holding every conceivable piece of state across the request lifecycle:
+
+```go
+type PluginContext struct {
+    Ctx            context.Context
+    APIKey         *model.APIKey
+    User           *model.User
+    Tenant         *model.Tenant
+    CanReq         *canonical.CanonicalRequest
+    RequestBody    []byte
+    InboundFormat  string
+    Model          string
+    Provider       string
+    ClientIP       string
+    StartTime      time.Time
+    Duration       time.Duration
+    StatusCode     int
+    ResponseWriter http.ResponseWriter
+    Redis          *db.RedisClient
+    Postgres       *db.PostgresDB
+
+    // Mutable properties manipulated by plugins:
+    ExtraHeaders   map[string]string
+    RemoveHeaders  []string
+    Stop           bool
+    StopStatusCode int
+    StopErrorBody  []byte
+}
+```
+
+Every lifecycle interface requires this exact struct:
+- `PreAuthPlugin.ExecPreAuth(pctx *PluginContext, cfg map[string]any) error`
+- `PostAuthPlugin.ExecPostAuth(pctx *PluginContext, cfg map[string]any) error`
+- `PreRoutingPlugin.ExecPreRouting(pctx *PluginContext, cfg map[string]any) error`
+- `PostUpstreamPlugin.ExecPostUpstream(pctx *PluginContext, resp *canonical.CanonicalResponse, cfg map[string]any) error`
+
+#### Violation Analysis &amp; Blast Radius
+1. **Unnecessary Coupling &amp; State Leaks:**
+   - [ip_restriction.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/ip_restriction.go#L28-L66) (`ExecPreAuth`) only needs `ClientIP` and a way to block the request. Yet it receives full pointers to `Redis`, `Postgres`, `APIKey`, `User`, `Tenant`, and `ResponseWriter`.
+   - [prompt_guard.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/prompt_guard.go#L42-L127) (`ExecPreRouting`) only inspects `CanReq.Messages` and `CanReq.SystemPrompt`. Yet it is exposed to internal database connections and raw request bodies.
+   - [prometheus_metrics.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/prometheus_metrics.go#L75-L147) (`ExecPostUpstream`) only reads telemetry metadata, but receives mutable control-flow flags (`Stop`, `StopStatusCode`) and mutation fields (`ExtraHeaders`, `RemoveHeaders`).
+2. **Invalid State Exposure Across Lifecycle Phases:**
+   - In `PreAuth` plugins, `pctx.APIKey`, `pctx.User`, and `pctx.Tenant` are always `nil` because authentication hasn&#x27;t occurred.
+   - `pctx.Duration` and `pctx.StatusCode` are unpopulated during `PreAuth`, `PostAuth`, and `PreRouting`.
+   - Forcing plugins to accept fields that are invalid or nil in their stage leads to defensive programming (`if pctx.CanReq == nil`, `if pctx.APIKey != nil`) and runtime `nil` pointer panics.
+3. **Security &amp; Integrity Risks:**
+   - Any third-party or internal plugin has write access to mutate `pctx.Postgres` or rewrite `pctx.APIKey` permissions before routing occurs.
+
+---
+
+### 2.2. Dependency Inversion Principle (DIP) — *Severity: Critical*
+&gt; *&quot;High-level modules should not depend on low-level modules. Both should depend on abstractions. Abstractions should not depend on details. Details should depend on abstractions.&quot;*
+
+#### Concrete Infrastructure Leaks
+The plugin abstraction layer (`internal/plugin`) directly imports and couples to concrete infrastructure packages:
+
+```go
+// internal/plugin/plugin.go
+import (
+    &quot;llm-gateway/internal/db&quot;     // Concrete DB package!
+    &quot;net/http&quot;                    // Transport layer!
+)
+
+type PluginContext struct {
+    ResponseWriter http.ResponseWriter // Concrete HTTP transport
+    Redis          *db.RedisClient     // Concrete Redis struct
+    Postgres       *db.PostgresDB      // Concrete Postgres struct
+    ...
+}
+```
+
+#### Code Evidence: Plugins Direct Access to Concrete DBs
+1. **`RateLimitingPlugin` ([rate_limiting.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/rate_limiting.go#L39)):**
+   ```go
+   allowed, err := pctx.Redis.AllowRequest(pctx.Ctx, fmt.Sprintf(&quot;plugin:rate_limiting:%s&quot;, keyIdentifier), rpm)
+   ```
+   The plugin depends directly on `*db.RedisClient`. It cannot be used with an in-memory rate limiter, an Envoy/Redis cluster, or an alternative key-value store.
+2. **`BudgetControlPlugin` ([budget_control.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/budget_control.go#L57-L67)):**
+   ```go
+   cachedSpent, cErr := pctx.Redis.GetCachedBudgetSpent(pctx.Ctx, keyID)
+   ...
+   spent, err = pctx.Postgres.GetSpentCostByKeyID(pctx.APIKey.ID)
+   ...
+   _ = pctx.Redis.SetCachedBudgetSpent(pctx.Ctx, keyID, spent, 60*time.Second)
+   ```
+   `BudgetControlPlugin` reaches directly into both concrete PostgreSQL and concrete Redis clients!
+3. **`SemanticCachePlugin` ([semantic_cache.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/semantic_cache.go#L37,L63)):**
+   ```go
+   cachedData, err := pctx.Redis.GetRaw(pctx.Ctx, cacheKey)
+   ...
+   _ = pctx.Redis.SetRaw(pctx.Ctx, cacheKey, respBytes, time.Duration(ttlSeconds)*time.Second)
+   ```
+
+#### Consequence: Untestable Architecture
+In [builtin_test.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/builtin_test.go), unit tests exist for `pii-masking`, `prompt-guard`, `header-transform`, `ip-restriction`, `canary`, and `watermarking`. 
+
+However, **there are zero unit tests for `RateLimitingPlugin`, `SemanticCachePlugin`, `RetryCircuitBreakerPlugin`, or `BudgetControlPlugin` with real storage**. Because `pctx.Redis` and `pctx.Postgres` are concrete pointers (and not interfaces), writing mock unit tests without booting a Docker container or live database is virtually impossible.
+
+#### Internal Dependency Instantiation (Hidden Dependencies)
+In [audit_trail.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/audit_trail.go#L20-L22) and [webhook_notifier.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/webhook_notifier.go#L20-L22):
+```go
+func NewAuditTrailPlugin() *AuditTrailPlugin {
+    return &amp;AuditTrailPlugin{
+        httpClient: &amp;http.Client{Timeout: 5 * time.Second},
+    }
+}
+```
+Plugins instantiate hardcoded concrete `&amp;http.Client{}` instances internally. They cannot be injected with custom transports, TLS configs, retry policies, or mock HTTP clients for testing.
+
+---
+
+### 2.3. Single Responsibility Principle (SRP) — *Severity: High*
+&gt; *&quot;A module should have one, and only one, reason to change.&quot;*
+
+1. **`PluginEngine` ([engine.go](file:///data/per-pro/llm-gateway/internal/plugin/engine.go)):**
+   Accumulates at least 5 distinct concerns:
+   - **Local In-Memory Cache Management:** `cachedBindings`, `lastLoaded`, `cacheTTL`, `ReloadBindings()`, `InvalidateCache()`.
+   - **Background Synchronization:** `StartBackgroundSync()` runs a ticker routine.
+   - **Distributed Event Messaging:** `StartRedisSubscriber()` listens on Redis Pub/Sub channels.
+   - **Scope Resolution &amp; Specificity Ranking:** Evaluates hierarchical rules in `ResolveEffectiveBindings()`.
+   - **Hook Dispatch &amp; Concurrency Control:** Iterates bindings, handles asynchronous goroutine dispatch for observability, and manages timeouts.
+   *Impact:* Changes to caching policies, Redis pub/sub topics, scope hierarchy, or lifecycle hook dispatch all force modifications to `engine.go`.
+
+2. **Builtin Plugins Violating SRP:**
+   - **`SemanticCachePlugin` ([semantic_cache.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/semantic_cache.go#L42-L50)):**
+     Instead of just checking a cache store, it formats HTTP headers (`Content-Type`, `X-Cache`), writes directly to `pctx.ResponseWriter`, writes status code `http.StatusOK`, and sets `pctx.Stop = true`. It conflates cache querying with HTTP transport output streaming.
+   - **`BudgetControlPlugin` ([budget_control.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/budget_control.go#L50-L89)):**
+     Evaluates tenant/key budget hierarchies, queries database and Redis cache, formats JSON HTTP error bodies, and writes warnings to HTTP headers.
+
+---
+
+### 2.4. Open/Closed Principle (OCP) — *Severity: Medium/High*
+&gt; *&quot;Software entities should be open for extension, but closed for modification.&quot;*
+
+1. **Rigid Lifecycle Pipeline:**
+   `HookType` is closed: `HookPreAuth`, `HookPostAuth`, `HookPreRouting`, `HookPostUpstream`.
+   `PluginEngine` contains hardcoded runner methods: `RunPreAuth`, `RunPostAuth`, `RunPreRouting`, `RunPostUpstream`.
+   Adding a new stage (e.g. `PreUpstream` after load balancer selection, `OnStreamChunk` for streaming response tokens, `OnError` for fallback interceptors) requires:
+   - Adding a new `HookType` constant.
+   - Defining a new interface (`PreUpstreamPlugin`).
+   - Adding a new runner method (`RunPreUpstream`) in `PluginEngine`.
+   - Modifying `gateway.go` call sites.
+   It cannot be extended without modifying core engine code.
+
+2. **Hardcoded Scope Resolution ([engine.go](file:///data/per-pro/llm-gateway/internal/plugin/engine.go#L167-L175,L201-L228)):**
+   Scope specificity ranks and scope matching logic are hardcoded via a static map (`scopeSpecificity`) and a rigid `switch b.ScopeLevel` statement. Adding a new organizational scope level (e.g., `workspace`, `organization`, `environment`) requires modifying `ResolveEffectiveBindings`.
+
+3. **Untyped Dynamic Configurations (`map[string]any`):**
+   Every plugin relies on [helpers.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/helpers.go) to dynamically unpack `cfg map[string]any` using type assertions (`getIntConfig`, `getStringConfig`). There is no typed configuration validation, schema introspection, or strongly typed configuration strategy.
+
+---
+
+### 2.5. Liskov Substitution Principle (LSP) — *Severity: High*
+&gt; *&quot;Objects of a superclass should be replaceable with objects of a subclass without affecting the correctness of the program.&quot;*
+
+#### 1. Inconsistent Halt and Termination Contracts
+When a plugin decides to block or short-circuit a request, the mechanism is inconsistent across plugins:
+- **`IPRestrictionPlugin` / `PromptGuardPlugin`:** Mutate `pctx.Stop = true`, `pctx.StopStatusCode = 400`, `pctx.StopErrorBody = []byte(...)`, and return `nil`.
+- **`SemanticCachePlugin`:** Directly calls `pctx.ResponseWriter.WriteHeader(200)` and `pctx.ResponseWriter.Write(cachedData)`, sets `pctx.Stop = true`, and returns `nil`.
+- **General Error Handling:** Other plugins might return a non-nil `error` from `Exec*`, which causes `PluginEngine` to immediately return that error.
+If a caller substitutes one blocking plugin for another, the side effects on `http.ResponseWriter` and the gateway flow are radically different and unpredictable.
+
+#### 2. `AsyncPostUpstreamPlugin` Behavioral Fracture ([plugin.go](file:///data/per-pro/llm-gateway/internal/plugin/plugin.go#L74-L79), [engine.go](file:///data/per-pro/llm-gateway/internal/plugin/engine.go#L368-L384))
+```go
+type AsyncPostUpstreamPlugin interface {
+    IsAsyncPostUpstream() bool
+}
+```
+`PluginEngine.RunPostUpstream` inspects whether the plugin implements `AsyncPostUpstreamPlugin`:
+- If `true`: It executes `targetPlugin.ExecPostUpstream` inside a background goroutine, **completely ignores any returned error** (`_ = ...`), and returns immediately.
+- If `false`: It executes synchronously in-line and aborts on error.
+
+This violates LSP because implementing this interface breaks the contract of `PostUpstreamPlugin`:
+1. The caller cannot rely on execution guarantees or error propagation.
+2. Any mutations to `pctx` inside an async plugin are silently discarded.
+3. **Data Race Danger:** The engine creates a shallow copy `pctxCopy := *pctx`. However, pointers (`pctxCopy.ExtraHeaders`, `pctxCopy.CanReq`, `pctxCopy.ResponseWriter`) point to the **same underlying memory** as the main request goroutine. If an async plugin reads/writes `ExtraHeaders` or `CanReq` while `gateway.go` is serializing the response, Go&#x27;s race detector triggers data race errors.
+
+---
+
+## 3. Concurrency &amp; Architectural Defects in Builtin Plugins
+
+Beyond pure OOP principles, the review identified several critical implementation defects in `internal/plugin/builtin`:
+
+1. **Race Condition in `CanaryTrafficSplitterPlugin` ([canary_traffic_splitter.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/canary_traffic_splitter.go#L13,L49)):**
+   ```go
+   type CanaryTrafficSplitterPlugin struct {
+       rng *rand.Rand // NOT concurrency-safe!
+   }
+   func (p *CanaryTrafficSplitterPlugin) ExecPreRouting(...) error {
+       roll := p.rng.Intn(100) // DATA RACE on concurrent requests!
+   }
+   ```
+   `math/rand.Rand` is not thread-safe. Concurrent requests calling `ExecPreRouting` on the singleton plugin instance will corrupt internal RNG state or panic.
+2. **Double Asynchronous Goroutine Spawning:**
+   In [webhook_notifier.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/webhook_notifier.go#L33,L103) and [audit_trail.go](file:///data/per-pro/llm-gateway/internal/plugin/builtin/audit_trail.go#L33,L65):
+   Both plugins implement `IsAsyncPostUpstream() bool { return true }` (so `PluginEngine` already spawns a background goroutine). Inside `ExecPostUpstream`, they execute `go func(...)` *again*! The outer goroutine finishes instantly and cancels its context (`defer cancel()`), while the un-tracked inner goroutine runs with a detached `context.Background()`.
+
+---
+
+## 4. Recommended Design Patterns &amp; Target Architecture
+
+To resolve the ISP and DIP violations while establishing a clean, extensible plugin architecture, four core design patterns should be introduced:
+
+```
++-------------------------------------------------------------------------------+
+|                             Gateway Request Pipeline                          |
++-------------------------------------------------------------------------------+
+                                      |
+                                      v
+   +-------------------------------------------------------------------------+
+   |             Pattern 1: Chain of Responsibility (Interceptor)           |
+   |                                                                         |
+   |   [AuthInterceptor] -&gt; [RoutingInterceptor] -&gt; [Upstream Execution]    |
+   +-------------------------------------------------------------------------+
+                                      |
+             +------------------------+------------------------+
+             |                                                 |
+             v                                                 v
++-----------------------------+               +---------------------------------+
+| Pattern 2: ISP Segregated   |               | Pattern 3: Dependency Inversion |
+| Request &amp; Filter Contexts   |               | &amp; Strategy Pattern              |
+|                             |               |                                 |
+| - PreAuthContext (ClientIP) |               | - RateLimiter interface         |
+| - PreRoutingContext (Prompt)|               | - CacheStore interface          |
+| - Action: Continue / Halt   |               | - Injected via constructors     |
++-----------------------------+               +---------------------------------+
+                                      |
+                                      v
+   +-------------------------------------------------------------------------+
+   |                Pattern 4: Observer / Event Bus (Pub-Sub)                |
+   |                                                                         |
+   |              Publish Event: RequestCompletedEvent                       |
+   |     +-------------------+-------------------+--------------------+      |
+   |     v                   v                   v                    v      |
+   | [PrometheusMetrics] [LangfuseTrace]  [AuditTrailLogger] [WebhookNotifier]|
+   +-------------------------------------------------------------------------+
+```
+
+### Pattern 1: Chain of Responsibility (Interceptor Pipeline)
+Instead of hardcoding phase runners (`RunPreAuth`, `RunPostAuth`), treat request filtering as an interceptor pipeline (similar to gRPC interceptors or HTTP middleware).
+- Each interceptor decides whether to modify the request, halt execution cleanly via a standard `ExecutionResult`, or delegate to `next()`.
+
+### Pattern 2: Role-Based Interface Segregation (ISP Solution)
+Segregate `PluginContext` into phase-specific, read-only interfaces paired with narrow action controllers:
+- `PreAuthContext`: Provides `ClientIP()` and `Header(key)`.
+- `PreRoutingContext`: Provides `CanonicalRequest()`, `Model()`, `User()`, `Tenant()`.
+- `ExecutionController`: Exposes `Halt(statusCode int, err error)` and `SetHeader(k, v string)`.
+Plugins never receive database pointers or transport writer objects.
+
+### Pattern 3: Dependency Inversion via Interfaces &amp; Constructor Injection (DIP Solution)
+Extract storage requirements into focused domain interfaces:
+- `RateLimiter`: `Allow(ctx, key string, limit int) (bool, error)`
+- `CacheStore`: `Get(ctx, key string) ([]byte, bool, error)` and `Set(ctx, key string, val []byte, ttl time.Duration) error`
+- `CostCalculator`: `GetSpent(ctx, tenantID, keyID uuid.UUID) (float64, error)`
+Inject these interfaces into the plugin structs when registering them in the registry:
+`NewRateLimitingPlugin(limiter RateLimiter)`
+
+### Pattern 4: Observer / Event-Driven Architecture (Observability Plugins)
+Separate **mutating plugins** (which alter requests/responses) from **observability plugins** (metrics, logging, traces, webhooks).
+- Observability plugins should not be interceptors. They are **Observers** that subscribe to `RequestCompletedEvent`.
+- An in-memory or worker-pool `EventBus` broadcasts events asynchronously without hacking marker interfaces (`IsAsyncPostUpstream`) or risking data races on shared request pointers.
+
+---
+
+## 5. Concrete Refactoring Code Blueprints
+
+### Refactoring 1: Decoupling Storage Dependencies (DIP)
+
+#### Before: Concrete Redis coupling in `RateLimitingPlugin`
+```go
+// Direct dependency on internal concrete database package
+type RateLimitingPlugin struct{}
+
+func (p *RateLimitingPlugin) ExecPostAuth(pctx *plugin.PluginContext, cfg map[string]any) error {
+    rpm := getIntConfig(cfg, &quot;requests_per_minute&quot;, 0)
+    // Concrete dependency embedded inside context:
+    allowed, err := pctx.Redis.AllowRequest(pctx.Ctx, &quot;key&quot;, rpm)
+    ...
+}
+```
+
+#### After: Inverted dependency using `RateLimiter` interface
+```go
+// 1. Domain abstraction owned by plugin layer
+type RateLimiter interface {
+    Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error)
+}
+
+// 2. Plugin depends strictly on abstraction; injected via constructor
+type RateLimitingPlugin struct {
+    limiter RateLimiter
+}
+
+func NewRateLimitingPlugin(limiter RateLimiter) *RateLimitingPlugin {
+    return &amp;RateLimitingPlugin{limiter: limiter}
+}
+
+func (p *RateLimitingPlugin) Execute(ctx PreRoutingContext, ctrl ActionController, cfg RateLimitConfig) error {
+    if cfg.RequestsPerMinute &lt;= 0 {
+        return nil
+    }
+    allowed, err := p.limiter.Allow(ctx.Context(), ctx.IdentityKey(), cfg.RequestsPerMinute, time.Minute)
+    if err != nil {
+        return nil // Fail open
+    }
+    if !allowed {
+        ctrl.Halt(http.StatusTooManyRequests, errors.New(&quot;rate limit exceeded&quot;))
+    }
+    return nil
+}
+```
+*Benefits:* `RateLimitingPlugin` can be unit tested with a 5-line mock struct in `builtin_test.go` without running Redis.
+
+---
+
+### Refactoring 2: Segregating Plugin Contexts (ISP)
+
+#### Before: Monolithic context passed to every hook
+```go
+// 20+ fields, mutable pointers, DB connections exposed to all
+func (p *IPRestrictionPlugin) ExecPreAuth(pctx *plugin.PluginContext, cfg map[string]any) error {
+    clientIP := pctx.ClientIP
+    // pctx has pctx.Postgres, pctx.Redis, pctx.ResponseWriter, etc.
+}
+```
+
+#### After: Role-focused Segregated Contexts
+```go
+// Read-only inspection interface for PreAuth phase
+type PreAuthContext interface {
+    Context() context.Context
+    ClientIP() net.IP
+    Header(key string) string
+}
+
+// Write-only / control interface for pipeline intervention
+type PipelineController interface {
+    HaltWithStatus(statusCode int, errorCode string, message string)
+    AddHeader(key, value string)
+    IsHalted() bool
+}
+
+// Segregated plugin contract
+type PreAuthPlugin interface {
+    Name() string
+    ExecPreAuth(ctx PreAuthContext, ctrl PipelineController, cfg map[string]any) error
+}
+
+// Implementation only accesses what it declares:
+func (p *IPRestrictionPlugin) ExecPreAuth(ctx PreAuthContext, ctrl PipelineController, cfg map[string]any) error {
+    ip := ctx.ClientIP()
+    if p.isBlocked(ip) {
+        ctrl.HaltWithStatus(http.StatusForbidden, &quot;ip_forbidden&quot;, &quot;Access denied by IP policy&quot;)
+    }
+    return nil
+}
+```
+*Benefits:* Plugins cannot accidentally modify database state, mutate response writers directly, or experience nil-pointer bugs from uninitialized downstream fields.
+
+---
+
+### Refactoring 3: Observer Pattern for Observability Plugins
+
+#### Before: Marker interface and shallow-copy background goroutine
+```go
+// engine.go
+if asyncP, isAsync := inst.(AsyncPostUpstreamPlugin); isAsync &amp;&amp; asyncP.IsAsyncPostUpstream() {
+    pctxCopy := *pctx // Shallow copy shares maps and pointers!
+    go func(...) {
+        _ = targetPlugin.ExecPostUpstream(&amp;cCtx, rCopy, cConfig) // Error swallowed!
+    }(...)
+}
+```
+
+#### After: Clean Domain Event and Observer Subscription
+```go
+// Immutable Domain Event generated when an LLM request completes
+type RequestCompletedEvent struct {
+    Timestamp        time.Time
+    Duration         time.Duration
+    StatusCode       int
+    Model            string
+    Provider         string
+    TenantID         string
+    APIKeyPrefix     string
+    PromptTokens     int
+    CompletionTokens int
+    TotalTokens      int
+    Error            error
+}
+
+// Observer contract
+type RequestObserver interface {
+    OnRequestCompleted(event RequestCompletedEvent)
+}
+
+// Event Dispatcher (Worker Pool or Channel)
+type EventBus struct {
+    observers []RequestObserver
+    eventChan chan RequestCompletedEvent
+}
+
+func (b *EventBus) Publish(event RequestCompletedEvent) {
+    select {
+    case b.eventChan &lt;- event:
+    default:
+        // Prevent blocking hot-path if buffer full; log metric
+    }
+}
+
+// Prometheus plugin is simply an observer
+type PrometheusObserver struct{}
+
+func (p *PrometheusObserver) OnRequestCompleted(e RequestCompletedEvent) {
+    promRequestsTotal.WithLabelValues(e.TenantID, e.Model, e.Provider, strconv.Itoa(e.StatusCode)).Inc()
+    promRequestDuration.WithLabelValues(e.TenantID, e.Model, e.Provider, strconv.Itoa(e.StatusCode)).Observe(e.Duration.Seconds())
+}
+```
+*Benefits:* Eliminates all goroutine data races, eliminates double `go func` anti-patterns, decouples observability from the synchronous request path, and prevents metrics/webhook failures from impacting client traffic.
+
+---
+
+## 6. Actionable Implementation Roadmap
+
+```
+Phase 1: Urgent Bug Fixes (Sprint 1)
+  ├── 1. Fix CanaryTrafficSplitterPlugin data race (replace rand.Rand with rand/v2 or sync.Mutex)
+  └── 2. Remove double goroutine spawning in WebhookNotifier &amp; AuditTrail
+
+Phase 2: Dependency Inversion (Sprint 2)
+  ├── 1. Define RateLimiter, CacheStore, and QuotaReader interfaces in internal/plugin
+  ├── 2. Update Builtin Plugin constructors to accept these interfaces
+  └── 3. Implement comprehensive unit tests in builtin_test.go using mocks
+
+Phase 3: Interface Segregation &amp; Context Refactoring (Sprint 3)
+  ├── 1. Split PluginContext into PreAuthContext, PreRoutingContext, PostUpstreamContext
+  ├── 2. Introduce PipelineController to replace mutable Stop/StopStatusCode/StopErrorBody
+  └── 3. Remove concrete *db.RedisClient, *db.PostgresDB, and http.ResponseWriter from PluginContext
+
+Phase 4: Event-Driven Observability (Sprint 4)
+  ├── 1. Create RequestCompletedEvent and EventBus
+  ├── 2. Migrate Prometheus, Langfuse, AuditTrail, and Webhook plugins to Event Observers
+  └── 3. Deprecate AsyncPostUpstreamPlugin marker interface
+```
+</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function showTab(id) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+  const target = document.getElementById('tab-' + id);
+  if (target) target.style.display = 'block';
+  document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+</script>
+</body>
+</html>
