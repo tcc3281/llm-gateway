@@ -51,6 +51,15 @@ jobs:
             --project=gdgdevfest2026-515408 \
             --uniform-bucket-level-access
 
+      - name: Grant Secret Accessor to Cloud Run Service Account
+        run: |
+          gcloud projects add-iam-policy-binding gdgdevfest2026-515408 \
+            --member="serviceAccount:865525096722-compute@developer.gserviceaccount.com" \
+            --role="roles/secretmanager.secretAccessor" \
+            --condition=None || true
+            --project=gdgdevfest2026-515408 \
+            --uniform-bucket-level-access
+
       - name: Ensure Artifact Registry Repository Exists
         run: |
           gcloud artifacts repositories describe llm-gateway-repo --location=asia-east1 --project=gdgdevfest2026-515408 || \

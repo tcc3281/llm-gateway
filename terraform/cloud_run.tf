@@ -78,7 +78,9 @@ resource "google_cloud_run_v2_service" "gateway" {
     google_sql_database_instance.postgres,
     google_redis_instance.redis,
     google_secret_manager_secret_version.admin_api_key_ver,
-    google_secret_manager_secret_version.db_password_ver
+    google_secret_manager_secret_version.db_password_ver,
+    google_secret_manager_secret_iam_member.admin_api_key_access,
+    google_secret_manager_secret_iam_member.db_password_access
   ]
 }
 
