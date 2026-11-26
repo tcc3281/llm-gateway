@@ -57,8 +57,6 @@ jobs:
             --member="serviceAccount:865525096722-compute@developer.gserviceaccount.com" \
             --role="roles/secretmanager.secretAccessor" \
             --condition=None || true
-            --project=gdgdevfest2026-515408 \
-            --uniform-bucket-level-access
 
       - name: Ensure Artifact Registry Repository Exists
         run: |
