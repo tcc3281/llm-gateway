@@ -145,7 +145,7 @@ func main() {
 
 	publicServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
-		Handler:      logRequests(publicMux),
+		Handler:      logRequests(corsMiddleware(publicMux)),
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -153,7 +153,7 @@ func main() {
 
 	adminServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.AdminPort),
-		Handler:      adminMux,
+		Handler:      corsMiddleware(adminMux),
 		ReadTimeout:  120 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -237,6 +237,39 @@ func (r *statusRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// corsMiddleware intercepts cross-origin requests, sets permissive CORS headers,
+// and answers OPTIONS preflight checks with 204 No Content.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
+		reqHeaders := r.Header.Get("Access-Control-Request-Headers")
+		if reqHeaders != "" {
+			w.Header().Set("Access-Control-Allow-Headers", reqHeaders)
+		} else {
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Admin-API-Key, X-Requested-With, Accept, Origin, Cache-Control, Pragma, X-Request-Id")
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type, Date, X-Request-Id")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 // connectPostgresWithRetry waits for PostgreSQL to become available in the
