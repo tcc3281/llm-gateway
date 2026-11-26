@@ -27,6 +27,27 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Write GCP SA Key for Terraform
+        working-directory: terraform
+        run: |
+          echo '${{ secrets.GCP_SA_KEY }}' > gdgdevfest2026-515408-6b41e29434d7.json
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Enable GCP APIs & Provision Infrastructure Base
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve \
+            -target=google_project_service.enabled_apis \
+            -target=google_artifact_registry_repository.app_repo
+
       - name: Configure Docker for Artifact Registry
         run: |
           gcloud auth configure-docker asia-east1-docker.pkg.dev --quiet
@@ -57,21 +78,7 @@ jobs:
             asia-east1-docker.pkg.dev/gdgdevfest2026-515408/llm-gateway-repo/llm-gateway:latest
             asia-east1-docker.pkg.dev/gdgdevfest2026-515408/llm-gateway-repo/llm-gateway:${{ github.sha }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.7.0"
-
-      - name: Write GCP SA Key for Terraform
-        working-directory: terraform
-        run: |
-          echo '${{ secrets.GCP_SA_KEY }}' > gdgdevfest2026-515408-6b41e29434d7.json
-
-      - name: Terraform Init
-        working-directory: terraform
-        run: terraform init
-
-      - name: Terraform Apply
+      - name: Complete Terraform Apply (Cloud Run & Services)
         working-directory: terraform
         run: |
           terraform apply -auto-approve \
