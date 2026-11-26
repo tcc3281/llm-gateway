@@ -1,0 +1,2609 @@
+openapi: 3.0.3
+info:
+  title: LLM Gateway API (Unified Architectural Specification)
+  description: |
+    Unified OpenAPI 3.0 specification for the LLM Gateway, partitioned into:
+    - **Data Plane (Inference Proxy)** on Port 8080: OpenAI/Anthropic chat, messages, embeddings, models, streaming SSE.
+    - **Control Plane (Management Engine)** on Port 8081: Multi-tenant partitioning, IAM, API keys, Virtual models, Plugins, Analytics, and Alerts.
+
+    For modular partition specifications, see:
+    - [Data Plane OpenAPI](file://docs/openapi/data-plane.yaml)
+    - [Control Plane OpenAPI](file://docs/openapi/control-plane.yaml)
+  version: 0.4.0
+  contact:
+    name: LLM Gateway Core Team
+    url: https://github.com/tcc3281/llm-gateway
+
+servers:
+  - url: http://localhost:8080
+    description: Data Plane / Proxy Engine (Inference Traffic)
+  - url: http://localhost:8081
+    description: Control Plane / Management Core (Administrative Traffic)
+
+tags:
+  - name: Data Plane - Chat & Messages
+    description: High-throughput OpenAI and Anthropic compatible inference proxy.
+  - name: Data Plane - Embeddings
+    description: Text embedding generation.
+  - name: Data Plane - Models
+    description: Public model and virtual alias catalog.
+  - name: Control Plane - Auth & Profile
+    description: Administrative authentication and credentials.
+  - name: Control Plane - Tenants & Billing
+    description: Multi-tenant organizational partitioning, balances, and billing.
+  - name: Control Plane - Users & API Keys
+    description: Identity management, rate limits, budgets, and key model policies.
+  - name: Control Plane - Groups & IAM
+    description: RBAC/IAM teams, AWS-style JSON permission policies, and role assignment.
+  - name: Control Plane - Providers & Models
+    description: Upstream credentials and pricing catalogs.
+  - name: Control Plane - Virtual Models
+    description: Dynamic virtual model routing and traffic split weights.
+  - name: Control Plane - Plugins & Guardrails
+    description: Multi-scope pluggable middleware pipeline (Prompt Guard, PII Masking, etc.).
+  - name: Control Plane - Observability
+    description: Dashboard telemetry, member analytics, zero-knowledge traces, and audit logs.
+  - name: Control Plane - Alerts
+    description: Real-time incident rules and multi-channel webhook notifications.
+  - name: System & Diagnostics
+    description: Health probes and Prometheus metrics across planes.
+
+paths:
+  # ============================================================================
+  # DATA PLANE ENDPOINTS (:8080)
+  # ============================================================================
+  /v1/chat/completions:
+    servers:
+      - url: http://localhost:8080
+        description: Data Plane Proxy
+    post:
+      tags:
+        - Data Plane - Chat & Messages
+      summary: OpenAI Compatible Chat Completions
+      description: Routes chat requests to OpenAI, Gemini, or custom backends with fallbacks and streaming SSE.
+      operationId: dataPlaneChatCompletions
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: x-upstream-api-key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAIChatCompletionRequest'
+      responses:
+        '200':
+          description: Chat completion response or SSE stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '402':
+          description: Insufficient tenant or key balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '429':
+          description: Rate limit exceeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/messages:
+    servers:
+      - url: http://localhost:8080
+        description: Data Plane Proxy
+    post:
+      tags:
+        - Data Plane - Chat & Messages
+      summary: Anthropic Compatible Messages
+      description: Routes Anthropic Claude format message requests.
+      operationId: dataPlaneAnthropicMessages
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: anthropic-version
+          in: header
+          required: false
+          schema:
+            type: string
+            default: '2023-06-01'
+        - name: x-upstream-api-key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnthropicMessageRequest'
+      responses:
+        '200':
+          description: Anthropic message response or SSE stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicMessageResponse'
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+        '401':
+          description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+
+  /v1/embeddings:
+    servers:
+      - url: http://localhost:8080
+        description: Data Plane Proxy
+    post:
+      tags:
+        - Data Plane - Embeddings
+      summary: OpenAI Compatible Embeddings
+      description: Generates embedding vectors from prompt inputs.
+      operationId: dataPlaneEmbeddings
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAIEmbeddingRequest'
+      responses:
+        '200':
+          description: Embeddings array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIEmbeddingResponse'
+
+  /v1/models:
+    servers:
+      - url: http://localhost:8080
+        description: Data Plane Proxy
+    get:
+      tags:
+        - Data Plane - Models
+      summary: List Models & Virtual Aliases
+      description: Lists all available physical provider models and virtual model aliases.
+      operationId: dataPlaneListModels
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Models list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                    example: list
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderModel'
+
+  /v1/models/{id}:
+    servers:
+      - url: http://localhost:8080
+        description: Data Plane Proxy
+    get:
+      tags:
+        - Data Plane - Models
+      summary: Retrieve Model
+      description: Retrieves a model or alias by identifier.
+      operationId: dataPlaneGetModel
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Model details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderModel'
+        '404':
+          description: Model not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  # ============================================================================
+  # CONTROL PLANE ENDPOINTS (:8081)
+  # ============================================================================
+  /admin/auth/login:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Auth & Profile
+      summary: Admin Session Login
+      operationId: cpAdminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Session token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+
+  /admin/auth/me:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Auth & Profile
+      summary: Current Profile
+      operationId: cpGetCurrentUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: User object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /admin/auth/password:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Auth & Profile
+      summary: Change Password
+      operationId: cpChangePassword
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - current_password
+                - new_password
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+      responses:
+        '200':
+          description: Password updated.
+
+  /admin/tenants:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: List Tenant Partitions
+      operationId: cpListTenants
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: List of tenants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+    post:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: Create Tenant Partition
+      operationId: cpCreateTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [internal, external]
+                  default: external
+                billing_mode:
+                  type: string
+                  enum: [prepaid, postpaid]
+                  default: prepaid
+                budget_limit_monthly:
+                  type: number
+                  format: float
+                allowed_models:
+                  type: array
+                  items:
+                    type: string
+                is_active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Tenant created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+
+  /admin/tenants/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: Get Tenant
+      operationId: cpGetTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+    patch:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: Update Tenant
+      operationId: cpUpdateTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantPatch'
+      responses:
+        '200':
+          description: Updated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+    delete:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: Delete Tenant Partition
+      operationId: cpDeleteTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted.
+
+  /admin/tenants/{id}/topup:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: Top Up Tenant Credit Balance
+      operationId: cpTopUpTenantCredit
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopUpCreditRequest'
+      responses:
+        '200':
+          description: Balance updated transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantCreditTransaction'
+
+  /admin/tenants/{id}/transactions:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Tenants & Billing
+      summary: List Tenant Transactions
+      operationId: cpListTenantTransactions
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transactions.
+
+  /admin/users:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: List Users
+      operationId: cpListUsers
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+    post:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Create User
+      operationId: cpCreateUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - name
+              properties:
+                email:
+                  type: string
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, user]
+                password:
+                  type: string
+                tenant_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    patch:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Update User
+      operationId: cpUpdateUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                role:
+                  type: string
+                is_active:
+                  type: boolean
+                tenant_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: User updated.
+    delete:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Delete User
+      operationId: cpDeleteUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User deleted.
+
+  /admin/keys:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: List API Keys
+      operationId: cpListAPIKeys
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIKey'
+    post:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Provision API Key
+      operationId: cpCreateAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - name
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                tenant_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                budget_limit:
+                  type: number
+                rate_limit_rpm:
+                  type: integer
+                cache_ttl_seconds:
+                  type: integer
+                budget_period:
+                  type: string
+      responses:
+        '201':
+          description: Key created. Plaintext returned once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    $ref: '#/components/schemas/APIKey'
+                  key:
+                    type: string
+    patch:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Update API Key
+      operationId: cpUpdateAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                budget_limit:
+                  type: number
+                rate_limit_rpm:
+                  type: integer
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Key updated.
+    delete:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Revoke API Key
+      operationId: cpRevokeAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Key revoked.
+
+  /admin/keys/reactivate:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Reactivate Key
+      operationId: cpReactivateKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Key reactivated.
+
+  /admin/keys/{id}/models:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: List Key Model Policies
+      operationId: cpListKeyModelPolicies
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Model policies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KeyModelPolicy'
+    post:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Add Key Model Policy Rule
+      operationId: cpCreateKeyModelPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - model_pattern
+                - action
+              properties:
+                model_pattern:
+                  type: string
+                action:
+                  type: string
+                  enum: [allow, deny]
+      responses:
+        '201':
+          description: Rule created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyModelPolicy'
+
+  /admin/keys/{id}/models/{pid}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    delete:
+      tags:
+        - Control Plane - Users & API Keys
+      summary: Delete Key Model Policy Rule
+      operationId: cpDeleteKeyModelPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deleted.
+
+  /admin/groups:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: List IAM Groups
+      operationId: cpListGroups
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+    post:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Create IAM Group
+      operationId: cpCreateGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                budget_limit_monthly:
+                  type: number
+                rate_limit_rpm:
+                  type: integer
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+
+  /admin/groups/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Get Group
+      operationId: cpGetGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Group found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+    patch:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Update Group
+      operationId: cpUpdateGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                budget_limit_monthly:
+                  type: number
+                rate_limit_rpm:
+                  type: integer
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Group updated.
+    delete:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Delete Group
+      operationId: cpDeleteGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Group deleted.
+
+  /admin/groups/{id}/policies:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: List Group IAM Policies
+      operationId: cpListGroupPolicies
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupPolicy'
+    post:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Attach IAM Policy to Group
+      operationId: cpCreateGroupPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - policy
+              properties:
+                name:
+                  type: string
+                policy:
+                  type: object
+                priority:
+                  type: integer
+      responses:
+        '201':
+          description: Policy attached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPolicy'
+
+  /admin/groups/{id}/policies/{pid}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    patch:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Update IAM Policy
+      operationId: cpUpdateGroupPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                policy:
+                  type: object
+                priority:
+                  type: integer
+      responses:
+        '200':
+          description: Policy updated.
+    delete:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Detach IAM Policy
+      operationId: cpDeleteGroupPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy detached.
+
+  /admin/iam/actions:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: List Supported IAM Actions
+      operationId: cpGetIAMActions
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Actions list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /admin/groups/{id}/members:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: List Group Members
+      operationId: cpListGroupMembers
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Members.
+    post:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Add Member to Group
+      operationId: cpAddGroupMember
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                role:
+                  type: string
+                  enum: [member, admin]
+      responses:
+        '201':
+          description: Member added.
+
+  /admin/groups/{id}/members/{uid}/role:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    put:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Set Member Role
+      operationId: cpSetGroupMemberRole
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - role
+              properties:
+                role:
+                  type: string
+                  enum: [member, admin]
+      responses:
+        '200':
+          description: Role updated.
+
+  /admin/groups/{id}/members/{uid}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    delete:
+      tags:
+        - Control Plane - Groups & IAM
+      summary: Remove Member from Group
+      operationId: cpRemoveGroupMember
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Member removed.
+
+  /admin/providers:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Providers & Models
+      summary: List Provider Master Keys
+      operationId: cpListProviders
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Providers list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderKey'
+    post:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Set Provider Credentials
+      operationId: cpSetProviderKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - api_key
+              properties:
+                provider:
+                  type: string
+                api_key:
+                  type: string
+                  format: password
+                base_url:
+                  type: string
+                protocol:
+                  type: string
+                  enum: [openai, anthropic]
+                fallback_priority:
+                  type: integer
+      responses:
+        '200':
+          description: Provider saved.
+    delete:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Delete Provider
+      operationId: cpDeleteProviderKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: provider
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider deleted.
+
+  /admin/models:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Get Pricing Matrices
+      operationId: cpGetModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Pricing entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelPricing'
+    post:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Upsert Model Pricing
+      operationId: cpUpsertModelPricing
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - model_name
+                - prompt_price_per_1m
+                - completion_price_per_1m
+              properties:
+                provider:
+                  type: string
+                model_name:
+                  type: string
+                prompt_price_per_1m:
+                  type: number
+                completion_price_per_1m:
+                  type: number
+      responses:
+        '200':
+          description: Pricing saved.
+    delete:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Delete Model Pricing
+      operationId: cpDeleteModelPricing
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted.
+
+  /admin/models/catalog:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Get Discovered Remote Catalog
+      operationId: cpGetModelCatalog
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Catalog list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogModel'
+
+  /admin/models/sync:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Sync Catalog
+      operationId: cpSyncModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Synced.
+
+  /admin/models/discover:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Providers & Models
+      summary: Discover Provider Models
+      operationId: cpDiscoverModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+              properties:
+                provider:
+                  type: string
+      responses:
+        '200':
+          description: Discovered count.
+
+  /admin/virtual-models:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Virtual Models
+      summary: List Virtual Models
+      operationId: cpListVirtualModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Virtual models.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VirtualModel'
+    post:
+      tags:
+        - Control Plane - Virtual Models
+      summary: Create Virtual Model
+      operationId: cpCreateVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVirtualModelRequest'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualModel'
+
+  /admin/virtual-models/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Virtual Models
+      summary: Get Virtual Model
+      operationId: cpGetVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Virtual model found.
+    put:
+      tags:
+        - Control Plane - Virtual Models
+      summary: Update Virtual Model
+      operationId: cpUpdateVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVirtualModelRequest'
+      responses:
+        '200':
+          description: Updated.
+    delete:
+      tags:
+        - Control Plane - Virtual Models
+      summary: Delete Virtual Model
+      operationId: cpDeleteVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted.
+
+  /admin/plugins:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: List Plugins Catalog
+      operationId: cpListPlugins
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plugin'
+
+  /admin/plugins/{name}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: Get Plugin
+      operationId: cpGetPlugin
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Plugin.
+
+  /admin/plugin-bindings:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: List Plugin Bindings
+      operationId: cpListPluginBindings
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Active bindings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PluginBinding'
+    post:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: Bind Plugin to Scope
+      operationId: cpCreatePluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePluginBindingRequest'
+      responses:
+        '201':
+          description: Bound.
+
+  /admin/plugin-bindings/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: Get Plugin Binding
+      operationId: cpGetPluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Binding.
+    put:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: Update Plugin Binding
+      operationId: cpUpdatePluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePluginBindingRequest'
+      responses:
+        '200':
+          description: Updated.
+    delete:
+      tags:
+        - Control Plane - Plugins & Guardrails
+      summary: Delete Plugin Binding
+      operationId: cpDeletePluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted.
+
+  /admin/analytics/dashboard:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Dashboard Stats
+      operationId: cpGetDashboardStats
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics.
+
+  /admin/analytics/members:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Member Usage Analytics
+      operationId: cpGetMemberAnalytics
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Member metrics.
+
+  /admin/analytics/members/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Member Consumption Detail
+      operationId: cpGetMemberDetail
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Member detail.
+
+  /admin/analytics/stats:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Usage Stats By Interval
+      operationId: cpGetUsageStats
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Stats array.
+
+  /admin/logs:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Filter Usage Logs
+      operationId: cpGetUsageLogs
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Paginated logs.
+
+  /admin/logs/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Usage Log Detail & Structural Fingerprint
+      operationId: cpGetUsageLogDetail
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Log detail with RequestShape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageLogDetail'
+
+  /admin/audit-logs:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Observability
+      summary: Audit Trail Logs
+      operationId: cpListAuditLogs
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Audit logs.
+
+  /admin/alerts/rules:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Alerts
+      summary: List Alert Rules
+      operationId: cpListAlertRules
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Rules list.
+    post:
+      tags:
+        - Control Plane - Alerts
+      summary: Create Alert Rule
+      operationId: cpCreateAlertRule
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRule'
+      responses:
+        '201':
+          description: Rule created.
+
+  /admin/alerts/rules/{id}:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    patch:
+      tags:
+        - Control Plane - Alerts
+      summary: Update Alert Rule
+      operationId: cpUpdateAlertRule
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRulePatch'
+      responses:
+        '200':
+          description: Rule updated.
+    delete:
+      tags:
+        - Control Plane - Alerts
+      summary: Delete Alert Rule
+      operationId: cpDeleteAlertRule
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deleted.
+
+  /admin/alerts/history:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - Control Plane - Alerts
+      summary: List Alert Dispatch History
+      operationId: cpListAlertHistory
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Dispatch history.
+
+  /admin/alerts/test:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    post:
+      tags:
+        - Control Plane - Alerts
+      summary: Test Alert Webhook
+      operationId: cpTestAlertWebhook
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestWebhookRequest'
+      responses:
+        '200':
+          description: Webhook delivered.
+
+  /admin/system/info:
+    servers:
+      - url: http://localhost:8081
+        description: Control Plane Admin
+    get:
+      tags:
+        - System & Diagnostics
+      summary: Control Plane System Info
+      operationId: cpGetSystemInfo
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Diagnostics.
+
+  /health:
+    get:
+      tags:
+        - System & Diagnostics
+      summary: Health Probe
+      description: Returns health status of the addressed plane.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Health check OK.
+
+  /metrics:
+    get:
+      tags:
+        - System & Diagnostics
+      summary: Prometheus Metrics
+      description: Prometheus metrics exposition.
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus metrics.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+      description: "Data Plane API key (`Authorization: Bearer sk-gw-...`)."
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: "Data Plane API key header (`x-api-key: sk-gw-...`)."
+    AdminApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Admin-API-Key
+      description: Root Break-Glass Administration API Key.
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Admin session token from `/admin/auth/login`.
+
+  schemas:
+    OpenAIChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          example: fast-chat
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenAIChatMessage'
+        stream:
+          type: boolean
+          default: false
+
+    OpenAIChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool, function]
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    OpenAIChatCompletionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+        usage:
+          type: object
+
+    AnthropicMessageRequest:
+      type: object
+      required:
+        - model
+        - messages
+        - max_tokens
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+        max_tokens:
+          type: integer
+        stream:
+          type: boolean
+
+    AnthropicMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          example: message
+        role:
+          type: string
+          example: assistant
+        content:
+          type: array
+          items:
+            type: object
+
+    OpenAIEmbeddingRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+        input:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+
+    OpenAIEmbeddingResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            type: object
+
+    ProviderModel:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          example: model
+        created:
+          type: integer
+        owned_by:
+          type: string
+
+    OpenAIErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            type:
+              type: string
+            code:
+              type: string
+
+    AnthropicErrorResponse:
+      type: object
+      properties:
+        type:
+          type: string
+        error:
+          type: object
+          properties:
+            type:
+              type: string
+            message:
+              type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        is_root:
+          type: boolean
+        is_active:
+          type: boolean
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        key_prefix:
+          type: string
+        name:
+          type: string
+        budget_limit:
+          type: number
+        rate_limit_rpm:
+          type: integer
+        is_active:
+          type: boolean
+
+    KeyModelPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        key_id:
+          type: string
+          format: uuid
+        model_pattern:
+          type: string
+        is_allowlist:
+          type: boolean
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        billing_mode:
+          type: string
+        credit_balance:
+          type: number
+        budget_limit_monthly:
+          type: number
+        allowed_models:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    TenantPatch:
+      type: object
+      properties:
+        name:
+          type: string
+        billing_mode:
+          type: string
+        budget_limit_monthly:
+          type: number
+        allowed_models:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    TenantCreditTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenant_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        balance_after:
+          type: number
+        type:
+          type: string
+
+    TopUpCreditRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: number
+        contract_ref:
+          type: string
+        notes:
+          type: string
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        budget_limit_monthly:
+          type: number
+        rate_limit_rpm:
+          type: integer
+        is_active:
+          type: boolean
+
+    GroupPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        policy:
+          type: object
+        priority:
+          type: integer
+        is_active:
+          type: boolean
+
+    ProviderKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        base_url:
+          type: string
+        protocol:
+          type: string
+        is_active:
+          type: boolean
+
+    ModelPricing:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model_name:
+          type: string
+        prompt_price_per_1m:
+          type: number
+        completion_price_per_1m:
+          type: number
+
+    CatalogModel:
+      type: object
+      properties:
+        provider:
+          type: string
+        model_name:
+          type: string
+
+    VirtualModel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        routing_strategy:
+          type: string
+        is_active:
+          type: boolean
+        targets:
+          type: array
+          items:
+            type: object
+
+    CreateVirtualModelRequest:
+      type: object
+      required:
+        - name
+        - targets
+      properties:
+        name:
+          type: string
+        routing_strategy:
+          type: string
+        targets:
+          type: array
+          items:
+            type: object
+
+    UpdateVirtualModelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        routing_strategy:
+          type: string
+        targets:
+          type: array
+          items:
+            type: object
+
+    Plugin:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        display_name:
+          type: string
+        category:
+          type: string
+
+    PluginBinding:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        plugin_name:
+          type: string
+        scope_level:
+          type: string
+        config:
+          type: object
+        is_active:
+          type: boolean
+
+    CreatePluginBindingRequest:
+      type: object
+      required:
+        - plugin_name
+        - scope_level
+        - config
+      properties:
+        plugin_name:
+          type: string
+        scope_level:
+          type: string
+        config:
+          type: object
+
+    UpdatePluginBindingRequest:
+      type: object
+      properties:
+        config:
+          type: object
+        is_active:
+          type: boolean
+
+    UsageLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model:
+          type: string
+        total_tokens:
+          type: integer
+        cost:
+          type: number
+        status_code:
+          type: integer
+
+    UsageLogDetail:
+      allOf:
+        - $ref: '#/components/schemas/UsageLog'
+        - type: object
+          properties:
+            user_email:
+              type: string
+            key_name:
+              type: string
+            request_shape:
+              $ref: '#/components/schemas/RequestShape'
+
+    RequestShape:
+      type: object
+      properties:
+        structure_hash:
+          type: string
+        message_count:
+          type: integer
+        modality:
+          type: string
+
+    AlertRule:
+      type: object
+      required:
+        - name
+        - event_type
+        - severity
+        - threshold_value
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        event_type:
+          type: string
+        severity:
+          type: string
+        threshold_value:
+          type: number
+
+    AlertRulePatch:
+      type: object
+      properties:
+        name:
+          type: string
+        threshold_value:
+          type: number
+        is_active:
+          type: boolean
+
+    TestWebhookRequest:
+      type: object
+      required:
+        - webhook_url
+      properties:
+        webhook_url:
+          type: string

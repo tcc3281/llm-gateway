@@ -16,6 +16,7 @@ import (
 	"llm-gateway/internal/cache"
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
+	"llm-gateway/internal/docs"
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
@@ -119,9 +120,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-public"}`))
 	})
+	docs.RegisterRoutes(publicMux, true)
 
 	// 8. Router Setup: Admin Management Mux (Control Plane, Port 8081)
 	adminMux := http.NewServeMux()
+	docs.RegisterRoutes(adminMux, false)
 	adminMux.HandleFunc("POST /admin/auth/login", adminHandler.Login)
 	adminMux.HandleFunc("GET /admin/auth/me", adminHandler.GetCurrentUser)
 	adminMux.HandleFunc("POST /admin/auth/password", adminHandler.SetPassword)

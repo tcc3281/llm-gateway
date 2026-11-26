@@ -49,3 +49,29 @@ cli/*.egg-info/
 
 # opencode
 opencode.json
+
+# Security & Secrets (GCP Service Accounts, API Keys, Credentials)
+*.json
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/tsconfig.node.json
+!cli/pyproject.toml
+*.pem
+*.key
+*.secret
+*.p12
+
+# Terraform local files & state
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

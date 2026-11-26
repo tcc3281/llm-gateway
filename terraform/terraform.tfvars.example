@@ -1,0 +1,7 @@
+project_id       = "gdgdevfest2026-515408"
+region           = "asia-east1"
+credentials_file = "gdgdevfest2026-515408-6b41e29434d7.json"
+app_name         = "llm-gateway"
+environment      = "production"
+db_password      = "LLMGatewaySuperSecure2026!"
+admin_api_key    = "sk-admin-secret-key-change-me"

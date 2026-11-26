@@ -1,0 +1,3618 @@
+openapi: 3.0.3
+info:
+  title: LLM Gateway - Control Plane (Management API)
+  description: |
+    Centralized administrative and management plane for LLM Gateway.
+    Handles Multi-Tenant B2B partitioning, IAM roles and policies, API keys,
+    Dynamic Virtual Model routing, Pluggable middleware pipelines, Usage analytics,
+    Audit trails, and Incident alerting.
+  version: 0.4.0
+  contact:
+    name: LLM Gateway Admin Team
+    url: https://github.com/tcc3281/llm-gateway
+
+servers:
+  - url: http://localhost:8081
+    description: Local Control Plane Admin Server
+  - url: https://gateway-admin.internal.company.com:8081
+    description: Production Control Plane Server
+
+tags:
+  - name: Authentication & Profile
+    description: Admin authentication, session tokens, and profile management.
+  - name: Tenants & B2B Billing
+    description: Multi-tenant organizational partitions, prepaid credit balances, and contract deposits.
+  - name: Users & API Keys
+    description: User lifecycle, API keys, RPM limits, budget quotas, and model allow/deny rules.
+  - name: Groups & IAM Policies
+    description: RBAC/IAM teams, AWS-style JSON permission documents, and member roles.
+  - name: Providers & Models
+    description: Upstream provider API credentials, pricing matrices, and auto-discovered catalogs.
+  - name: Virtual Models & Routing
+    description: Dynamic model aliases, fallback priority chains, and canary weight distribution.
+  - name: Plugins & Bindings
+    description: Extensible guardrail engine, first-party plugin catalog, and multi-level scope bindings.
+  - name: Observability & Analytics
+    description: Aggregate usage stats, member spend reports, zero-knowledge structural telemetry, and audit logs.
+  - name: Alerts & Webhooks
+    description: Automated incident threshold rules, webhook dispatches (Slack, Discord, PagerDuty), and execution history.
+  - name: System & Health
+    description: Control Plane health, runtime diagnostics, and Prometheus scraping.
+
+paths:
+  # ==========================================
+  # Authentication & Profile
+  # ==========================================
+  /admin/auth/login:
+    post:
+      tags:
+        - Authentication & Profile
+      summary: Admin Session Login
+      description: Authenticates with email and password to receive a bearer session token.
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@company.com
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT or session token.
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid email or password.
+
+  /admin/auth/me:
+    get:
+      tags:
+        - Authentication & Profile
+      summary: Get Current User Profile
+      description: Returns identity and role information for the active authenticated session.
+      operationId: getCurrentUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+        - SessionTokenAuth: []
+      responses:
+        '200':
+          description: Current user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized.
+
+  /admin/auth/password:
+    post:
+      tags:
+        - Authentication & Profile
+      summary: Change User Password
+      description: Updates password for the authenticated administrator.
+      operationId: changePassword
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+        - SessionTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - current_password
+                - new_password
+              properties:
+                current_password:
+                  type: string
+                  format: password
+                new_password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Password successfully changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Password updated successfully
+
+  # ==========================================
+  # Tenants & B2B Billing (Partitioning)
+  # ==========================================
+  /admin/tenants:
+    get:
+      tags:
+        - Tenants & B2B Billing
+      summary: List Tenants
+      description: Returns all organizational partitions with credit balances and billing modes.
+      operationId: listTenants
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Array of tenants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+
+    post:
+      tags:
+        - Tenants & B2B Billing
+      summary: Create Tenant Partition
+      description: Provisions a new isolated tenant partition with prepaid or postpaid billing.
+      operationId: createTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: Engineering Department
+                type:
+                  type: string
+                  enum: [internal, external]
+                  default: external
+                billing_mode:
+                  type: string
+                  enum: [prepaid, postpaid]
+                  default: prepaid
+                budget_limit_monthly:
+                  type: number
+                  format: float
+                  example: 500.0
+                allowed_models:
+                  type: array
+                  items:
+                    type: string
+                  example: ["gpt-4o-mini", "claude-3-5-haiku"]
+                is_active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Tenant created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+
+  /admin/tenants/{id}:
+    get:
+      tags:
+        - Tenants & B2B Billing
+      summary: Get Tenant Details
+      description: Retrieves details of a specific tenant partition.
+      operationId: getTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tenant found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          description: Tenant not found.
+
+    patch:
+      tags:
+        - Tenants & B2B Billing
+      summary: Update Tenant
+      description: Modifies configuration, monthly budget, or model access for a tenant.
+      operationId: updateTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantPatch'
+      responses:
+        '200':
+          description: Tenant updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+
+    delete:
+      tags:
+        - Tenants & B2B Billing
+      summary: Delete Tenant Partition
+      description: Deletes an organizational tenant partition and its constraints.
+      operationId: deleteTenant
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tenant deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+
+  /admin/tenants/{id}/topup:
+    post:
+      tags:
+        - Tenants & B2B Billing
+      summary: Top Up Tenant Credit
+      description: Deposits prepaid funds into a tenant balance with contract reference tracking.
+      operationId: topUpTenantCredit
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopUpCreditRequest'
+      responses:
+        '200':
+          description: Credit balance updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantCreditTransaction'
+
+  /admin/tenants/{id}/transactions:
+    get:
+      tags:
+        - Tenants & B2B Billing
+      summary: List Tenant Billing Transactions
+      description: Paginated transaction ledger for deposits, adjustments, and usage deductions.
+      operationId: listTenantTransactions
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Transaction history.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TenantCreditTransaction'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  # ==========================================
+  # Users & API Keys
+  # ==========================================
+  /admin/users:
+    get:
+      tags:
+        - Users & API Keys
+      summary: List Users
+      description: Lists users optionally filtered by tenant or search keywords.
+      operationId: listUsers
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of users.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+    post:
+      tags:
+        - Users & API Keys
+      summary: Create User
+      description: Registers a new user and assigns them to an optional tenant.
+      operationId: createUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - name
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: dev@company.com
+                name:
+                  type: string
+                  example: Alex Doe
+                role:
+                  type: string
+                  enum: [admin, user]
+                  default: user
+                password:
+                  type: string
+                  format: password
+                tenant_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+    patch:
+      tags:
+        - Users & API Keys
+      summary: Update User
+      description: Modifies user status, role, password, or tenant assignment.
+      operationId: updateUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, user]
+                is_active:
+                  type: boolean
+                password:
+                  type: string
+                  format: password
+                tenant_id:
+                  type: string
+                  format: uuid
+                tenant_role:
+                  type: string
+                  enum: [tenant_admin, member, viewer]
+      responses:
+        '200':
+          description: User updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+    delete:
+      tags:
+        - Users & API Keys
+      summary: Delete User
+      description: Removes a user from the gateway.
+      operationId: deleteUser
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User deleted
+
+  /admin/keys:
+    get:
+      tags:
+        - Users & API Keys
+      summary: List API Keys
+      description: Returns active and revoked API keys for a user or tenant.
+      operationId: listAPIKeys
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of API keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIKey'
+
+    post:
+      tags:
+        - Users & API Keys
+      summary: Create API Key
+      description: Generates a new `sk-gw-...` key with rate limits, budget ceilings, and cache TTL.
+      operationId: createAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - name
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                tenant_id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                  example: backend-prod-key
+                budget_limit:
+                  type: number
+                  format: float
+                  example: 50.0
+                rate_limit_rpm:
+                  type: integer
+                  example: 120
+                cache_ttl_seconds:
+                  type: integer
+                  default: 0
+                budget_period:
+                  type: string
+                  enum: [daily, weekly, monthly]
+                expires_at:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Key successfully provisioned. Plain text key returned only once!
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key:
+                    $ref: '#/components/schemas/APIKey'
+                  key:
+                    type: string
+                    description: Plaintext API secret (`sk-gw-...`).
+                    example: sk-gw-8f7a9bc12de34f5...
+
+    patch:
+      tags:
+        - Users & API Keys
+      summary: Update API Key
+      description: Modifies limits, expiration, or active status of an API key.
+      operationId: updateAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                budget_limit:
+                  type: number
+                rate_limit_rpm:
+                  type: integer
+                cache_ttl_seconds:
+                  type: integer
+                budget_period:
+                  type: string
+                is_active:
+                  type: boolean
+                expires_at:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: API key updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKey'
+
+    delete:
+      tags:
+        - Users & API Keys
+      summary: Revoke API Key
+      description: Soft revokes an API key immediately.
+      operationId: revokeAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Key revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: API key revoked
+
+  /admin/keys/reactivate:
+    post:
+      tags:
+        - Users & API Keys
+      summary: Reactivate API Key
+      description: Restores a previously revoked API key to active status.
+      operationId: reactivateAPIKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Key reactivated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: API key reactivated
+
+  /admin/keys/{id}/models:
+    get:
+      tags:
+        - Users & API Keys
+      summary: List Key Model Policies
+      description: Lists model allowlist or denylist pattern rules attached to this key.
+      operationId: listKeyModelPolicies
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of model policies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KeyModelPolicy'
+
+    post:
+      tags:
+        - Users & API Keys
+      summary: Add Key Model Policy Rule
+      description: Adds a wildcard pattern rule (e.g. `gpt-4*`, `claude-*`) allowing or denying access.
+      operationId: createKeyModelPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - model_pattern
+                - action
+              properties:
+                model_pattern:
+                  type: string
+                  example: gpt-4*
+                action:
+                  type: string
+                  enum: [allow, deny]
+      responses:
+        '201':
+          description: Policy rule created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyModelPolicy'
+
+  /admin/keys/{id}/models/{pid}:
+    delete:
+      tags:
+        - Users & API Keys
+      summary: Delete Key Model Policy Rule
+      description: Removes a specific model access rule from an API key.
+      operationId: deleteKeyModelPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Policy rule deleted
+
+  # ==========================================
+  # Groups & IAM Policies
+  # ==========================================
+  /admin/groups:
+    get:
+      tags:
+        - Groups & IAM Policies
+      summary: List IAM Groups
+      description: Returns teams and groups with member and policy counts.
+      operationId: listGroups
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Array of groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Group'
+
+    post:
+      tags:
+        - Groups & IAM Policies
+      summary: Create IAM Group
+      description: Provisions a team group for pooled budgets and unified IAM policies.
+      operationId: createGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: Data Science Team
+                description:
+                  type: string
+                  example: Core ML & Analytics Team
+                budget_limit_monthly:
+                  type: number
+                  format: float
+                  example: 1000.0
+                rate_limit_rpm:
+                  type: integer
+                  example: 300
+                is_active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+
+  /admin/groups/{id}:
+    get:
+      tags:
+        - Groups & IAM Policies
+      summary: Get Group Details
+      description: Retrieves a specific group by ID.
+      operationId: getGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Group found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+
+    patch:
+      tags:
+        - Groups & IAM Policies
+      summary: Update Group
+      description: Updates group name, description, budget, or RPM limits.
+      operationId: updateGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                budget_limit_monthly:
+                  type: number
+                rate_limit_rpm:
+                  type: integer
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Group updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Group'
+
+    delete:
+      tags:
+        - Groups & IAM Policies
+      summary: Delete Group
+      description: Deletes an IAM group.
+      operationId: deleteGroup
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Group deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Group deleted successfully
+
+  /admin/groups/{id}/policies:
+    get:
+      tags:
+        - Groups & IAM Policies
+      summary: List Group Policies
+      description: Lists AWS IAM-style JSON documents attached to the group.
+      operationId: listGroupPolicies
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Attached IAM policies.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupPolicy'
+
+    post:
+      tags:
+        - Groups & IAM Policies
+      summary: Attach IAM Policy to Group
+      description: Evaluates and attaches an AWS IAM JSON policy statement.
+      operationId: createGroupPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - policy
+              properties:
+                name:
+                  type: string
+                  example: AllowChatAndEmbedding
+                policy:
+                  type: object
+                  description: "AWS IAM statement syntax ({ 'Version': '2012-10-17', 'Statement': [...] })."
+                priority:
+                  type: integer
+                  default: 10
+                is_active:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Policy attached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPolicy'
+
+  /admin/groups/{id}/policies/{pid}:
+    patch:
+      tags:
+        - Groups & IAM Policies
+      summary: Update IAM Policy
+      description: Updates policy JSON document, priority, or activation status.
+      operationId: updateGroupPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                policy:
+                  type: object
+                priority:
+                  type: integer
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Policy updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPolicy'
+
+    delete:
+      tags:
+        - Groups & IAM Policies
+      summary: Detach IAM Policy
+      description: Removes an IAM policy from a group.
+      operationId: deleteGroupPolicy
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Policy detached.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Policy deleted successfully
+
+  /admin/iam/actions:
+    get:
+      tags:
+        - Groups & IAM Policies
+      summary: List Supported IAM Actions
+      description: "Returns the full catalog of permission strings (e.g. `llmgw:inference:chat`, `llmgw:admin:user:create`)."
+      operationId: getIAMActions
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Array of action identifiers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /admin/groups/{id}/members:
+    get:
+      tags:
+        - Groups & IAM Policies
+      summary: List Group Members
+      description: Returns users belonging to this group and their membership roles.
+      operationId: listGroupMembers
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of members.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+    post:
+      tags:
+        - Groups & IAM Policies
+      summary: Add User to Group
+      description: Associates a user with this team.
+      operationId: addGroupMember
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+                role:
+                  type: string
+                  enum: [member, admin]
+                  default: member
+      responses:
+        '201':
+          description: User added.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Member added successfully
+
+  /admin/groups/{id}/members/{uid}/role:
+    put:
+      tags:
+        - Groups & IAM Policies
+      summary: Update Member Role in Group
+      description: Changes role between `member` and `admin`.
+      operationId: setGroupMemberRole
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - role
+              properties:
+                role:
+                  type: string
+                  enum: [member, admin]
+      responses:
+        '200':
+          description: Role updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Role updated successfully
+
+  /admin/groups/{id}/members/{uid}:
+    delete:
+      tags:
+        - Groups & IAM Policies
+      summary: Remove User from Group
+      description: Disassociates a user from this team.
+      operationId: removeGroupMember
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: uid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Member removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Member removed successfully
+
+  # ==========================================
+  # Providers & Models
+  # ==========================================
+  /admin/providers:
+    get:
+      tags:
+        - Providers & Models
+      summary: List Provider Master Keys
+      description: Returns configured upstream providers (secrets masked).
+      operationId: listProviders
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Array of provider keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderKey'
+
+    post:
+      tags:
+        - Providers & Models
+      summary: Upsert Provider Master Key
+      description: Registers or updates upstream API credentials for OpenAI, Anthropic, Gemini, or custom OpenAI-compatible endpoints.
+      operationId: setProviderKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - api_key
+              properties:
+                provider:
+                  type: string
+                  example: openai
+                api_key:
+                  type: string
+                  format: password
+                  example: sk-proj-...
+                base_url:
+                  type: string
+                  example: https://api.openai.com/v1
+                protocol:
+                  type: string
+                  enum: [openai, anthropic]
+                fallback_priority:
+                  type: integer
+                is_active:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Provider credentials updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderKey'
+
+    delete:
+      tags:
+        - Providers & Models
+      summary: Delete Provider Master Key
+      description: Removes upstream credentials for a provider.
+      operationId: deleteProviderKey
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: provider
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Provider key deleted
+
+  /admin/models:
+    get:
+      tags:
+        - Providers & Models
+      summary: Get Pricing & Model Configurations
+      description: Returns active pricing rates per 1M tokens.
+      operationId: getModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Array of model pricing rules.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelPricing'
+
+    post:
+      tags:
+        - Providers & Models
+      summary: Upsert Model Pricing
+      description: Sets prompt and completion rates per 1M tokens.
+      operationId: upsertModelPricing
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - model_name
+                - prompt_price_per_1m
+                - completion_price_per_1m
+              properties:
+                provider:
+                  type: string
+                  example: openai
+                model_name:
+                  type: string
+                  example: gpt-4o-mini
+                prompt_price_per_1m:
+                  type: number
+                  format: float
+                  example: 0.15
+                completion_price_per_1m:
+                  type: number
+                  format: float
+                  example: 0.60
+                cache_read_price_per_1m:
+                  type: number
+                  format: float
+                  example: 0.075
+      responses:
+        '200':
+          description: Pricing saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPricing'
+
+    delete:
+      tags:
+        - Providers & Models
+      summary: Delete Model Pricing
+      description: Removes pricing entry by ID.
+      operationId: deleteModelPricing
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Pricing deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Model pricing deleted
+
+  /admin/models/catalog:
+    get:
+      tags:
+        - Providers & Models
+      summary: Get Discovered Model Catalog
+      description: Returns all models fetched directly from provider `/models` endpoints.
+      operationId: getModelCatalog
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Discovered models catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogModel'
+
+  /admin/models/sync:
+    post:
+      tags:
+        - Providers & Models
+      summary: Sync Discovered Catalog
+      description: Forces immediate synchronization of provider model catalogs.
+      operationId: syncModelsFromCatalog
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Sync completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: synced
+
+  /admin/models/discover:
+    post:
+      tags:
+        - Providers & Models
+      summary: Discover Provider Models
+      description: Queries the specified upstream provider to refresh its remote model catalog.
+      operationId: discoverModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+              properties:
+                provider:
+                  type: string
+                  example: openai
+      responses:
+        '200':
+          description: Discovered models count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  count:
+                    type: integer
+
+  # ==========================================
+  # Virtual Models & Routing
+  # ==========================================
+  /admin/virtual-models:
+    get:
+      tags:
+        - Virtual Models & Routing
+      summary: List Virtual Models
+      description: Returns dynamic alias definitions and their weighted/fallback routing targets.
+      operationId: listVirtualModels
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of virtual models.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VirtualModel'
+
+    post:
+      tags:
+        - Virtual Models & Routing
+      summary: Create Virtual Model Alias
+      description: Defines an abstract model name (e.g. `fast-chat`) with weighted traffic splits or fallback chains.
+      operationId: createVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVirtualModelRequest'
+      responses:
+        '201':
+          description: Virtual model created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualModel'
+
+  /admin/virtual-models/{id}:
+    get:
+      tags:
+        - Virtual Models & Routing
+      summary: Get Virtual Model
+      description: Retrieves a virtual model definition by ID.
+      operationId: getVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Virtual model found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualModel'
+
+    put:
+      tags:
+        - Virtual Models & Routing
+      summary: Update Virtual Model
+      description: Modifies routing targets, weights, or fallback priorities in 0 downtime.
+      operationId: updateVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVirtualModelRequest'
+      responses:
+        '200':
+          description: Virtual model updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VirtualModel'
+
+    delete:
+      tags:
+        - Virtual Models & Routing
+      summary: Delete Virtual Model
+      description: Removes a virtual model alias.
+      operationId: deleteVirtualModel
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Virtual model deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+
+  # ==========================================
+  # Plugins & Bindings
+  # ==========================================
+  /admin/plugins:
+    get:
+      tags:
+        - Plugins & Bindings
+      summary: List Plugin Catalog
+      description: Returns available built-in plugins (rate-limiting, budget-control, pii-masking, prompt-guard, etc.).
+      operationId: listPlugins
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Available plugins.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plugin'
+
+  /admin/plugins/{name}:
+    get:
+      tags:
+        - Plugins & Bindings
+      summary: Get Plugin Details & Schema
+      description: Returns JSON schema for configuring a specific plugin.
+      operationId: getPlugin
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            example: prompt-guard
+      responses:
+        '200':
+          description: Plugin definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plugin'
+
+  /admin/plugin-bindings:
+    get:
+      tags:
+        - Plugins & Bindings
+      summary: List Active Plugin Bindings
+      description: Returns all plugin attachments across global, tenant, group, user, and key scopes.
+      operationId: listPluginBindings
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: plugin_name
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of plugin bindings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PluginBinding'
+
+    post:
+      tags:
+        - Plugins & Bindings
+      summary: Bind Plugin to Scope
+      description: Attaches a plugin with custom configuration to a specific hierarchy scope.
+      operationId: createPluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePluginBindingRequest'
+      responses:
+        '201':
+          description: Plugin bound successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginBinding'
+
+  /admin/plugin-bindings/{id}:
+    get:
+      tags:
+        - Plugins & Bindings
+      summary: Get Plugin Binding
+      description: Retrieves a single plugin binding.
+      operationId: getPluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Plugin binding found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginBinding'
+
+    put:
+      tags:
+        - Plugins & Bindings
+      summary: Update Plugin Binding
+      description: Modifies configuration JSON, priority, or activation status of a bound plugin.
+      operationId: updatePluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePluginBindingRequest'
+      responses:
+        '200':
+          description: Plugin binding updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginBinding'
+
+    delete:
+      tags:
+        - Plugins & Bindings
+      summary: Unbind Plugin
+      description: Detaches a plugin from its scope.
+      operationId: deletePluginBinding
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Plugin unbound.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+
+  # ==========================================
+  # Observability & Analytics
+  # ==========================================
+  /admin/analytics/dashboard:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: High-Level Dashboard Statistics
+      description: Aggregated token consumption, cost in USD, cache hit ratios, latency percentiles (P50/P95/P99), and error rates.
+      operationId: getDashboardStats
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [24h, 7d, 30d]
+            default: 24h
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: key_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dashboard statistics payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    $ref: '#/components/schemas/UsageTotal'
+                  series:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UsageSeriesPoint'
+                  by_model:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UsageByModel'
+                  by_user:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UsageByUser'
+
+  /admin/analytics/members:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: Member & Team Spend Breakdown
+      description: Returns member-level and team-level budget utilization and top consumed models.
+      operationId: getMemberUsageAnalytics
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: group_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Member spend analytics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsMembersResponse'
+
+  /admin/analytics/members/{id}:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: Member Detailed Consumption
+      description: Detailed daily trends and per-model consumption for a specific user.
+      operationId: getMemberDetail
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detailed member analytics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberDetailResponse'
+
+  /admin/analytics/stats:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: Time-Bucket Usage Statistics
+      description: Aggregated token counts and latency metrics grouped by model or provider.
+      operationId: getUsageStats
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: start
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: group_by
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [hour, day, provider, model]
+      responses:
+        '200':
+          description: Usage stats records.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsageStats'
+
+  /admin/logs:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: Query Filtered Usage Logs
+      description: Paginated request log retrieval with filtering on status code, user, key, tenant, or modality.
+      operationId: getUsageLogs
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: key_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: tenant_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Exact status code (e.g. `200`) or class (`2xx`, `4xx`, `5xx`).
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Paginated log results.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UsageLog'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+
+  /admin/logs/{id}:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: Get Request Log Details & Structural Fingerprint
+      description: Returns detailed log including zero-knowledge RequestShape structural signature.
+      operationId: getUsageLogDetail
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Log detail with RequestShape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageLogDetail'
+
+  /admin/audit-logs:
+    get:
+      tags:
+        - Observability & Analytics
+      summary: Query Audit Logs
+      description: Returns administrative mutation audit trails (actor, IP, target resource, action).
+      operationId: listAuditLogs
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: actor_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [root, admin, user, system]
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: target_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of audit records.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  total:
+                    type: integer
+
+  # ==========================================
+  # Alerts & Webhooks
+  # ==========================================
+  /admin/alerts/rules:
+    get:
+      tags:
+        - Alerts & Webhooks
+      summary: List Alert Rules
+      description: Returns monitoring rules for rate limits, cost spikes, and latency anomalies.
+      operationId: listAlertRules
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: Array of alert rules.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlertRule'
+
+    post:
+      tags:
+        - Alerts & Webhooks
+      summary: Create Alert Rule
+      description: Defines an automated anomaly rule with multi-channel webhook routing.
+      operationId: createAlertRule
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRule'
+      responses:
+        '201':
+          description: Rule created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRule'
+
+  /admin/alerts/rules/{id}:
+    patch:
+      tags:
+        - Alerts & Webhooks
+      summary: Update Alert Rule
+      description: Modifies thresholds, destination webhooks, or cooldown timers.
+      operationId: updateAlertRule
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRulePatch'
+      responses:
+        '200':
+          description: Rule updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRule'
+
+    delete:
+      tags:
+        - Alerts & Webhooks
+      summary: Delete Alert Rule
+      description: Deletes an alert rule.
+      operationId: deleteAlertRule
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Rule deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Alert rule deleted
+
+  /admin/alerts/history:
+    get:
+      tags:
+        - Alerts & Webhooks
+      summary: List Alert Dispatch History
+      description: Paginated log of sent and suppressed webhook incident dispatches.
+      operationId: listAlertHistory
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Alert dispatch history.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlertHistory'
+
+  /admin/alerts/test:
+    post:
+      tags:
+        - Alerts & Webhooks
+      summary: Send Test Alert Webhook
+      description: Dispatches a simulated test payload to verify destination webhook connectivity.
+      operationId: testAlertWebhook
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestWebhookRequest'
+      responses:
+        '200':
+          description: Webhook delivered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: delivered
+                  status_code:
+                    type: integer
+                    example: 200
+
+  # ==========================================
+  # System & Health
+  # ==========================================
+  /admin/system/info:
+    get:
+      tags:
+        - System & Health
+      summary: System Runtime Diagnostics
+      description: Returns Go runtime memory metrics, goroutines count, uptime, and database connection pool statuses.
+      operationId: getSystemInfo
+      security:
+        - AdminApiKeyAuth: []
+        - AdminBearerAuth: []
+      responses:
+        '200':
+          description: System runtime diagnostics.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: v0.4.0
+                  uptime_seconds:
+                    type: integer
+                    example: 86400
+                  goroutines:
+                    type: integer
+                    example: 42
+                  postgres_connected:
+                    type: boolean
+                    example: true
+                  redis_connected:
+                    type: boolean
+                    example: true
+
+  /health:
+    get:
+      tags:
+        - System & Health
+      summary: Control Plane Health Check
+      description: Returns status of Control Plane service.
+      operationId: getControlPlaneHealth
+      responses:
+        '200':
+          description: Health check OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: llm-gateway-control-plane
+
+  /metrics:
+    get:
+      tags:
+        - System & Health
+      summary: Prometheus Metrics
+      description: Exposes Prometheus operational telemetry for the control plane.
+      operationId: getControlPlaneMetrics
+      responses:
+        '200':
+          description: Prometheus metrics exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    AdminApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Admin-API-Key
+      description: Root Break-Glass Administration API Key.
+    AdminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Admin session token from `/admin/auth/login`.
+    SessionTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Session-Token
+      description: Alternative header for session token.
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [admin, user]
+        is_root:
+          type: boolean
+        is_active:
+          type: boolean
+        group_role:
+          type: string
+          nullable: true
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        tenant_role:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        key_prefix:
+          type: string
+          example: sk-gw-8f7a9...
+        name:
+          type: string
+        budget_limit:
+          type: number
+          format: float
+        rate_limit_rpm:
+          type: integer
+        cache_ttl_seconds:
+          type: integer
+        budget_period:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    KeyModelPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        key_id:
+          type: string
+          format: uuid
+        model_pattern:
+          type: string
+          example: gpt-4*
+        is_allowlist:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Acme Corp
+        type:
+          type: string
+          enum: [internal, external]
+        billing_mode:
+          type: string
+          enum: [prepaid, postpaid]
+        credit_balance:
+          type: number
+          format: float
+        budget_limit_monthly:
+          type: number
+          format: float
+        allowed_models:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenantPatch:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [internal, external]
+        billing_mode:
+          type: string
+          enum: [prepaid, postpaid]
+        budget_limit_monthly:
+          type: number
+          format: float
+        allowed_models:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    TenantCreditTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        tenant_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: float
+        balance_after:
+          type: number
+          format: float
+        type:
+          type: string
+          enum: [contract_deposit, admin_adjustment, usage_deduction, refund]
+        contract_ref:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    TopUpCreditRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: number
+          format: float
+          example: 100.0
+        contract_ref:
+          type: string
+          example: WIRE-TX-20260901
+        notes:
+          type: string
+          example: Q3 Development Budget
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        budget_limit_monthly:
+          type: number
+          format: float
+        rate_limit_rpm:
+          type: integer
+        is_active:
+          type: boolean
+        member_count:
+          type: integer
+        policy_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    GroupPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        policy:
+          type: object
+        priority:
+          type: integer
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ProviderKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        base_url:
+          type: string
+        protocol:
+          type: string
+        fallback_priority:
+          type: integer
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ModelPricing:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model_name:
+          type: string
+        prompt_price_per_1m:
+          type: number
+          format: float
+        completion_price_per_1m:
+          type: number
+          format: float
+        cache_read_price_per_1m:
+          type: number
+          format: float
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    CatalogModel:
+      type: object
+      properties:
+        provider:
+          type: string
+        model_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VirtualModel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: fast-chat
+        description:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        routing_strategy:
+          type: string
+          enum: [weighted, fallback, round_robin]
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/VirtualModelTarget'
+
+    VirtualModelTarget:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        virtual_model_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model_name:
+          type: string
+        weight:
+          type: integer
+        priority:
+          type: integer
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateVirtualModelRequest:
+      type: object
+      required:
+        - name
+        - targets
+      properties:
+        name:
+          type: string
+          example: fast-chat
+        description:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+        routing_strategy:
+          type: string
+          enum: [weighted, fallback, round_robin]
+          default: weighted
+        is_active:
+          type: boolean
+          default: true
+        allow_override:
+          type: boolean
+          default: false
+        targets:
+          type: array
+          items:
+            type: object
+            required:
+              - provider
+              - model_name
+            properties:
+              provider:
+                type: string
+                example: openai
+              model_name:
+                type: string
+                example: gpt-4o-mini
+              weight:
+                type: integer
+                default: 100
+              priority:
+                type: integer
+                default: 1
+              is_active:
+                type: boolean
+                default: true
+
+    UpdateVirtualModelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+        routing_strategy:
+          type: string
+          enum: [weighted, fallback, round_robin]
+        is_active:
+          type: boolean
+        allow_override:
+          type: boolean
+        targets:
+          type: array
+          items:
+            type: object
+            properties:
+              provider:
+                type: string
+              model_name:
+                type: string
+              weight:
+                type: integer
+              priority:
+                type: integer
+              is_active:
+                type: boolean
+
+    Plugin:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: prompt-guard
+        display_name:
+          type: string
+          example: Prompt Guard
+        description:
+          type: string
+        category:
+          type: string
+          enum: [traffic, security, performance, observability]
+        hooks:
+          type: array
+          items:
+            type: string
+        config_schema:
+          type: object
+        is_builtin:
+          type: boolean
+        version:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PluginBinding:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        plugin_name:
+          type: string
+          example: prompt-guard
+        scope_level:
+          type: string
+          enum: [global, provider, model, tenant, role, user, api_key]
+        scope_provider:
+          type: string
+          nullable: true
+        scope_model:
+          type: string
+          nullable: true
+        scope_tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        scope_role:
+          type: string
+          nullable: true
+        scope_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        scope_key_id:
+          type: string
+          format: uuid
+          nullable: true
+        config:
+          type: object
+        is_active:
+          type: boolean
+        priority:
+          type: integer
+        plugin_display_name:
+          type: string
+        category:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatePluginBindingRequest:
+      type: object
+      required:
+        - plugin_name
+        - scope_level
+        - config
+      properties:
+        plugin_name:
+          type: string
+          example: prompt-guard
+        scope_level:
+          type: string
+          enum: [global, provider, model, tenant, role, user, api_key]
+        scope_provider:
+          type: string
+        scope_model:
+          type: string
+        scope_tenant_id:
+          type: string
+          format: uuid
+        scope_role:
+          type: string
+        scope_user_id:
+          type: string
+          format: uuid
+        scope_key_id:
+          type: string
+          format: uuid
+        config:
+          type: object
+          example:
+            reject_injection: true
+            reject_pii: false
+        priority:
+          type: integer
+          default: 10
+        is_active:
+          type: boolean
+          default: true
+
+    UpdatePluginBindingRequest:
+      type: object
+      properties:
+        config:
+          type: object
+        is_active:
+          type: boolean
+        priority:
+          type: integer
+
+    UsageTotal:
+      type: object
+      properties:
+        requests:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        cached_tokens:
+          type: integer
+        reasoning_tokens:
+          type: integer
+        cache_savings_usd:
+          type: number
+          format: float
+        cache_hit_rate:
+          type: number
+          format: float
+        streaming_requests:
+          type: integer
+        avg_ttft_ms:
+          type: number
+          format: float
+        avg_latency_ms:
+          type: number
+          format: float
+        p50_latency_ms:
+          type: number
+          format: float
+        p95_latency_ms:
+          type: number
+          format: float
+        p99_latency_ms:
+          type: number
+          format: float
+        errors:
+          type: integer
+        error_rate:
+          type: number
+          format: float
+
+    UsageSeriesPoint:
+      type: object
+      properties:
+        time_bucket:
+          type: string
+        requests:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        cached_tokens:
+          type: integer
+        reasoning_tokens:
+          type: integer
+        errors:
+          type: integer
+        avg_ttft_ms:
+          type: number
+          format: float
+        avg_latency_ms:
+          type: number
+          format: float
+
+    UsageByModel:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        requests:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        cached_tokens:
+          type: integer
+        reasoning_tokens:
+          type: integer
+        avg_latency_ms:
+          type: number
+          format: float
+        avg_ttft_ms:
+          type: number
+          format: float
+
+    UsageByUser:
+      type: object
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+        requests:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+
+    UsageStats:
+      type: object
+      properties:
+        time_bucket:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        total_requests:
+          type: integer
+        sum_prompt_tokens:
+          type: integer
+        sum_completion_tokens:
+          type: integer
+        total_cost:
+          type: number
+          format: float
+        avg_ttft_ms:
+          type: number
+          format: float
+        avg_latency_ms:
+          type: number
+          format: float
+
+    UsageLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+          format: uuid
+        key_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        inbound_format:
+          type: string
+          enum: [openai, anthropic]
+        provider:
+          type: string
+        model:
+          type: string
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        cached_input_tokens:
+          type: integer
+        reasoning_tokens:
+          type: integer
+        cost:
+          type: number
+          format: float
+        ttft_ms:
+          type: integer
+          format: int64
+        total_latency_ms:
+          type: integer
+          format: int64
+        status_code:
+          type: integer
+        error_message:
+          type: string
+          nullable: true
+        client_ip:
+          type: string
+        request_shape:
+          $ref: '#/components/schemas/RequestShape'
+
+    UsageLogDetail:
+      allOf:
+        - $ref: '#/components/schemas/UsageLog'
+        - type: object
+          properties:
+            user_email:
+              type: string
+            key_name:
+              type: string
+
+    RequestShape:
+      type: object
+      description: Content-agnostic structural signature without raw user prompts or PII.
+      properties:
+        structure_hash:
+          type: string
+          description: Deterministic SHA-256 hash fingerprint of request structure.
+        message_count:
+          type: integer
+        roles:
+          type: array
+          items:
+            type: string
+        char_count:
+          type: integer
+        word_count:
+          type: integer
+        has_images:
+          type: boolean
+        image_count:
+          type: integer
+        has_audio:
+          type: boolean
+        audio_count:
+          type: integer
+        tools_count:
+          type: integer
+        tool_names:
+          type: array
+          items:
+            type: string
+        has_reasoning:
+          type: boolean
+        modality:
+          type: string
+          enum: [text, vision, audio, multimodal, tools, embeddings]
+
+    AnalyticsMembersResponse:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            active_members:
+              type: integer
+            total_spend:
+              type: number
+              format: float
+            budget_limit:
+              type: number
+              format: float
+            top_model:
+              type: string
+            total_tokens:
+              type: integer
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberUsageSummary'
+        teams:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamUsageSummary'
+
+    MemberUsageSummary:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        groups:
+          type: array
+          items:
+            type: string
+        requests:
+          type: integer
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        budget_limit:
+          type: number
+          format: float
+        budget_used_percent:
+          type: number
+          format: float
+
+    TeamUsageSummary:
+      type: object
+      properties:
+        group_id:
+          type: string
+          format: uuid
+        group_name:
+          type: string
+        description:
+          type: string
+        member_count:
+          type: integer
+        requests:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        budget_limit_monthly:
+          type: number
+          format: float
+        utilization_percent:
+          type: number
+          format: float
+
+    MemberDetailResponse:
+      type: object
+      properties:
+        member:
+          $ref: '#/components/schemas/MemberUsageSummary'
+        model_details:
+          type: array
+          items:
+            type: object
+            properties:
+              model:
+                type: string
+              requests:
+                type: integer
+              cost_usd:
+                type: number
+                format: float
+              prompt_tokens:
+                type: integer
+              completion_tokens:
+                type: integer
+        daily_trends:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageSeriesPoint'
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+        actor_type:
+          type: string
+          enum: [root, admin, user, system]
+        actor_ip:
+          type: string
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: string
+        details:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    AlertRule:
+      type: object
+      required:
+        - name
+        - event_type
+        - severity
+        - threshold_value
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        event_type:
+          type: string
+          enum: [budget_threshold, rate_limit_surge, error_rate_surge, latency_anomaly, iam_deny_surge]
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        filter_provider:
+          type: string
+        filter_model:
+          type: string
+        threshold_value:
+          type: number
+          format: float
+        window_seconds:
+          type: integer
+          default: 300
+        cooldown_seconds:
+          type: integer
+          default: 1800
+        webhook_url:
+          type: string
+        webhook_secret:
+          type: string
+        channel_type:
+          type: string
+          enum: [generic, slack, discord, pagerduty]
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertChannelConfig'
+        is_active:
+          type: boolean
+          default: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AlertRulePatch:
+      type: object
+      properties:
+        name:
+          type: string
+        event_type:
+          type: string
+        severity:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+        filter_provider:
+          type: string
+        filter_model:
+          type: string
+        threshold_value:
+          type: number
+        window_seconds:
+          type: integer
+        cooldown_seconds:
+          type: integer
+        webhook_url:
+          type: string
+        webhook_secret:
+          type: string
+        channel_type:
+          type: string
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertChannelConfig'
+        is_active:
+          type: boolean
+
+    AlertChannelConfig:
+      type: object
+      required:
+        - webhook_url
+        - channel_type
+      properties:
+        channel_type:
+          type: string
+          enum: [generic, slack, discord, pagerduty]
+        channel_name:
+          type: string
+        webhook_url:
+          type: string
+        webhook_secret:
+          type: string
+        is_enabled:
+          type: boolean
+          default: true
+
+    AlertHistory:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rule_id:
+          type: string
+          format: uuid
+          nullable: true
+        rule_name:
+          type: string
+        event_type:
+          type: string
+        tenant_id:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+        message:
+          type: string
+        payload:
+          type: object
+        status:
+          type: string
+          enum: [delivered, failed, suppressed_cooldown]
+        status_code:
+          type: integer
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        triggered_at:
+          type: string
+          format: date-time
+
+    TestWebhookRequest:
+      type: object
+      required:
+        - webhook_url
+      properties:
+        webhook_url:
+          type: string
+          example: https://hooks.slack.com/services/...
+        webhook_secret:
+          type: string
+        channel_type:
+          type: string
+          enum: [generic, slack, discord, pagerduty]
+          default: generic

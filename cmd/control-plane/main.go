@@ -15,6 +15,7 @@ import (
 	"llm-gateway/internal/auth"
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
+	"llm-gateway/internal/docs"
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
@@ -164,6 +165,7 @@ func main() {
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-control-plane"}`))
 	})
 	mux.Handle("GET /metrics", telemetry.PrometheusHandler())
+	docs.RegisterRoutes(mux, false)
 
 	// SPA Dashboard Web UI Catch-all
 	mux.Handle("/", web.Handler())

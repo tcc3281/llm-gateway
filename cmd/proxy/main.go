@@ -16,6 +16,7 @@ import (
 	"llm-gateway/internal/cache"
 	"llm-gateway/internal/config"
 	"llm-gateway/internal/db"
+	"llm-gateway/internal/docs"
 	"llm-gateway/internal/handler"
 	"llm-gateway/internal/permission"
 	"llm-gateway/internal/provider"
@@ -117,6 +118,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-data-plane"}`))
 	})
+	docs.RegisterRoutes(mux, true)
 
 	proxyServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
