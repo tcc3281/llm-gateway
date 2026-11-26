@@ -28,7 +28,7 @@ func Handler() http.Handler {
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		if strings.HasPrefix(path, "/admin") {
+		if strings.HasPrefix(path, "/admin") || strings.HasPrefix(path, "/v1") {
 			// Let the mux return 404 for unknown API paths instead of the SPA.
 			http.NotFound(w, r)
 			return

@@ -119,99 +119,29 @@ func main() {
 	publicMux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-public"}`))
+		w.Write([]byte(`{"status": "ok", "service": "llm-gateway"}`))
 	})
-	docs.RegisterRoutes(publicMux, true)
+	docs.RegisterRoutes(publicMux, false)
 
 	// 7. Router Setup: Admin Management Mux (Port 8081)
 	adminMux := http.NewServeMux()
 	docs.RegisterRoutes(adminMux, false)
-	// Only the /admin/* paths are registered as API routes: the bare paths
-	// (/users, /keys, /providers, /models, /analytics/*) are owned by the React
-	// Auth & Profile
-	adminMux.HandleFunc("POST /admin/auth/login", adminHandler.Login)
-	adminMux.HandleFunc("GET /admin/auth/me", adminHandler.GetCurrentUser)
-	adminMux.HandleFunc("POST /admin/auth/password", adminHandler.SetPassword)
-
-	// Member & Team Analytics ("ai dùng gì, dùng bao nhiêu")
-	adminMux.HandleFunc("GET /admin/analytics/members", adminHandler.GetMemberUsageAnalytics)
-	adminMux.HandleFunc("GET /admin/analytics/members/{id}", adminHandler.GetMemberDetail)
-
-	adminMux.HandleFunc("GET /admin/users", adminHandler.ListUsers)
-	adminMux.HandleFunc("POST /admin/users", adminHandler.CreateUser)
-	adminMux.HandleFunc("PATCH /admin/users", adminHandler.UpdateUser)
-	adminMux.HandleFunc("DELETE /admin/users", adminHandler.DeleteUser)
-	adminMux.HandleFunc("GET /admin/keys", adminHandler.ListAPIKeys)
-	adminMux.HandleFunc("POST /admin/keys", adminHandler.CreateAPIKey)
-	adminMux.HandleFunc("PATCH /admin/keys", adminHandler.UpdateAPIKey)
-	adminMux.HandleFunc("DELETE /admin/keys", adminHandler.RevokeAPIKey)
-	adminMux.HandleFunc("POST /admin/keys/reactivate", adminHandler.ReactivateAPIKey)
-	adminMux.HandleFunc("GET /admin/keys/{id}/models", adminHandler.ListKeyModelPolicies)
-	adminMux.HandleFunc("POST /admin/keys/{id}/models", adminHandler.CreateKeyModelPolicy)
-	adminMux.HandleFunc("DELETE /admin/keys/{id}/models/{pid}", adminHandler.DeleteKeyModelPolicy)
-	adminMux.HandleFunc("GET /admin/groups", adminHandler.ListGroups)
-	adminMux.HandleFunc("POST /admin/groups", adminHandler.CreateGroup)
-	adminMux.HandleFunc("GET /admin/groups/{id}", adminHandler.GetGroup)
-	adminMux.HandleFunc("PATCH /admin/groups/{id}", adminHandler.UpdateGroup)
-	adminMux.HandleFunc("DELETE /admin/groups/{id}", adminHandler.DeleteGroup)
-	adminMux.HandleFunc("GET /admin/groups/{id}/policies", adminHandler.ListGroupPolicies)
-	adminMux.HandleFunc("POST /admin/groups/{id}/policies", adminHandler.CreateGroupPolicy)
-	adminMux.HandleFunc("PATCH /admin/groups/{id}/policies/{pid}", adminHandler.UpdateGroupPolicy)
-	adminMux.HandleFunc("DELETE /admin/groups/{id}/policies/{pid}", adminHandler.DeleteGroupPolicy)
-	adminMux.HandleFunc("GET /admin/iam/actions", adminHandler.GetIAMActions)
-	adminMux.HandleFunc("GET /admin/groups/{id}/members", adminHandler.ListGroupMembers)
-	adminMux.HandleFunc("POST /admin/groups/{id}/members", adminHandler.AddGroupMember)
-	adminMux.HandleFunc("PUT /admin/groups/{id}/members/{uid}/role", adminHandler.SetGroupMemberRole)
-	adminMux.HandleFunc("DELETE /admin/groups/{id}/members/{uid}", adminHandler.RemoveGroupMember)
-	adminMux.HandleFunc("GET /admin/tenants", adminHandler.ListTenants)
-	adminMux.HandleFunc("POST /admin/tenants", adminHandler.CreateTenant)
-	adminMux.HandleFunc("GET /admin/tenants/{id}", adminHandler.GetTenant)
-	adminMux.HandleFunc("PATCH /admin/tenants/{id}", adminHandler.UpdateTenant)
-	adminMux.HandleFunc("DELETE /admin/tenants/{id}", adminHandler.DeleteTenant)
-	adminMux.HandleFunc("POST /admin/tenants/{id}/topup", adminHandler.TopUpCredit)
-	adminMux.HandleFunc("GET /admin/tenants/{id}/transactions", adminHandler.ListTenantTransactions)
-	adminMux.HandleFunc("GET /admin/audit-logs", adminHandler.ListAuditLogs)
-	adminMux.HandleFunc("GET /admin/providers", adminHandler.ListProviderKeys)
-	adminMux.HandleFunc("POST /admin/providers", adminHandler.SetProviderKey)
-	adminMux.HandleFunc("DELETE /admin/providers", adminHandler.DeleteProviderKey)
-	adminMux.HandleFunc("GET /admin/analytics/stats", adminHandler.GetUsageStats)
-	adminMux.HandleFunc("GET /admin/analytics/dashboard", adminHandler.GetDashboardStats)
-	adminMux.HandleFunc("GET /admin/models", adminHandler.GetModels)
-	adminMux.HandleFunc("GET /admin/models/catalog", adminHandler.GetModelCatalog)
-	adminMux.HandleFunc("POST /admin/models", adminHandler.UpsertModel)
-	adminMux.HandleFunc("POST /admin/models/sync", adminHandler.SyncModelsFromCatalog)
-	adminMux.HandleFunc("POST /admin/models/discover", adminHandler.DiscoverModels)
-	adminMux.HandleFunc("DELETE /admin/models", adminHandler.DeleteModel)
-	adminMux.HandleFunc("GET /admin/virtual-models", adminHandler.ListVirtualModels)
-	adminMux.HandleFunc("POST /admin/virtual-models", adminHandler.CreateVirtualModel)
-	adminMux.HandleFunc("GET /admin/virtual-models/{id}", adminHandler.GetVirtualModel)
-	adminMux.HandleFunc("PUT /admin/virtual-models/{id}", adminHandler.UpdateVirtualModel)
-	adminMux.HandleFunc("DELETE /admin/virtual-models/{id}", adminHandler.DeleteVirtualModel)
-	adminMux.HandleFunc("GET /admin/plugins", adminHandler.ListPlugins)
-	adminMux.HandleFunc("GET /admin/plugins/{name}", adminHandler.GetPlugin)
-	adminMux.HandleFunc("GET /admin/plugin-bindings", adminHandler.ListPluginBindings)
-	adminMux.HandleFunc("POST /admin/plugin-bindings", adminHandler.CreatePluginBinding)
-	adminMux.HandleFunc("GET /admin/plugin-bindings/{id}", adminHandler.GetPluginBinding)
-	adminMux.HandleFunc("PUT /admin/plugin-bindings/{id}", adminHandler.UpdatePluginBinding)
-	adminMux.HandleFunc("DELETE /admin/plugin-bindings/{id}", adminHandler.DeletePluginBinding)
-	adminMux.HandleFunc("GET /admin/logs", adminHandler.GetUsageLogs)
-	adminMux.HandleFunc("GET /admin/logs/{id}", adminHandler.GetUsageLogDetail)
-	adminMux.HandleFunc("GET /admin/alerts/rules", adminHandler.ListAlertRules)
-	adminMux.HandleFunc("POST /admin/alerts/rules", adminHandler.CreateAlertRule)
-	adminMux.HandleFunc("PATCH /admin/alerts/rules/{id}", adminHandler.UpdateAlertRule)
-	adminMux.HandleFunc("DELETE /admin/alerts/rules/{id}", adminHandler.DeleteAlertRule)
-	adminMux.HandleFunc("GET /admin/alerts/history", adminHandler.ListAlertHistory)
-	adminMux.HandleFunc("POST /admin/alerts/test", adminHandler.TestAlertWebhook)
-	adminMux.HandleFunc("GET /admin/system/info", adminHandler.GetSystemInfo)
 	adminMux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ok", "service": "llm-gateway-admin"}`))
 	})
 	adminMux.Handle("GET /metrics", telemetry.PrometheusHandler())
-	// SPA: catch-all for GET requests not matched by a specific /admin/* route.
+
+	// Register admin API routes on both muxes so single-port environments (like Cloud Run)
+	// can access both Data Plane (/v1/*) and Control Plane (/admin/* & Web UI):
+	registerAdminRoutes(adminMux, adminHandler)
+	registerAdminRoutes(publicMux, adminHandler)
+
+	// SPA: catch-all for GET requests not matched by a specific /v1/* or /admin/* route.
 	// Client-side routing in the React app owns every path below this handler.
 	adminMux.Handle("/", web.Handler())
+	publicMux.Handle("/", web.Handler())
 
 	publicServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
@@ -231,18 +161,20 @@ func main() {
 
 	// 8. Start Both HTTP Servers in Goroutines
 	go func() {
-		log.Printf("🚀 Public LLM Gateway running on port %s (Bearer Auth required)", cfg.Port)
+		log.Printf("🚀 Public LLM Gateway running on port %s (Bearer Auth required, Web UI enabled)", cfg.Port)
 		if err := publicServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Public Gateway server error: %v", err)
 		}
 	}()
 
-	go func() {
-		log.Printf("🛠 Admin Management Server running on port %s (Admin Key required)", cfg.AdminPort)
-		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Admin server error: %v", err)
-		}
-	}()
+	if cfg.AdminPort != "" && cfg.AdminPort != cfg.Port {
+		go func() {
+			log.Printf("🛠 Admin Management Server running on port %s (Admin Key required)", cfg.AdminPort)
+			if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Admin server error: %v", err)
+			}
+		}()
+	}
 
 	// 9. Graceful Shutdown Signal Handler
 	quit := make(chan os.Signal, 1)
@@ -256,8 +188,10 @@ func main() {
 	if err := publicServer.Shutdown(ctx); err != nil {
 		log.Printf("Public server forced to shutdown: %v", err)
 	}
-	if err := adminServer.Shutdown(ctx); err != nil {
-		log.Printf("Admin server forced to shutdown: %v", err)
+	if cfg.AdminPort != "" && cfg.AdminPort != cfg.Port {
+		if err := adminServer.Shutdown(ctx); err != nil {
+			log.Printf("Admin server forced to shutdown: %v", err)
+		}
 	}
 
 	log.Println("LLM Gateway servers stopped clean.")
@@ -319,4 +253,81 @@ func connectPostgresWithRetry(cfg *config.Config, attempts int) (*db.PostgresDB,
 		time.Sleep(2 * time.Second)
 	}
 	return nil, fmt.Errorf("postgres unavailable after %d attempts: %w", attempts, lastErr)
+}
+
+func registerAdminRoutes(mux *http.ServeMux, adminHandler *handler.AdminHandler) {
+	mux.HandleFunc("POST /admin/auth/login", adminHandler.Login)
+	mux.HandleFunc("GET /admin/auth/me", adminHandler.GetCurrentUser)
+	mux.HandleFunc("POST /admin/auth/password", adminHandler.SetPassword)
+
+	// Member & Team Analytics ("ai dùng gì, dùng bao nhiêu")
+	mux.HandleFunc("GET /admin/analytics/members", adminHandler.GetMemberUsageAnalytics)
+	mux.HandleFunc("GET /admin/analytics/members/{id}", adminHandler.GetMemberDetail)
+
+	mux.HandleFunc("GET /admin/users", adminHandler.ListUsers)
+	mux.HandleFunc("POST /admin/users", adminHandler.CreateUser)
+	mux.HandleFunc("PATCH /admin/users", adminHandler.UpdateUser)
+	mux.HandleFunc("DELETE /admin/users", adminHandler.DeleteUser)
+	mux.HandleFunc("GET /admin/keys", adminHandler.ListAPIKeys)
+	mux.HandleFunc("POST /admin/keys", adminHandler.CreateAPIKey)
+	mux.HandleFunc("PATCH /admin/keys", adminHandler.UpdateAPIKey)
+	mux.HandleFunc("DELETE /admin/keys", adminHandler.RevokeAPIKey)
+	mux.HandleFunc("POST /admin/keys/reactivate", adminHandler.ReactivateAPIKey)
+	mux.HandleFunc("GET /admin/keys/{id}/models", adminHandler.ListKeyModelPolicies)
+	mux.HandleFunc("POST /admin/keys/{id}/models", adminHandler.CreateKeyModelPolicy)
+	mux.HandleFunc("DELETE /admin/keys/{id}/models/{pid}", adminHandler.DeleteKeyModelPolicy)
+	mux.HandleFunc("GET /admin/groups", adminHandler.ListGroups)
+	mux.HandleFunc("POST /admin/groups", adminHandler.CreateGroup)
+	mux.HandleFunc("GET /admin/groups/{id}", adminHandler.GetGroup)
+	mux.HandleFunc("PATCH /admin/groups/{id}", adminHandler.UpdateGroup)
+	mux.HandleFunc("DELETE /admin/groups/{id}", adminHandler.DeleteGroup)
+	mux.HandleFunc("GET /admin/groups/{id}/policies", adminHandler.ListGroupPolicies)
+	mux.HandleFunc("POST /admin/groups/{id}/policies", adminHandler.CreateGroupPolicy)
+	mux.HandleFunc("PATCH /admin/groups/{id}/policies/{pid}", adminHandler.UpdateGroupPolicy)
+	mux.HandleFunc("DELETE /admin/groups/{id}/policies/{pid}", adminHandler.DeleteGroupPolicy)
+	mux.HandleFunc("GET /admin/iam/actions", adminHandler.GetIAMActions)
+	mux.HandleFunc("GET /admin/groups/{id}/members", adminHandler.ListGroupMembers)
+	mux.HandleFunc("POST /admin/groups/{id}/members", adminHandler.AddGroupMember)
+	mux.HandleFunc("PUT /admin/groups/{id}/members/{uid}/role", adminHandler.SetGroupMemberRole)
+	mux.HandleFunc("DELETE /admin/groups/{id}/members/{uid}", adminHandler.RemoveGroupMember)
+	mux.HandleFunc("GET /admin/tenants", adminHandler.ListTenants)
+	mux.HandleFunc("POST /admin/tenants", adminHandler.CreateTenant)
+	mux.HandleFunc("GET /admin/tenants/{id}", adminHandler.GetTenant)
+	mux.HandleFunc("PATCH /admin/tenants/{id}", adminHandler.UpdateTenant)
+	mux.HandleFunc("DELETE /admin/tenants/{id}", adminHandler.DeleteTenant)
+	mux.HandleFunc("POST /admin/tenants/{id}/topup", adminHandler.TopUpCredit)
+	mux.HandleFunc("GET /admin/tenants/{id}/transactions", adminHandler.ListTenantTransactions)
+	mux.HandleFunc("GET /admin/audit-logs", adminHandler.ListAuditLogs)
+	mux.HandleFunc("GET /admin/providers", adminHandler.ListProviderKeys)
+	mux.HandleFunc("POST /admin/providers", adminHandler.SetProviderKey)
+	mux.HandleFunc("DELETE /admin/providers", adminHandler.DeleteProviderKey)
+	mux.HandleFunc("GET /admin/analytics/stats", adminHandler.GetUsageStats)
+	mux.HandleFunc("GET /admin/analytics/dashboard", adminHandler.GetDashboardStats)
+	mux.HandleFunc("GET /admin/models", adminHandler.GetModels)
+	mux.HandleFunc("GET /admin/models/catalog", adminHandler.GetModelCatalog)
+	mux.HandleFunc("POST /admin/models", adminHandler.UpsertModel)
+	mux.HandleFunc("POST /admin/models/sync", adminHandler.SyncModelsFromCatalog)
+	mux.HandleFunc("POST /admin/models/discover", adminHandler.DiscoverModels)
+	mux.HandleFunc("DELETE /admin/models", adminHandler.DeleteModel)
+	mux.HandleFunc("GET /admin/virtual-models", adminHandler.ListVirtualModels)
+	mux.HandleFunc("POST /admin/virtual-models", adminHandler.CreateVirtualModel)
+	mux.HandleFunc("GET /admin/virtual-models/{id}", adminHandler.GetVirtualModel)
+	mux.HandleFunc("PUT /admin/virtual-models/{id}", adminHandler.UpdateVirtualModel)
+	mux.HandleFunc("DELETE /admin/virtual-models/{id}", adminHandler.DeleteVirtualModel)
+	mux.HandleFunc("GET /admin/plugins", adminHandler.ListPlugins)
+	mux.HandleFunc("GET /admin/plugins/{name}", adminHandler.GetPlugin)
+	mux.HandleFunc("GET /admin/plugin-bindings", adminHandler.ListPluginBindings)
+	mux.HandleFunc("POST /admin/plugin-bindings", adminHandler.CreatePluginBinding)
+	mux.HandleFunc("GET /admin/plugin-bindings/{id}", adminHandler.GetPluginBinding)
+	mux.HandleFunc("PUT /admin/plugin-bindings/{id}", adminHandler.UpdatePluginBinding)
+	mux.HandleFunc("DELETE /admin/plugin-bindings/{id}", adminHandler.DeletePluginBinding)
+	mux.HandleFunc("GET /admin/logs", adminHandler.GetUsageLogs)
+	mux.HandleFunc("GET /admin/logs/{id}", adminHandler.GetUsageLogDetail)
+	mux.HandleFunc("GET /admin/alerts/rules", adminHandler.ListAlertRules)
+	mux.HandleFunc("POST /admin/alerts/rules", adminHandler.CreateAlertRule)
+	mux.HandleFunc("PATCH /admin/alerts/rules/{id}", adminHandler.UpdateAlertRule)
+	mux.HandleFunc("DELETE /admin/alerts/rules/{id}", adminHandler.DeleteAlertRule)
+	mux.HandleFunc("GET /admin/alerts/history", adminHandler.ListAlertHistory)
+	mux.HandleFunc("POST /admin/alerts/test", adminHandler.TestAlertWebhook)
+	mux.HandleFunc("GET /admin/system/info", adminHandler.GetSystemInfo)
 }
