@@ -27,26 +27,29 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.7.0"
-
-      - name: Write GCP SA Key for Terraform
-        working-directory: terraform
+      - name: Enable GCP APIs Automatically
         run: |
-          echo '${{ secrets.GCP_SA_KEY }}' > gdgdevfest2026-515408-6b41e29434d7.json
+          gcloud services enable \
+            cloudresourcemanager.googleapis.com \
+            serviceusage.googleapis.com \
+            artifactregistry.googleapis.com \
+            run.googleapis.com \
+            sqladmin.googleapis.com \
+            redis.googleapis.com \
+            secretmanager.googleapis.com \
+            vpcaccess.googleapis.com \
+            servicenetworking.googleapis.com \
+            compute.googleapis.com \
+            --project=gdgdevfest2026-515408
 
-      - name: Terraform Init
-        working-directory: terraform
-        run: terraform init
-
-      - name: Enable GCP APIs & Provision Infrastructure Base
-        working-directory: terraform
+      - name: Ensure Artifact Registry Repository Exists
         run: |
-          terraform apply -auto-approve \
-            -target=google_project_service.enabled_apis \
-            -target=google_artifact_registry_repository.app_repo
+          gcloud artifacts repositories describe llm-gateway-repo --location=asia-east1 --project=gdgdevfest2026-515408 || \
+          gcloud artifacts repositories create llm-gateway-repo \
+            --repository-format=docker \
+            --location=asia-east1 \
+            --description="Docker container repository for LLM Gateway" \
+            --project=gdgdevfest2026-515408
 
       - name: Configure Docker for Artifact Registry
         run: |
@@ -78,7 +81,27 @@ jobs:
             asia-east1-docker.pkg.dev/gdgdevfest2026-515408/llm-gateway-repo/llm-gateway:latest
             asia-east1-docker.pkg.dev/gdgdevfest2026-515408/llm-gateway-repo/llm-gateway:${{ github.sha }}
 
-      - name: Complete Terraform Apply (Cloud Run & Services)
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Write GCP SA Key for Terraform
+        working-directory: terraform
+        run: |
+          echo '${{ secrets.GCP_SA_KEY }}' > gdgdevfest2026-515408-6b41e29434d7.json
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Import Existing Resources into Terraform State
+        working-directory: terraform
+        run: |
+          terraform import google_artifact_registry_repository.app_repo projects/gdgdevfest2026-515408/locations/asia-east1/repositories/llm-gateway-repo || true
+          terraform import google_cloud_run_v2_service.gateway projects/gdgdevfest2026-515408/locations/asia-east1/services/llm-gateway || true
+
+      - name: Terraform Apply Infrastructure & Cloud Run
         working-directory: terraform
         run: |
           terraform apply -auto-approve \

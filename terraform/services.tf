@@ -1,6 +1,8 @@
 # Enable required GCP APIs automatically
 resource "google_project_service" "enabled_apis" {
   for_each = toset([
+    "cloudresourcemanager.googleapis.com",
+    "cloudbuild.googleapis.com",
     "artifactregistry.googleapis.com",
     "run.googleapis.com",
     "sqladmin.googleapis.com",
